@@ -40,6 +40,7 @@ from typing import Any
 
 import pyaudio
 
+from twl.clocks import ensure_baseline, restore, set_clocks
 from twl.config import load_config
 from twl.metrics import median
 from twl.pipeline import build_pipeline
@@ -80,11 +81,13 @@ async def run_file_path(cfg: Any, wavs: list[Path], run_dir: Path, run_id: str) 
     built_box.append(built.turns)
     await built.stt.warmup()
     await asyncio.to_thread(built.tts.warm)
+    watchdog_task = asyncio.create_task(built.observer.watchdog())
     runner_task = asyncio.create_task(built.runner.run(built.task))
     await source.finished.wait()
     deadline = asyncio.get_running_loop().time() + 60
     while built.turns.turns_written < len(wavs) and asyncio.get_running_loop().time() < deadline:
         await asyncio.sleep(0.25)
+    watchdog_task.cancel()
     await built.task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await runner_task
@@ -111,6 +114,7 @@ async def run_mic_path(cfg: Any, wavs: list[Path], run_dir: Path, run_id: str) -
     )
     await built.stt.warmup()
     await asyncio.to_thread(built.tts.warm)
+    watchdog_task = asyncio.create_task(built.observer.watchdog())
     runner_task = asyncio.create_task(built.runner.run(built.task))
     await asyncio.sleep(2.0)  # capture stream settling
     for i, wav in enumerate(wavs, start=1):
@@ -124,6 +128,7 @@ async def run_mic_path(cfg: Any, wavs: list[Path], run_dir: Path, run_id: str) -
         while built.turns.turns_written < i and asyncio.get_running_loop().time() < deadline:
             await asyncio.sleep(0.25)
         await asyncio.sleep(1.5)  # inter-turn gap, mirrors the file path
+    watchdog_task.cancel()
     await built.task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await runner_task
@@ -149,7 +154,7 @@ async def child(args: argparse.Namespace) -> None:
 
 
 async def main_async(args: argparse.Namespace) -> None:
-    if args.path in ("file", "mic"):
+    if args.path in ("file", "file2", "mic"):
         await child(args)
         return
 
@@ -161,11 +166,8 @@ async def main_async(args: argparse.Namespace) -> None:
     run_dir = Path(cfg.results_dir) / "validate_playback" / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    subprocess.run(
-        ["sudo", "-n", "/usr/bin/jetson_clocks", "--store", str(run_dir / "clocks.store")],
-        check=True,
-    )
-    subprocess.run(["sudo", "-n", "/usr/bin/jetson_clocks"], check=True)
+    baseline = ensure_baseline(Path(cfg.results_dir) / "clocks.baseline")
+    set_clocks()
     sampler = TegrastatsSampler(run_dir / "telemetry.jsonl", run_id=run_id)
     sampler.start()
     try:
@@ -194,10 +196,7 @@ async def main_async(args: argparse.Namespace) -> None:
             )
     finally:
         sampler.stop()
-        subprocess.run(
-            ["sudo", "-n", "/usr/bin/jetson_clocks", "--restore", str(run_dir / "clocks.store")],
-            check=True,
-        )
+        restore(baseline)
 
     f_turns = turn_offsets(run_dir / "file_turns.jsonl")
     f2_turns = turn_offsets(run_dir / "file2_turns.jsonl")

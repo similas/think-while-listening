@@ -18,7 +18,7 @@ import logging
 from pathlib import Path
 from typing import TextIO
 
-from twl.clock import TurnClock, wall_iso
+from twl.clock import TurnClock, now_ns, wall_iso
 from twl.records import RunMeta, StageEvent, TurnRecord, write_jsonl
 from twl.telemetry import read_mem_available_mb, read_proc_mem_mb, read_swaps
 
@@ -47,6 +47,7 @@ class TurnManager:
         self._reply_tokens = 0
         self._swap_at_start: dict[str, float] = {}
         self._marked_once: set[str] = set()
+        self._turn_opened_ns = 0
         self.orphan_marks = 0
         self.turns_written = 0
         self.invalid_turns = 0
@@ -54,6 +55,14 @@ class TurnManager:
     @property
     def turn(self) -> int:
         return self._turn
+
+    @property
+    def turn_open(self) -> bool:
+        return self._clock is not None
+
+    def turn_age_ms(self) -> float:
+        """Milliseconds since the open turn began (0.0 if none is open)."""
+        return (now_ns() - self._turn_opened_ns) / 1e6 if self._clock is not None else 0.0
 
     def turn_started(self, at_ns: int) -> None:
         """VAD opened a user turn. Force-finishes an unfinished previous turn."""
@@ -65,6 +74,7 @@ class TurnManager:
         self._reply_parts = []
         self._reply_tokens = 0
         self._marked_once = set()
+        self._turn_opened_ns = at_ns
         self._swap_at_start = read_swaps().used_mb
 
     def mark(self, stage: str, at_ns: int | None = None, *, once: bool = False) -> None:
@@ -92,7 +102,20 @@ class TurnManager:
         self._reply_parts.append(text)
         self._reply_tokens += 1  # one streamed delta ≈ one token on this server
 
-    def finish_turn(self, *, forced: bool = False) -> None:
+    def close_if_current(
+        self, turn: int, *, at_ns: int | None = None, reason: str = "bot_stopped"
+    ) -> bool:
+        """Close ``turn`` if it is still the open one. Safe to call late/twice.
+
+        Returns True when this call closed the turn.
+        """
+        if self._clock is None or self._turn != turn:
+            return False
+        self.mark("playback_done", at_ns=at_ns, once=True)
+        self.finish_turn(close_reason=reason)
+        return True
+
+    def finish_turn(self, *, forced: bool = False, close_reason: str = "bot_stopped") -> None:
         """Close the open turn and write its summary record."""
         if self._clock is None:
             return
@@ -136,6 +159,8 @@ class TurnManager:
             invalid_reason = f"zram_growth:+{ambient:.2f}MB"
         if forced:
             invalid_reason = (invalid_reason + ";" if invalid_reason else "") + "unfinished_turn"
+        if close_reason == "timeout":
+            invalid_reason = (invalid_reason + ";" if invalid_reason else "") + "turn_timeout"
 
         record = TurnRecord(
             run_id=self._run_id,
@@ -150,6 +175,7 @@ class TurnManager:
             swap_used_mb=swap_now,
             valid=not invalid_reason,
             invalid_reason=invalid_reason,
+            close_reason=close_reason,
         )
         write_jsonl(self._fh, record)
         self.turns_written += 1

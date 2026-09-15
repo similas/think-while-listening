@@ -14,6 +14,8 @@ its two measured traps, from voice-companion app/observer.py:
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections import OrderedDict
 
 from pipecat.frames.frames import (
@@ -34,6 +36,16 @@ from twl.clock import now_ns
 from twl.services import PiperTTSService
 from twl.turns import TurnManager
 
+log = logging.getLogger(__name__)
+
+# A turn closes on BotStoppedSpeaking. When that frame races the TTS lock the
+# close is deferred to the watchdog, which closes once the reply is complete
+# and no audio has entered the output transport for SETTLE_MS. HARD_TIMEOUT_MS
+# is the last resort: it closes (and invalidates) a turn that never finished,
+# so a stuck turn costs one flagged turn instead of the whole run.
+SETTLE_MS = 800.0
+HARD_TIMEOUT_MS = 45_000.0
+
 # Pipecat 0.0.108 emits VADUser*SpeakingFrame on the plain-VAD path and
 # User*SpeakingFrame on the (deprecated) context/interruption path; a pipeline
 # sees one or the other depending on configuration. Treat them as one signal.
@@ -50,6 +62,10 @@ class StageObserver(BaseObserver):
         self._tts = tts
         self._vad_stop_secs = vad_stop_secs
         self._seen: OrderedDict[int, bool] = OrderedDict()
+        self._last_audio_out_ns = 0
+        self._deferred_close: tuple[int, int] | None = None
+        self.closes_deferred = 0
+        self.closes_timed_out = 0
 
     def _first_time(self, frame: Frame) -> bool:
         fid = getattr(frame, "id", None) or id(frame)
@@ -98,17 +114,56 @@ class StageObserver(BaseObserver):
                 # First playable audio reaching the output transport: the
                 # closest observable point to sound leaving the machine.
                 self._turns.mark("audio_out_first", at_ns=at, once=True)
+                self._last_audio_out_ns = at
             return
 
         if isinstance(frame, BotStoppedSpeakingFrame):
             # BotStoppedSpeaking also fires in the gap between two synthesized
-            # sentences; only the one after the reply is fully flushed (and
-            # generation is done) ends the turn.
-            if (
-                self._first_time(frame)
-                and self._turns.has_mark("llm_done")
-                and not self._tts.pending
-            ):
-                self._turns.mark("playback_done", at_ns=at)
-                self._turns.finish_turn()
+            # sentences, so it only ends the turn once generation is done.
+            if not (self._first_time(frame) and self._turns.has_mark("llm_done")):
+                return
+            if not self._tts.pending:
+                self._turns.close_if_current(self._turns.turn, at_ns=at)
+            else:
+                # The output transport can drain the final chunk while the TTS
+                # lock is still held; dropping the close then deadlocks the
+                # turn (observed 2026-09-15, turn 20 of a 64-turn run). Hand
+                # the timestamp to the watchdog instead.
+                self._deferred_close = (self._turns.turn, at)
             return
+
+    async def watchdog(self) -> None:
+        """Close turns the BotStoppedSpeaking path could not close.
+
+        Runs for the lifetime of a session. Two rules, both recorded in the
+        turn record's ``close_reason``: quiet-settle (normal recovery from the
+        race above) and hard timeout (a turn that never produced a reply,
+        which is also flagged invalid).
+        """
+        while True:
+            await asyncio.sleep(0.1)
+            if not self._turns.turn_open:
+                continue
+            turn = self._turns.turn
+            age = self._turns.turn_age_ms()
+            quiet_ms = (now_ns() - self._last_audio_out_ns) / 1e6
+            if (
+                self._turns.has_mark("llm_done")
+                and not self._tts.pending
+                and self._last_audio_out_ns > 0
+                and quiet_ms > SETTLE_MS
+            ):
+                at = (
+                    self._deferred_close[1]
+                    if self._deferred_close and self._deferred_close[0] == turn
+                    else None
+                )
+                if self._turns.close_if_current(turn, at_ns=at, reason="watchdog"):
+                    self.closes_deferred += 1
+                    log.warning("turn %d closed by watchdog after %.0f ms quiet", turn, quiet_ms)
+                self._deferred_close = None
+            elif age > HARD_TIMEOUT_MS:
+                if self._turns.close_if_current(turn, reason="timeout"):
+                    self.closes_timed_out += 1
+                    log.error("turn %d force-closed after %.0f ms with no reply", turn, age)
+                self._deferred_close = None

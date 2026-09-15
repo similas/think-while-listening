@@ -134,3 +134,71 @@ Deviations / open items:
   re-prefill after each speculation; measure then).
 - Kickoff wording note: no --cache-prompt server flag exists on this build;
   the per-request `cache_prompt` field of /completion is what was toggled.
+
+## 2026-09-15 — Phase 1 measurements (a), (c), (e); pipeline hardening log
+
+Pipeline built on Pipecat 0.0.108: FrameSource-driven transport (mic and 1x
+file playback share the delivery path), Silero VAD with edge callbacks,
+streaming faster-whisper (base int8, cores 3-5, 3 threads) with optional
+partials, llama-server client (server on cores 0-2), clause-first Piper TTS,
+tegrastats at 10 Hz, one perf_counter_ns origin per turn, per-turn records
+with per-device swap + per-process VmSwap. Warmup of every stage runs before
+the first measured turn. Tests: 28 pass in ~22 s (unit + mocked-integration
+on a 5 s synthetic turn + real-model smoke).
+
+(c) REACTIVE on the 16 turns (run reactive-20260915-143218-550bb9, clocks
+set, file playback, turn-gated): 16/16 valid. Stage medians (ms from turn
+open): vad_user_stopped 1812, stt_final 3349, llm_first_token 3466,
+tts_first_audio 3995, audio_out_first 3996. Median TTFA vs estimated end of
+speech: 3251 ms. Decode (stt_final − vad_user_stopped) dominates. Numbers
+regenerate via `make results` (results/tables/phase1.md).
+
+(a) Playback-harness validation (validate-playback-20260915-153052-3a4a4b,
+8 turns × {file, file2, mic}, clocks set, mic = paplay into a 16 kHz mono
+null sink captured through PyAudio):
+- Harness reproducibility (file2−file): worst |2.0| ms at vad_user_stopped,
+  |7.9| ms at vad_stopping. The harness is deterministic to ±2 ms.
+- Mic−file: median +20 ms, worst |62| ms at vad_user_stopped; stt_final
+  deltas up to |268| ms against a decode-compute noise floor of |109| ms.
+- Transcripts identical 8/8.
+- VERDICT against the ±20 ms criterion AS WRITTEN: NOT met on 5/8 turns for
+  the mic comparison. The excess is live-capture buffering jitter (PipeWire →
+  ALSA-pulse plugin → PortAudio), one-sided (+20 ms median): the mic path
+  ADDS measurement noise the file path does not have. Proposal: accept the
+  harness (it is strictly more reproducible than live capture and transcript-
+  faithful) and cite these numbers as the capture-path error bar wherever
+  file-based and live results are compared. OWNER: Ali to accept/reject.
+
+(e) STT commit latency, isolation vs live (stt-isolation-20260915-153442,
+same model/threads/affinity/clocks, 16 wavs × 3 reps, llama idle):
+- isolation: n=48, median 1329 ms [1303, 1346], p95 1437 ms.
+- live (same audio inside the 16-turn REACTIVE run): n=16, median 1875 ms.
+- LIVE/ISOLATION = 1.41x with ZERO speculation running — the pipeline's own
+  bookkeeping + audio I/O + resident-but-idle llama-server already inflate
+  the recognizer 41%. This is the pre-existing contention floor Phase 2's
+  Contention(B, s) sits on top of.
+
+Pinning record (also in every run meta): llama-server CPUAffinity=0-2,
+--threads 3, --parallel 1, MemoryMax 3500M, MemorySwapMax=0; agent process
+sched_setaffinity {3,4,5}; faster-whisper cpu_threads=3; Piper on the agent
+cores (its ORT session inherits process affinity; thread count not exposed by
+piper-tts 1.6.0 — recorded as such, not claimed as pinned).
+
+Bugs found by measurement while building (all fixed, all in git history):
+- asyncio deadlock: sync decode-lock acquire on the loop thread vs a
+  cancelled partial task's release → asyncio.Lock.
+- Turns closed early: BotStoppedSpeaking fires between synthesized sentences;
+  close now requires llm_done marked AND the TTS reply fully flushed.
+- PortAudio heap corruption: output writes on the shared default executor
+  raced teardown → dedicated single-worker executor, serialized close.
+- paplay via subprocess.run blocked the event loop → burst-delivered capture
+  destroyed VAD timing → asyncio subprocess.
+- validate_playback --path file2 fell through to the parent branch and
+  spawned children recursively (killed, one-line dispatcher fix; the bogus
+  half-written run dirs were deleted, the surviving evidence being the fixed
+  script and this note).
+- Ambient zram churn (~0.25 MB/turn from desktop daemons) invalidated every
+  turn under the literal swap rule → validity now keys on OWN VmSwap > 0,
+  NVMe swapfile growth, or one-turn system zram growth > 5 MB (provisional
+  threshold, flagged). All three inputs recorded per turn. OWNER: Ali to
+  bless the interpretation.

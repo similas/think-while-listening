@@ -16,13 +16,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import time
 import wave
 from pathlib import Path
 
 import numpy as np
 
+from twl.clocks import ensure_baseline, restore, set_clocks
 from twl.config import load_config
 from twl.metrics import median, summarize
 from twl.provenance import build_run_meta, new_run_id
@@ -49,12 +49,8 @@ def main() -> None:
     out_dir = Path(cfg.results_dir) / "stt_isolation"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{run_id}.jsonl"
-    clocks_store = out_dir / f"{run_id}.clocks"
-
-    subprocess.run(
-        ["sudo", "-n", "/usr/bin/jetson_clocks", "--store", str(clocks_store)], check=True
-    )
-    subprocess.run(["sudo", "-n", "/usr/bin/jetson_clocks"], check=True)
+    baseline = ensure_baseline(Path(cfg.results_dir) / "clocks.baseline")
+    set_clocks()
     try:
         from faster_whisper import WhisperModel
 
@@ -117,9 +113,7 @@ def main() -> None:
                         + "\n"
                     )
     finally:
-        subprocess.run(
-            ["sudo", "-n", "/usr/bin/jetson_clocks", "--restore", str(clocks_store)], check=True
-        )
+        restore(baseline)
 
     all_ms = [ms for v in per_file.values() for ms in v]
     s = summarize(all_ms, n_resamples=2000)

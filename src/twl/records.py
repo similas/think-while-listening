@@ -76,6 +76,7 @@ class TurnRecord:
     swap_used_mb: dict[str, float]
     valid: bool
     invalid_reason: str = ""
+    close_reason: str = "bot_stopped"
 
     kind: str = field(default="turn_record", init=False)
 

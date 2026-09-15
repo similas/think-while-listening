@@ -37,6 +37,7 @@ class BuiltPipeline:
     llm: LlamaChatProcessor
     tts: PiperTTSService
     transport: TwlAudioTransport
+    observer: StageObserver
 
 
 def build_pipeline(
@@ -80,13 +81,21 @@ def build_pipeline(
     stt = StreamingWhisperSTT(cfg.stt, turns, sample_rate=cfg.audio.sample_rate)
     llm = LlamaChatProcessor(cfg.llm, turns)
 
+    observer = StageObserver(turns, tts, vad_stop_secs=cfg.vad.stop_secs)
     pipeline = Pipeline([transport.input(), stt, llm, tts, transport.output()])
     task = PipelineTask(
         pipeline,
         params=PipelineParams(allow_interruptions=False),
-        observers=[StageObserver(turns, tts, vad_stop_secs=cfg.vad.stop_secs)],
+        observers=[observer],
     )
     runner = PipelineRunner(handle_sigint=False)
     return BuiltPipeline(
-        task=task, runner=runner, turns=turns, stt=stt, llm=llm, tts=tts, transport=transport
+        task=task,
+        runner=runner,
+        turns=turns,
+        stt=stt,
+        llm=llm,
+        tts=tts,
+        transport=transport,
+        observer=observer,
     )

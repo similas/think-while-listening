@@ -21,6 +21,7 @@ import subprocess
 from pathlib import Path
 
 from twl.clock import now_ns
+from twl.clocks import ensure_baseline, restore, set_clocks
 from twl.config import load_config
 from twl.metrics import median
 from twl.pipeline import build_pipeline
@@ -42,20 +43,6 @@ def llama_pid() -> int:
     if pid <= 0:
         raise SystemExit("twl-llama not running; start src/scripts/llama_server.sh first")
     return pid
-
-
-def set_clocks(run_dir: Path) -> None:
-    store = run_dir / "clocks.store"
-    subprocess.run(["sudo", "-n", "/usr/bin/jetson_clocks", "--store", str(store)], check=True)
-    subprocess.run(["sudo", "-n", "/usr/bin/jetson_clocks"], check=True)
-
-
-def restore_clocks(run_dir: Path) -> None:
-    store = run_dir / "clocks.store"
-    if store.exists():
-        subprocess.run(
-            ["sudo", "-n", "/usr/bin/jetson_clocks", "--restore", str(store)], check=True
-        )
 
 
 def summarize_run(turns_path: Path) -> str:
@@ -92,8 +79,9 @@ async def run(args: argparse.Namespace) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
 
     subprocess.run([str(REPO / "src/scripts/audio_env.sh")], check=True)
+    baseline = ensure_baseline(Path(cfg.results_dir) / "clocks.baseline")
     if args.clocks:
-        set_clocks(run_dir)
+        set_clocks()
     try:
         pid = llama_pid()
         llama_cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
@@ -177,18 +165,30 @@ async def run(args: argparse.Namespace) -> None:
                     await asyncio.sleep(2.0)
 
         slots_task = asyncio.create_task(poll_slots())
+        watchdog_task = asyncio.create_task(built.observer.watchdog())
         runner_task = asyncio.create_task(built.runner.run(built.task))
         try:
             if isinstance(source, FileFrameSource):
-                await source.finished.wait()
-                # Let the last reply finish: wait until every queued turn is
-                # written, or a generous timeout catches a wedged pipeline.
+                # The pipeline task ending early (idle timeout, error) must end
+                # the wait too: the playback gate can never advance without it.
+                finished = asyncio.ensure_future(source.finished.wait())
+                await asyncio.wait({finished, runner_task}, return_when=asyncio.FIRST_COMPLETED)
+                if not finished.done():
+                    finished.cancel()
+                    print("pipeline task ended before playback finished")
                 deadline = now_ns() + int(60e9)
-                while built.turns.turns_written < expected_turns and now_ns() < deadline:
+                while (
+                    built.turns.turns_written < expected_turns
+                    and now_ns() < deadline
+                    and not runner_task.done()
+                ):
                     await asyncio.sleep(0.25)
             else:
                 await asyncio.sleep(args.live_seconds)
         finally:
+            watchdog_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await watchdog_task
             slots_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await slots_task
@@ -205,13 +205,15 @@ async def run(args: argparse.Namespace) -> None:
         print(summarize_run(run_dir / "turns.jsonl"))
         print(
             f"stt partials={built.stt.partials_emitted} finals={built.stt.finals_emitted} "
-            f"llm dropped={built.llm.dropped_transcripts} orphan_marks={built.turns.orphan_marks}"
+            f"llm dropped={built.llm.dropped_transcripts} orphan_marks={built.turns.orphan_marks} "
+            f"watchdog_closes={built.observer.closes_deferred} "
+            f"timeouts={built.observer.closes_timed_out}"
         )
         if sampler.samples_written == 0:
             raise SystemExit("telemetry wrote zero samples — run is not usable")
     finally:
         if args.clocks:
-            restore_clocks(run_dir)
+            restore(baseline)
 
 
 def main() -> None:
