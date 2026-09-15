@@ -72,6 +72,7 @@ class LlmConfig:
     cpu_affinity: tuple[int, ...] = (0, 1, 2)
     n_gpu_layers: int = 99
     parallel: int = 1
+    cache_reuse: int = 0
     memory_max_mb: int = 3500
     system_prompt: str = "You are a concise voice assistant. Answer in one or two short sentences."
     max_tokens: int = 150

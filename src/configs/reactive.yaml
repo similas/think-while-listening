@@ -31,6 +31,7 @@ llm:
   cpu_affinity: [0, 1, 2]
   n_gpu_layers: 99
   parallel: 1
+  cache_reuse: 0
   memory_max_mb: 3500
   system_prompt: "You are a concise voice assistant. Answer in one or two short sentences."
   max_tokens: 150

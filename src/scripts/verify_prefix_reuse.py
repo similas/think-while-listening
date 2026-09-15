@@ -1,215 +1,197 @@
 """Phase 1(b): verify KV-prefix reuse empirically on this llama-server build.
 
-Simulates a growing partial transcript (word-chunk commits, as streaming STT
-would emit) and measures, per commit, how many prompt tokens the server
-actually evaluates — with per-request prompt caching on vs off. The server's
-own timings are the measurement; nothing is inferred from wall clock.
+Simulates the speculation workload: a transcript that GROWS across partial
+commits, prefilled incrementally. For each growth step the server reports how
+many prompt tokens it actually evaluated (`prompt_n`) and how long prefill
+took (`prompt_ms`). Factorial conditions:
 
-Also probes invalidation: after the full transcript is cached, one early word
-is changed; with exact-prefix caching the whole prompt must re-evaluate.
+- cache_prompt true/false : per-request prompt-cache reuse on/off.
+- growth style tail_free/templated : tail_free grows the prompt as bare turn
+  text (the Gemma closing tail is appended only at the final step, i.e. the
+  commit); templated closes EVERY step with the tail, as a naive
+  implementation of incremental prefill would.
 
-Writes results/raw/<run_id>/{params.yaml,log.jsonl}; `report` recomputes the
-summary strictly from that log.
+Manual probes on 2026-09-15 (GPU server, this build) found reuse works ONLY
+when the cached tokens are a clean prefix of the new prompt: a mid-cache
+divergence — e.g. the previous request's chat-template tail — causes a FULL
+re-evaluation (no truncate-at-divergence on this build, unlike upstream
+llama.cpp). --cache-reuse did not change this (probed at 0 and 32). This
+experiment quantifies all four cells.
+
+NOTE ON NAMING: the kickoff says "with and without --cache-prompt". On this
+build (b4d6c7d8f, Ollama-bundled) there is no such server flag; prompt-cache
+reuse is controlled per request by the `cache_prompt` field of /completion.
+That request field is what this experiment toggles.
+
+Growth step of 4 words ≈ one partial commit every ~2 s at 120 wpm; the point
+is reuse behaviour per commit, which does not depend on the exact step size.
+n_predict=0 so no decode tokens enter the cache between steps.
+
+Output: results/raw/prefix_reuse/<run_id>.jsonl — RunMeta header line, then
+one JSON line per request with the full server timings and a /slots snapshot.
+Runtime: ~3-4 min (4 conditions x 5 utterances x steps x reps, sequential).
 """
 
 from __future__ import annotations
 
+import argparse
+import asyncio
 import json
-import logging
-from dataclasses import asdict, dataclass, field
+import subprocess
 from pathlib import Path
-from typing import Annotated
+from typing import Any
 
-import typer
-import yaml
-
-from twl.llm import LlamaServerClient
+from twl.clock import now_ns
+from twl.config import load_config
+from twl.llm import LlamaClient, gemma_prompt
 from twl.metrics import median
 from twl.provenance import build_run_meta, new_run_id
-from twl.records import read_jsonl, to_jsonl
+from twl.records import to_jsonl
 
-log = logging.getLogger("verify_prefix_reuse")
-
-REPO = Path(__file__).resolve().parents[2]
-
-# A GSM8K-style spoken question, committed in chunks like STT partials.
-TRANSCRIPT = (
-    "okay so here is my question a bakery sells cupcakes in boxes of six and "
-    "cookies in boxes of eight yesterday they sold twelve boxes of cupcakes "
-    "and some boxes of cookies and altogether they sold one hundred and "
-    "twenty items so how many boxes of cookies did they sell"
-)
-
-SYSTEM_PREAMBLE = (
-    "You are a helpful voice assistant. The user's request may be truncated "
-    "mid-sentence; answer as well as you can.\nUser: "
-)
+# Fixed utterances, spoken-QA shaped (15-30 words), so growth steps are real.
+UTTERANCES = [
+    "I have three boxes with twelve apples in each box and I give away seven "
+    "apples how many apples do I have left in total",
+    "Can you explain to me in simple words why the sky looks blue during the "
+    "day but turns red and orange when the sun is setting",
+    "If a train leaves the station at nine in the morning traveling sixty "
+    "miles per hour how far will it have gone by half past eleven",
+    "My weekly budget is two hundred dollars and I already spent forty five "
+    "on groceries and thirty two on gas how much money is left",
+    "What is the difference between the median and the mean of a list of "
+    "numbers and when would I prefer one over the other",
+]
+WORDS_PER_STEP = 4
 
 
-@dataclass(frozen=True)
-class PrefillRecord:
-    """One /completion call in the growth sequence."""
-
-    run_id: str
-    arm: str
-    rep: int
-    commit: int
-    words: int
-    prompt_tokens_total: int
-    prompt_n: int
-    prompt_ms: float
-    predicted_n: int
-    predicted_ms: float
-    tokens_cached: int
-    slot_n_past: int
-
-    kind: str = field(default="prefill_record", init=False)
+def growth_steps(utterance: str) -> list[str]:
+    """Cumulative prefixes, WORDS_PER_STEP words at a time, ending complete."""
+    words = utterance.split()
+    steps = [" ".join(words[:n]) for n in range(WORDS_PER_STEP, len(words), WORDS_PER_STEP)]
+    steps.append(utterance)
+    return steps
 
 
-def _commits(words_per_commit: int) -> list[str]:
-    words = TRANSCRIPT.split()
-    return [" ".join(words[: i + words_per_commit]) for i in range(0, len(words), words_per_commit)]
+def build_prompt(system: str, partial: str, *, tail_free: bool, final: bool) -> str:
+    """The prompt for one incremental prefill.
+
+    tail_free grows bare turn text and appends the closing tail only on the
+    final (commit) step; templated carries the full tail on every step.
+    """
+    if tail_free and not final:
+        return f"<start_of_turn>user\n{system}\n\n{partial}"
+    return gemma_prompt(system, partial)
 
 
-def _clear_slot(client: LlamaServerClient) -> None:
-    # No cache-clear endpoint on this build: overwrite the slot's cache with an
-    # unrelated prompt so the next arm starts cold.
-    client.completion(
-        "Unrelated cache eviction text, nothing shared with the experiment.",
-        n_predict=1,
-        cache_prompt=True,
+async def run(config_path: Path, out_dir: Path, reps: int) -> None:
+    cfg = load_config(config_path)
+    run_id = new_run_id("prefix-reuse")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{run_id}.jsonl"
+
+    llama_version = subprocess.run(
+        ["/usr/local/lib/ollama/llama-server", "--version"],
+        capture_output=True,
+        text=True,
+        env={"LD_LIBRARY_PATH": "/usr/local/lib/ollama/cuda_jetpack6:/usr/local/lib/ollama"},
+    )
+    meta = build_run_meta(
+        run_id=run_id,
+        config_path=config_path,
+        notes=(
+            "Phase 1(b) KV-prefix reuse, factorial tail_free x cache_prompt. "
+            "cache_prompt is the per-request field of /completion; this build "
+            "has no --cache-prompt server flag. "
+            f"words_per_step={WORDS_PER_STEP}, n_predict=0, temperature=0."
+        ),
+        extra_software={"llama-server": (llama_version.stdout + llama_version.stderr).strip()},
     )
 
+    results: list[dict[str, Any]] = []
+    async with LlamaClient(cfg.llm.host, cfg.llm.port) as llama:
+        if not await llama.health():
+            raise SystemExit("twl-llama not serving; start src/scripts/llama_server.sh")
+        with open(out_path, "w", encoding="utf-8") as fh:
+            fh.write(to_jsonl(meta) + "\n")
+            for tail_free in (True, False):
+                for cached in (True, False):
+                    for rep in range(reps):
+                        for u_idx, utt in enumerate(UTTERANCES):
+                            # A fresh unrelated prompt between utterances clears
+                            # any usable common prefix: step 0 is a cold start.
+                            await llama.completion(
+                                gemma_prompt(cfg.llm.system_prompt, f"reset {rep} {u_idx}"),
+                                n_predict=0,
+                                cache_prompt=True,
+                            )
+                            steps = growth_steps(utt)
+                            prev_prompt_tokens = 0
+                            for step, prefix in enumerate(steps):
+                                final = step == len(steps) - 1
+                                prompt = build_prompt(
+                                    cfg.llm.system_prompt, prefix, tail_free=tail_free, final=final
+                                )
+                                t = await llama.completion(prompt, n_predict=0, cache_prompt=cached)
+                                slots = await llama.slots()
+                                rec = {
+                                    "kind": "prefix_reuse_sample",
+                                    "run_id": run_id,
+                                    "t_ns": now_ns(),
+                                    "tail_free": tail_free,
+                                    "cache_prompt": cached,
+                                    "rep": rep,
+                                    "utterance": u_idx,
+                                    "step": step,
+                                    "final": final,
+                                    "prefix_words": len(prefix.split()),
+                                    "prompt_chars": len(prompt),
+                                    "prompt_n": t.prompt_n,
+                                    "prompt_ms": t.prompt_ms,
+                                    "predicted_n": t.predicted_n,
+                                    "predicted_ms": t.predicted_ms,
+                                    "wall_ms": t.wall_ms,
+                                    "prompt_n_delta_vs_prev": t.prompt_n - prev_prompt_tokens,
+                                    "slots": slots,
+                                }
+                                prev_prompt_tokens = t.prompt_n
+                                fh.write(json.dumps(rec, sort_keys=True) + "\n")
+                                fh.flush()
+                                results.append(rec)
 
-def run(
-    base_url: Annotated[str, typer.Option()] = "http://127.0.0.1:8093",
-    words_per_commit: Annotated[int, typer.Option()] = 3,
-    reps: Annotated[int, typer.Option()] = 3,
-    out_root: Annotated[Path, typer.Option()] = REPO / "results" / "raw",
-) -> None:
-    """Run the growth sequence under both cache arms, plus invalidation probe."""
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    run_id = new_run_id("prefix-reuse")
-    run_dir = out_root / run_id
-    run_dir.mkdir(parents=True)
-
-    params = {
-        "base_url": base_url,
-        "words_per_commit": words_per_commit,
-        "reps": reps,
-        "transcript_words": len(TRANSCRIPT.split()),
-        "system_preamble": SYSTEM_PREAMBLE,
-        "note": (
-            "cache control on build b4d6c7d8f is the per-request 'cache_prompt' "
-            "field; there is no --cache-prompt server flag. Server started with "
-            "--cache-reuse 0 (exact-prefix reuse only) unless noted."
-        ),
-    }
-    params_path = run_dir / "params.yaml"
-    params_path.write_text(yaml.safe_dump(params, sort_keys=True))
-
-    client = LlamaServerClient(base_url)
-    if not client.health():
-        raise SystemExit(f"llama-server not healthy at {base_url} — start it first")
-
-    commits = _commits(words_per_commit)
-    log.info("run %s: %d commits x %d reps x 2 arms", run_id, len(commits), reps)
-
-    with open(run_dir / "log.jsonl", "w", encoding="utf-8") as fh:
-        fh.write(to_jsonl(build_run_meta(run_id=run_id, config_path=params_path)) + "\n")
-
-        for arm, cache_prompt in (("reuse", True), ("noreuse", False)):
-            for rep in range(reps):
-                _clear_slot(client)
-                for i, partial in enumerate(commits):
-                    prompt = SYSTEM_PREAMBLE + partial
-                    total = len(client.tokenize(prompt))
-                    t = client.completion(prompt, n_predict=1, cache_prompt=cache_prompt)
-                    n_past = client.slots()[0].n_past
-                    rec = PrefillRecord(
-                        run_id=run_id,
-                        arm=arm,
-                        rep=rep,
-                        commit=i,
-                        words=len(partial.split()),
-                        prompt_tokens_total=total,
-                        prompt_n=t.prompt_n,
-                        prompt_ms=t.prompt_ms,
-                        predicted_n=t.predicted_n,
-                        predicted_ms=t.predicted_ms,
-                        tokens_cached=t.tokens_cached,
-                        slot_n_past=n_past,
-                    )
-                    d = asdict(rec)
-                    d["kind"] = rec.kind
-                    fh.write(json.dumps(d, sort_keys=True) + "\n")
-                    fh.flush()
-
-        # Invalidation probe: full transcript cached, then one early word changes.
-        _clear_slot(client)
-        full = SYSTEM_PREAMBLE + commits[-1]
-        client.completion(full, n_predict=1, cache_prompt=True)
-        mutated = full.replace("bakery", "grocery", 1)
-        t = client.completion(mutated, n_predict=1, cache_prompt=True)
-        probe = {
-            "kind": "invalidation_probe",
-            "run_id": run_id,
-            "full_tokens": len(client.tokenize(full)),
-            "mutated_tokens": len(client.tokenize(mutated)),
-            "prompt_n_after_mutation": t.prompt_n,
-            "prompt_ms_after_mutation": t.prompt_ms,
-        }
-        fh.write(json.dumps(probe, sort_keys=True) + "\n")
-
-    client.close()
-    log.info("raw log: %s", run_dir / "log.jsonl")
+    # Terse console summary; the table script recomputes from the raw log.
+    for tail_free in (True, False):
+        for cached in (True, False):
+            rows = [
+                r
+                for r in results
+                if r["cache_prompt"] is cached
+                and r["tail_free"] is tail_free
+                and r["step"] > 0
+                and not r["final"]
+            ]
+            pn = [float(r["prompt_n"]) for r in rows]
+            pms = [float(r["prompt_ms"]) for r in rows]
+            print(
+                f"tail_free={tail_free} cache_prompt={cached}: n={len(rows)} "
+                f"median prompt_n={median(pn):.0f} median prompt_ms={median(pms):.1f}"
+            )
+    cold = [float(r["prompt_ms"]) for r in results if r["step"] == 0]
+    finals = [
+        float(r["prompt_n"]) for r in results if r["final"] and r["tail_free"] and r["cache_prompt"]
+    ]
+    print(f"cold step-0 prefills: n={len(cold)} median prompt_ms={median(cold):.1f}")
+    print(f"final commit (tail_free, cached) prompt_n median: {median(finals):.0f}")
+    print(f"raw log: {out_path}")
 
 
-def report(
-    run_dir: Annotated[Path, typer.Argument()],
-    out: Annotated[Path, typer.Option()] = REPO / "results" / "tables" / "prefix_reuse.json",
-) -> None:
-    """Summarize a run strictly from its raw log."""
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    rows = read_jsonl(str(run_dir / "log.jsonl"))
-    meta = rows[0]
-    recs = [r for r in rows if r.get("kind") == "prefill_record"]
-    probe = next(r for r in rows if r.get("kind") == "invalidation_probe")
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--config", type=Path, default=Path("src/configs/reactive.yaml"))
+    p.add_argument("--out-dir", type=Path, default=Path("results/raw/prefix_reuse"))
+    p.add_argument("--reps", type=int, default=3)
+    a = p.parse_args()
+    asyncio.run(run(a.config, a.out_dir, a.reps))
 
-    def arm_stats(arm: str) -> dict[str, float | int]:
-        mine = [r for r in recs if r["arm"] == arm]
-        beyond_first = [r for r in mine if r["commit"] > 0]
-        return {
-            "n_calls": len(mine),
-            "median_prompt_n_after_first_commit": median(
-                [float(r["prompt_n"]) for r in beyond_first]
-            ),
-            "median_prompt_ms_after_first_commit": median(
-                [float(r["prompt_ms"]) for r in beyond_first]
-            ),
-            "median_prompt_tokens_total_after_first_commit": median(
-                [float(r["prompt_tokens_total"]) for r in beyond_first]
-            ),
-            "total_prompt_tokens_evaluated": sum(int(r["prompt_n"]) for r in mine),
-        }
-
-    summary = {
-        "run_id": meta["run_id"],
-        "git_commit": meta["git_commit"],
-        "arms": {arm: arm_stats(arm) for arm in ("reuse", "noreuse")},
-        "invalidation_probe": probe,
-        "raw_log": str(run_dir / "log.jsonl"),
-    }
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(summary, indent=2, sort_keys=True))
-    log.info("summary written: %s", out)
-    log.info("%s", json.dumps(summary["arms"], indent=2, sort_keys=True))
-    log.info("invalidation: %s", json.dumps(probe, sort_keys=True))
-
-
-app = typer.Typer(add_completion=False)
-app.command("run")(run)
-app.command("report")(report)
 
 if __name__ == "__main__":
-    app()
+    main()

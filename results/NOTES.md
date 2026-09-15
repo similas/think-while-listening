@@ -102,3 +102,35 @@ Deviations / open items:
   - Independent spot-check of 5 IDs via the arXiv API was blocked by HTTP 429
     (rate limit after the verification pass); entries stand on the fetched
     pages from that pass.
+
+## 2026-09-15 — Phase 1(b): KV-prefix reuse verified (with a trap and a design rule)
+
+- FIRST RUN INVALID (kept: results/raw/llama-server-cpuonly-invalid.log +
+  prefix-reuse-20260915-134705): the twl launcher omitted GGML_BACKEND_PATH
+  and this Ollama-bundled llama-server silently ran CPU-ONLY ("no usable GPU
+  found, --gpu-layers option will be ignored", one line in the log). Prefill
+  was ~24 ms/token. Launcher now sets the backend .so explicitly AND refuses
+  to leave a server running if that warning appears. Same trap voice-companion
+  documented; it must be re-checked per run (provenance already captures it).
+- Reuse mechanism on this build (b4d6c7d8f): the slot reuses KV ONLY when the
+  cached tokens form a clean prefix of the new prompt. A mid-cache divergence
+  — e.g. the previous request's chat-template tail — causes FULL re-eval; the
+  build does not truncate at the divergence point (upstream llama.cpp does).
+  --cache-reuse {0,32} made no difference to this.
+- Factorial run prefix-reuse-20260915-135833-535ed6 (GPU, n_predict=0, 4-word
+  growth steps, 5 utterances × 3 reps; clocks NOT pinned — functional
+  verification, not a calibrated timing run): incremental steps,
+  median prompt_n / prompt_ms:
+    tail_free + cache_prompt=true : 9 tokens / 89.6 ms   ← reuse HOLDS
+    tail_free + cache_prompt=false: 42 (full) / 105.4 ms
+    templated + cache_prompt=true : 59 (full) / 124.8 ms ← tail kills reuse
+    templated + cache_prompt=false: 59 (full) / 124.7 ms
+    final commit (tail_free+cached): 24 tokens (last words + closing tail)
+- DESIGN RULE for the pipeline: incremental prefill grows the prompt as bare
+  turn text and appends the template tail only at commit. Also: any decode
+  appends tokens to the slot cache and breaks the clean-prefix condition for
+  the NEXT prefill — prefix-preserving speculation (Phase 3) must handle this
+  (candidates: second slot for decode, slot save/restore, or accept one
+  re-prefill after each speculation; measure then).
+- Kickoff wording note: no --cache-prompt server flag exists on this build;
+  the per-request `cache_prompt` field of /completion is what was toggled.
