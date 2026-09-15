@@ -56,5 +56,24 @@ Deviations / open items:
   OWNER: Ali.
 - texlive/latexmk install approval needed before Phase 6. OWNER: Ali.
 - tmux not installed (kickoff assumed it). OWNER: Ali (apt install tmux, small).
-- paper/refs.bib: seeded only with entries verified against arXiv/DOI; the
-  unverifiable ones are listed at the top of the file as comments.
+- paper/refs.bib: all 35 works from RESEARCH_BRIEF_v2 §1–§2 were verified
+  against fetched arXiv/DOI/proceedings pages on 2026-09-15; none were
+  unverifiable. Caveats found during verification:
+  - arXiv 2606.16106 was RETITLED between versions: v1 "Beyond CPU-GPU
+    Frequency: …" (the brief's title) → v3 "Edge-Inference Governors Need
+    Memory-Clock State" (Kang). Same paper; cite key kang2026emcgovernor.
+  - EPA's exact title is "Endpoint Anticipation for Low-Latency Spoken
+    Dialogue" (Interspeech 2026).
+  - "Liberating LLM Capabilities in Full-Duplex Speech Models" (2606.07547)
+    presents a method (Listen-Write-Speak); its abstract does not read as the
+    think-before/interleaved/think-while-listen taxonomy the brief attributes
+    to it — check the full text before citing it AS the taxonomy.
+  - ProVoice-Bench is "submitted to" (not accepted at) Interspeech 2026.
+  - iGniter's TPDS final volume/pages unconfirmed; cited as arXiv preprint.
+  - LTS-VoiceAgent's benchmark name "Pause-and-Repair" did not appear in the
+    fetched abstract ("natural speech irregularities" did) — verify the name
+    against the full text before using it in the paper.
+  - Full-Duplex-Bench also has a v1.5 extension (not cited).
+  - Independent spot-check of 5 IDs via the arXiv API was blocked by HTTP 429
+    (rate limit after the verification pass); entries stand on the fetched
+    pages from that pass.
