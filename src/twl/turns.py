@@ -60,6 +60,11 @@ class TurnManager:
     def turn_open(self) -> bool:
         return self._clock is not None
 
+    @property
+    def turn_origin_ns(self) -> int:
+        """perf_counter_ns origin of the open turn (0 when none is open)."""
+        return self._clock.origin_ns if self._clock is not None else 0
+
     def turn_age_ms(self) -> float:
         """Milliseconds since the open turn began (0.0 if none is open)."""
         return (now_ns() - self._turn_opened_ns) / 1e6 if self._clock is not None else 0.0

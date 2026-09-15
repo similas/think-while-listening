@@ -15,12 +15,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import fcntl
 import gc
 import json
 import os
 import subprocess
+import sys
 import tracemalloc
-from collections import Counter
 from pathlib import Path
 
 from twl.clock import now_ns
@@ -35,6 +36,34 @@ from twl.transport import FileFrameSource, MicFrameSource
 
 REPO = Path(__file__).resolve().parents[2]
 
+# Teardown budget. Pipecat's cancel path waits for a CancelFrame to traverse
+# the pipeline, and a PortAudio write can block indefinitely when the device is
+# contended — on 2026-09-15 a finished 64-turn run held the mic for 2h47m that
+# way, and the next run wedged against it. Results are flushed per line, so
+# after this budget the process reports and exits rather than hanging.
+TEARDOWN_TIMEOUT_S = 45.0
+
+
+def acquire_singleton(lock_path: Path) -> int:
+    """Refuse to start while another run holds the lock.
+
+    Two concurrent runs share one llama-server, one audio device and one clock
+    state; their measurements are meaningless and they deadlock each other.
+    The lock is a kernel flock, so it dies with the process — no stale
+    lockfiles to clean up.
+    """
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        os.close(fd)
+        raise SystemExit(
+            f"another run holds {lock_path}; wait for it or stop it before starting"
+        ) from None
+    os.write(fd, f"{os.getpid()}\n".encode())
+    return fd
+
 
 async def memory_diagnostics(turns: object, out_path: Path, every: int, pid: int) -> None:
     """Snapshot Python-heap growth every ``every`` turns (diagnostic runs only).
@@ -44,9 +73,17 @@ async def memory_diagnostics(turns: object, out_path: Path, every: int, pid: int
     CTranslate2 / onnxruntime / PortAudio (which it cannot see, and which then
     show up as RSS-minus-traced).
     """
+    import ctypes
+
     from twl.telemetry import read_proc_mem_mb
 
-    tracemalloc.start(15)
+    libc = ctypes.CDLL("libc.so.6")
+
+    # One frame per allocation and no gc census: a 15-frame snapshot plus a
+    # type census over ~200k objects blocked the event loop for 6 s and stalled
+    # a run (2026-09-15). The question this answers — Python heap vs native —
+    # needs only the traced total and the top lines.
+    tracemalloc.start(1)
     last = tracemalloc.take_snapshot()
     seen = 0
     with open(out_path, "w", encoding="utf-8") as fh:
@@ -56,17 +93,23 @@ async def memory_diagnostics(turns: object, out_path: Path, every: int, pid: int
             if done < seen + every:
                 continue
             seen = done
-            snap = tracemalloc.take_snapshot()
+            snap = await asyncio.to_thread(tracemalloc.take_snapshot)
             traced_mb = tracemalloc.get_traced_memory()[0] / 1e6
             rss_mb, _swap = read_proc_mem_mb(pid)
-            types = Counter(type(o).__name__ for o in gc.get_objects())
+            # Does glibc give it back? Per-thread arenas hold freed blocks, and
+            # this pipeline runs many short-lived worker threads. If RSS drops
+            # after a trim, the creep is fragmentation, not a leak.
+            gc.collect()
+            libc.malloc_trim(0)
+            rss_after_mb, _ = read_proc_mem_mb(pid)
             rec = {
                 "turn": done,
                 "rss_mb": round(rss_mb, 1),
                 "traced_mb": round(traced_mb, 1),
                 "untraced_mb": round(rss_mb - traced_mb, 1),
-                "gc_objects": sum(types.values()),
-                "top_types": types.most_common(8),
+                "rss_after_trim_mb": round(rss_after_mb, 1),
+                "trim_freed_mb": round(rss_mb - rss_after_mb, 1),
+                "gc_objects": len(gc.get_objects()),
                 "top_growth": [
                     {
                         "file": f"{st.traceback[0].filename}:{st.traceback[0].lineno}",
@@ -126,6 +169,7 @@ async def run(args: argparse.Namespace) -> None:
     run_dir = Path(cfg.results_dir) / "reactive" / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
+    acquire_singleton(Path(cfg.results_dir) / ".run.lock")
     subprocess.run([str(REPO / "src/scripts/audio_env.sh")], check=True)
     baseline = ensure_baseline(Path(cfg.results_dir) / "clocks.baseline")
     if args.clocks:
@@ -195,6 +239,7 @@ async def run(args: argparse.Namespace) -> None:
             )
 
         # Poller-lifetime handle; closed in the finally below.
+        teardown_timed_out = False
         slots_fh = open(run_dir / "slots.jsonl", "w", encoding="utf-8")  # noqa: SIM115
 
         async def poll_slots() -> None:
@@ -254,11 +299,17 @@ async def run(args: argparse.Namespace) -> None:
             with contextlib.suppress(asyncio.CancelledError):
                 await slots_task
             slots_fh.close()
-            await built.task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await runner_task
+            # Close the log FIRST: teardown may hang, and the results must be
+            # complete on disk before anything that can block is attempted.
             built.turns.close()
             sampler.stop()
+            try:
+                await asyncio.wait_for(built.task.cancel(), timeout=TEARDOWN_TIMEOUT_S)
+                await asyncio.wait_for(asyncio.shield(runner_task), timeout=TEARDOWN_TIMEOUT_S)
+            except (TimeoutError, asyncio.TimeoutError):
+                teardown_timed_out = True
+            except asyncio.CancelledError:
+                pass
 
         if isinstance(source, FileFrameSource):
             (run_dir / "playback_timeline.json").write_text(json.dumps(source.timeline))
@@ -272,6 +323,14 @@ async def run(args: argparse.Namespace) -> None:
         )
         if sampler.samples_written == 0:
             raise SystemExit("telemetry wrote zero samples — run is not usable")
+        if teardown_timed_out:
+            # Everything measured is already on disk; leaving the process alive
+            # would hold the audio device against the next run.
+            print(f"teardown exceeded {TEARDOWN_TIMEOUT_S:.0f}s — exiting hard", file=sys.stderr)
+            restore(baseline)
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os._exit(0)
     finally:
         if args.clocks:
             restore(baseline)

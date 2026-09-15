@@ -66,6 +66,7 @@ class StageObserver(BaseObserver):
         self._deferred_close: tuple[int, int] | None = None
         self.closes_deferred = 0
         self.closes_timed_out = 0
+        self.handler_errors = 0
 
     def _first_time(self, frame: Frame) -> bool:
         fid = getattr(frame, "id", None) or id(frame)
@@ -77,6 +78,16 @@ class StageObserver(BaseObserver):
         return True
 
     async def on_push_frame(self, data: FramePushed) -> None:
+        # An exception here kills pipecat's observer task and every later frame
+        # goes unobserved — turns then never close and the run stalls (observed
+        # 2026-09-15). Failures are counted and the session continues.
+        try:
+            await self._on_push_frame(data)
+        except Exception:
+            self.handler_errors += 1
+            log.exception("observer handler failed")
+
+    async def _on_push_frame(self, data: FramePushed) -> None:
         frame = data.frame
         at = now_ns()
         dst_is_output = "OutputTransport" in type(data.destination).__name__
@@ -142,7 +153,7 @@ class StageObserver(BaseObserver):
         """
         while True:
             await asyncio.sleep(0.1)
-            if not self._turns.turn_open:
+            if not self._turns.turn_open:  # noqa: SIM108
                 continue
             turn = self._turns.turn
             age = self._turns.turn_age_ms()
