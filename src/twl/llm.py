@@ -18,6 +18,7 @@ Invariants:
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from types import TracebackType
 from typing import Any
@@ -145,6 +146,7 @@ class LlamaClient:
         max_tokens: int,
         temperature: float,
         on_first_token_ns: list[int] | None = None,
+        on_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> StreamedChat:
         """OpenAI-compatible streamed chat; measures time to first content delta.
 
@@ -155,6 +157,8 @@ class LlamaClient:
             on_first_token_ns: optional 1-slot list; the raw ``now_ns`` reading
                 at the first delta is appended so a caller's TurnClock can mark
                 it with no extra latency.
+            on_delta: awaited with each content delta as it arrives (streaming
+                consumers); timing marks are taken before this callback runs.
         """
         payload = {
             "messages": messages,
@@ -183,6 +187,8 @@ class LlamaClient:
                         if on_first_token_ns is not None:
                             on_first_token_ns.append(first_ns)
                     chunks.append(text)
+                    if on_delta is not None:
+                        await on_delta(text)
         end_ns = now_ns()
         return StreamedChat(
             content="".join(chunks),

@@ -36,6 +36,12 @@ class AudioConfig:
     sample_rate: int = 16000
     channels: int = 1
     input_device_substr: str = "reSpeaker"
+    # PortAudio exposes PipeWire nodes only through the 'pulse'/'pipewire'
+    # plugin devices; a null sink is reached by opening 'pulse' with PULSE_SINK
+    # set in the environment (scoped to this process, so system defaults and
+    # other players are untouched).
+    output_device_substr: str = "pulse"
+    pulse_sink: str = "twl_null"
 
 
 @dataclass(frozen=True)

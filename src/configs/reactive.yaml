@@ -7,6 +7,11 @@ audio:
   sample_rate: 16000
   channels: 1
   input_device_substr: "reSpeaker"
+  # Playback goes to the PortAudio 'pulse' device; PULSE_SINK picks the node.
+  # Headless default twl_null (created by run scripts); set pulse_sink to
+  # "alsa_output.usb-Jieli..." to hear replies on the room speaker.
+  output_device_substr: "pulse"
+  pulse_sink: "twl_null"
 
 vad:
   confidence: 0.7

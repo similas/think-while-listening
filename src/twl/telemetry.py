@@ -181,18 +181,27 @@ def read_mem_available_mb(path: str = "/proc/meminfo") -> float:
     raise ValueError("MemAvailable not found in /proc/meminfo")
 
 
-def read_rss_mb(pid: int) -> float:
-    """VmRSS of one process in MB.
+def read_proc_mem_mb(pid: int) -> tuple[float, float]:
+    """(VmRSS, VmSwap) of one process in MB.
+
+    VmSwap > 0 for a pipeline process is the strongest per-run swap signal:
+    it attributes the activity to US, not to ambient desktop churn.
 
     Raises:
         ProcessLookupError: if the pid is gone — the caller decides whether a
             vanished process invalidates the run.
     """
+    rss: float | None = None
+    swap: float | None = None
     try:
         with open(f"/proc/{pid}/status", encoding="utf-8") as fh:
             for line in fh:
                 if line.startswith("VmRSS:"):
-                    return int(line.split()[1]) / 1024.0
+                    rss = int(line.split()[1]) / 1024.0
+                elif line.startswith("VmSwap:"):
+                    swap = int(line.split()[1]) / 1024.0
     except FileNotFoundError as e:
         raise ProcessLookupError(f"pid {pid} has no /proc entry") from e
-    raise ValueError(f"VmRSS not found for pid {pid}")
+    if rss is None or swap is None:
+        raise ValueError(f"VmRSS/VmSwap not found for pid {pid}")
+    return rss, swap

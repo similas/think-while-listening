@@ -21,3 +21,10 @@ mypy_path = "src"
 testpaths = ["src/tests"]
 pythonpath = ["src"]
 addopts = "--cov=twl --cov-report=term-missing"
+
+# Pipecat 0.0.108 ships no py.typed marker; its API is consumed at the module
+# boundary only. Errors inside our own code remain fully strict.
+[[tool.mypy.overrides]]
+module = ["pipecat.*"]
+ignore_missing_imports = true
+follow_untyped_imports = true
