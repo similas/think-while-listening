@@ -65,7 +65,9 @@ def acquire_singleton(lock_path: Path) -> int:
     return fd
 
 
-async def memory_diagnostics(turns: object, out_path: Path, every: int, pid: int) -> None:
+async def memory_diagnostics(
+    turns: object, out_path: Path, every: int, pid: int, *, trace: bool
+) -> None:
     """Snapshot Python-heap growth every ``every`` turns (diagnostic runs only).
 
     Answers the question RSS alone cannot: is the creep Python objects (which
@@ -83,12 +85,33 @@ async def memory_diagnostics(turns: object, out_path: Path, every: int, pid: int
 
     libc = ctypes.CDLL("libc.so.6")
 
+    def smaps_rollup() -> dict[str, float]:
+        """Anonymous vs file-backed RSS in MB.
+
+        File-backed growth is mmap'd model data being touched: reclaimable,
+        not allocator pressure. Anonymous growth is the allocator's. RSS alone
+        cannot tell them apart.
+        """
+        out = {"rss": 0.0, "anon": 0.0}
+        try:
+            with open(f"/proc/{pid}/smaps_rollup", encoding="utf-8") as fh:
+                for line in fh:
+                    if line.startswith("Rss:"):
+                        out["rss"] = int(line.split()[1]) / 1024.0
+                    elif line.startswith("Anonymous:"):
+                        out["anon"] = int(line.split()[1]) / 1024.0
+        except OSError:
+            return out
+        out["file_backed"] = out["rss"] - out["anon"]
+        return {k: round(v, 1) for k, v in out.items()}
+
     # One frame per allocation and no gc census: a 15-frame snapshot plus a
     # type census over ~200k objects blocked the event loop for 6 s and stalled
     # a run (2026-09-15). The question this answers — Python heap vs native —
     # needs only the traced total and the top lines.
-    tracemalloc.start(1)
-    last = tracemalloc.take_snapshot()
+    if trace:
+        tracemalloc.start(1)
+    last = tracemalloc.take_snapshot() if trace else None
     seen = 0
     with open(out_path, "w", encoding="utf-8") as fh:
         while True:
@@ -97,8 +120,8 @@ async def memory_diagnostics(turns: object, out_path: Path, every: int, pid: int
             if done < seen + every:
                 continue
             seen = done
-            snap = await asyncio.to_thread(tracemalloc.take_snapshot)
-            traced_mb = tracemalloc.get_traced_memory()[0] / 1e6
+            snap = await asyncio.to_thread(tracemalloc.take_snapshot) if trace else None
+            traced_mb = tracemalloc.get_traced_memory()[0] / 1e6 if trace else -1.0
             rss_mb, _swap = read_proc_mem_mb(pid)
             # Does glibc give it back? Per-thread arenas hold freed blocks, and
             # this pipeline runs many short-lived worker threads. If RSS drops
@@ -114,6 +137,7 @@ async def memory_diagnostics(turns: object, out_path: Path, every: int, pid: int
                 "rss_after_trim_mb": round(rss_after_mb, 1),
                 "trim_freed_mb": round(rss_mb - rss_after_mb, 1),
                 "gc_objects": len(gc.get_objects()),
+                "smaps": smaps_rollup(),
                 "top_growth": [
                     {
                         "file": f"{st.traceback[0].filename}:{st.traceback[0].lineno}",
