@@ -26,7 +26,9 @@ cold step-0 prefills: n=60, median 115.5 ms
 | reactive-20260915-143218-550bb9 | 16 | 0 | 1812 | 3349 | 3466 | 4151 | 3995 | 3996 | 3250 [2975,3560] | 3948 |
 | reactive-20260915-153603-38ff56 | 19 | 0 | 1782 | 3206 | 3308 | 4073 | 3968 | 3968 | 3046 [2966,3228] | 3689 |
 | reactive-20260915-163005-37a00e | 64 | 0 | 1821 | 3278 | 3389 | 4113 | 3871 | 3872 | 3096 [2936,3291] | 3816 |
-| reactive-20260915-193040-073832 | 30 | 1 | 1824 | 3360 | 3546 | 4299 | 4094 | 4095 | 3333 [3166,3547] | 4065 |
+| reactive-20260915-193040-073832 | 32 | 1 | 1824 | 3459 | 3591 | 4343 | 4149 | 4150 | 3449 [3180,3585] | 4177 |
+| reactive-20260915-193543-8e2e3c | 0 | 0 | — | — | — | — | — | — | — | — |
+| reactive-20260915-193806-a0c23c | 128 | 0 | 1823 | 4157 | 4257 | 4873 | 4726 | 4727 | 3560 [3464,3704] | 4466 |
 
 ## Playback-harness validation — validate-playback-20260915-153052-3a4a4b
 
@@ -42,14 +44,14 @@ turns: file=8 file2=8 mic=8; transcript mismatches (mic vs file): 0
 
 n=48, median 1329 ms [1303, 1350], p95 1437 ms
 
-## Memory over turns — reactive-20260915-163005-37a00e (64 turns)
+## Memory over turns — reactive-20260915-193806-a0c23c (128 turns)
 
 | metric | turn 1 | mid | last | max |
 |---|---|---|---|---|
-| agent RSS MB | 583 | 671 | 707 | 707 |
-| llama-server RSS MB | 1622 | 1631 | 1642 | 1642 |
-| MemAvailable MB | 2872 | 2824 | 2782 | 2780 (min) |
-| swap total MB | 141.0 | 141.0 | 141.0 | 141.0 |
+| agent RSS MB | 610 | 665 | 686 | 698 |
+| llama-server RSS MB | 798 | 827 | 846 | 846 |
+| MemAvailable MB | 2702 | 2653 | 2559 | 2547 (min) |
+| swap total MB | 158.2 | 158.2 | 157.8 | 158.2 |
 
-invalid turns: 0 / 64
+invalid turns: 0 / 128
 

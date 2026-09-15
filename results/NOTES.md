@@ -243,3 +243,63 @@ true BotStoppedSpeaking timestamp (the deferred one), but each turn was held
 ~850 ms longer than necessary. The close now fires immediately when that
 frame arrives after all audio has been queued (the final drain), keeping the
 settle window only as a fallback.
+
+## 2026-09-15 — Phase 1 acceptance: 128 turns, and what the memory actually was
+
+Acceptance run reactive-20260915-193806-a0c23c: 128 consecutive turns (16
+synthesized turns x 8), clocks pinned, file playback through the mic code
+path, memory diagnostics every 8 turns. Result: **128/128 turns valid, 0
+timeouts, 0 orphan marks, 0 dropped transcripts**, and no swap activity
+attributable to the pipeline (no pipeline process ever held pages in swap; no
+NVMe swapfile growth; system zram moved 141 -> 158 MB of ambient desktop
+churn, below the per-turn threshold).
+
+MEMORY — the creep was allocator retention, not a leak. Per-8-turn probe:
+- RSS oscillates 641-760 MB with NO trend over 128 turns (turn 8: 727 MB,
+  turn 120: 698 MB).
+- `malloc_trim(0)` returns 67-141 MB EVERY time it is called: the memory is
+  glibc arena free-blocks held by this pipeline's many short-lived worker
+  threads, reclaimable on demand.
+- Post-trim RSS is 560-677 MB, also trendless.
+- File-backed RSS constant at 75.6 MB (mmap'd model pages); anonymous RSS
+  489-612 MB, oscillating, no trend.
+- gc object count flat at ~212 000 for the whole run; traced Python heap in
+  the earlier tracemalloc run grew 5.2 -> 7.6 MB over 24 turns (+0.1 MB/turn).
+So: bounded, cause identified, no fix required. The +123 MB "creep" seen over
+64 turns was the arena high-water mark rising during cache fill, not growth.
+llama-server rose 798 -> 846 MB over the run (+0.37 MB/turn, same rate as the
+64-turn run) with its slot stable at n_ctx 2048.
+
+THERMALS / POWER (8159 tegrastats samples at 10 Hz): tj rose 67.5 -> 71.2 C
+(max 73.0 C) across the 22-minute run and CPUs held 1728 MHz throughout —
+**no thermal throttling at this workload**, which is a datum for Phase 2's
+cold-vs-soaked sweep (a heavier or longer soak will be needed to induce it).
+VDD_IN median ~9.4 W under load against the ~4.6 W idle baseline measured in
+Phase 0, i.e. ~4.8 W attributable to the pipeline.
+
+MEASUREMENT LESSON — the memory probe perturbs the latency beside it.
+Median STT commit latency and TTFA, by whether diagnostics ran:
+  diag off: STT 1668 / 1744 / 1875 ms, TTFA 3046 / 3096 / 3250 ms (n=19/64/16)
+  diag on : STT 1908 / 2174 ms,        TTFA 3400 / 3560 ms        (n=32/128)
+gc.collect(), malloc_trim() and a 212k-object census on the event-loop thread
+inflate STT by 15-25% and TTFA by 10-15%. Therefore: **the REACTIVE latency
+baseline is the 64-turn diagnostics-off run (STT 1744 ms, TTFA 3096 ms), and
+the 128-turn run is stability/memory evidence only.** Latency runs and memory
+runs must stay separate; Phase 2 onward will never enable --diag-memory on a
+run whose latencies are reported.
+
+Within the acceptance run, latency is flat across quarters (TTFA 3608 / 3581 /
+3464 / 3669 ms; STT 2193 / 2262 / 2087 / 2236 ms; LLM TTFT 137 / 136 / 136 /
+136 ms), so the pipeline does not degrade with session length.
+
+PHASE 1 ACCEPTANCE vs the kickoff criteria:
+- ">= 100 turns ... with bounded memory and zero swap": MET (128 turns).
+- "headless": NOT MET — the run had the desktop session active, because
+  switching to multi-user.target needs sudo beyond the twl sudoers scope.
+  Desktop-active is the harsher memory condition, and Phase 2 sweeps
+  headless-vs-desktop as an explicit factor. To repeat strictly headless:
+  `sudo systemctl isolate multi-user.target` (ends the GUI session).
+  OWNER: Ali.
+- "all per-stage latencies logged": MET (stage events + per-turn records).
+- "unit, integration (mocked, 5 s synthetic turn), smoke (real models) tests
+  pass in < 5 min": MET — 29 tests, 23 s.
