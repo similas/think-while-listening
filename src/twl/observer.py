@@ -122,7 +122,7 @@ class StageObserver(BaseObserver):
             # sentences, so it only ends the turn once generation is done.
             if not (self._first_time(frame) and self._turns.has_mark("llm_done")):
                 return
-            if not self._tts.pending:
+            if not self._tts.pending and at > self._last_audio_out_ns:
                 self._turns.close_if_current(self._turns.turn, at_ns=at)
             else:
                 # The output transport can drain the final chunk while the TTS
@@ -147,11 +147,16 @@ class StageObserver(BaseObserver):
             turn = self._turns.turn
             age = self._turns.turn_age_ms()
             quiet_ms = (now_ns() - self._last_audio_out_ns) / 1e6
+            deferred_after_audio = (
+                self._deferred_close is not None
+                and self._deferred_close[0] == turn
+                and self._deferred_close[1] > self._last_audio_out_ns
+            )
             if (
                 self._turns.has_mark("llm_done")
                 and not self._tts.pending
                 and self._last_audio_out_ns > 0
-                and quiet_ms > SETTLE_MS
+                and (deferred_after_audio or quiet_ms > SETTLE_MS)
             ):
                 at = (
                     self._deferred_close[1]

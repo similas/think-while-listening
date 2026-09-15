@@ -15,9 +15,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import gc
 import json
 import os
 import subprocess
+import tracemalloc
+from collections import Counter
 from pathlib import Path
 
 from twl.clock import now_ns
@@ -31,6 +34,51 @@ from twl.telemetry import TegrastatsSampler
 from twl.transport import FileFrameSource, MicFrameSource
 
 REPO = Path(__file__).resolve().parents[2]
+
+
+async def memory_diagnostics(turns: object, out_path: Path, every: int, pid: int) -> None:
+    """Snapshot Python-heap growth every ``every`` turns (diagnostic runs only).
+
+    Answers the question RSS alone cannot: is the creep Python objects (which
+    tracemalloc attributes to a line of code) or native allocations by
+    CTranslate2 / onnxruntime / PortAudio (which it cannot see, and which then
+    show up as RSS-minus-traced).
+    """
+    from twl.telemetry import read_proc_mem_mb
+
+    tracemalloc.start(15)
+    last = tracemalloc.take_snapshot()
+    seen = 0
+    with open(out_path, "w", encoding="utf-8") as fh:
+        while True:
+            await asyncio.sleep(1.0)
+            done = turns.turns_written  # type: ignore[attr-defined]
+            if done < seen + every:
+                continue
+            seen = done
+            snap = tracemalloc.take_snapshot()
+            traced_mb = tracemalloc.get_traced_memory()[0] / 1e6
+            rss_mb, _swap = read_proc_mem_mb(pid)
+            types = Counter(type(o).__name__ for o in gc.get_objects())
+            rec = {
+                "turn": done,
+                "rss_mb": round(rss_mb, 1),
+                "traced_mb": round(traced_mb, 1),
+                "untraced_mb": round(rss_mb - traced_mb, 1),
+                "gc_objects": sum(types.values()),
+                "top_types": types.most_common(8),
+                "top_growth": [
+                    {
+                        "file": f"{st.traceback[0].filename}:{st.traceback[0].lineno}",
+                        "size_diff_kb": round(st.size_diff / 1024, 1),
+                        "count_diff": st.count_diff,
+                    }
+                    for st in snap.compare_to(last, "lineno")[:8]
+                ],
+            }
+            fh.write(json.dumps(rec, sort_keys=True) + "\n")
+            fh.flush()
+            last = snap
 
 
 def llama_pid() -> int:
@@ -166,6 +214,15 @@ async def run(args: argparse.Namespace) -> None:
 
         slots_task = asyncio.create_task(poll_slots())
         watchdog_task = asyncio.create_task(built.observer.watchdog())
+        diag_task = (
+            asyncio.create_task(
+                memory_diagnostics(
+                    built.turns, run_dir / "memory_diag.jsonl", args.diag_every, os.getpid()
+                )
+            )
+            if args.diag_memory
+            else None
+        )
         runner_task = asyncio.create_task(built.runner.run(built.task))
         try:
             if isinstance(source, FileFrameSource):
@@ -186,6 +243,10 @@ async def run(args: argparse.Namespace) -> None:
             else:
                 await asyncio.sleep(args.live_seconds)
         finally:
+            if diag_task is not None:
+                diag_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await diag_task
             watchdog_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await watchdog_task
@@ -225,6 +286,8 @@ def main() -> None:
     p.add_argument("--live", action="store_true", help="live mic instead of files")
     p.add_argument("--live-seconds", type=float, default=300.0)
     p.add_argument("--clocks", action="store_true", help="jetson_clocks for the run")
+    p.add_argument("--diag-memory", action="store_true", help="tracemalloc/gc snapshots")
+    p.add_argument("--diag-every", type=int, default=8, help="turns between snapshots")
     p.add_argument("--notes", default="")
     a = p.parse_args()
     asyncio.run(run(a))
