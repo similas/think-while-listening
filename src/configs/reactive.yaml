@@ -1,0 +1,46 @@
+# REACTIVE baseline configuration — Phase 1.
+# Thread/core partition mirrors the measured voice-companion split:
+# llama-server on cores 0-2 (3 threads), STT + agent on cores 3-5.
+# Every value here is recorded into the run via the config hash.
+
+audio:
+  sample_rate: 16000
+  channels: 1
+  input_device_substr: "reSpeaker"
+
+vad:
+  confidence: 0.7
+  start_secs: 0.2
+  stop_secs: 0.8
+  min_volume: 0.6
+
+stt:
+  model: "base"
+  compute_type: "int8"
+  language: "en"
+  cpu_threads: 3
+  cpu_affinity: [3, 4, 5]
+  partial_interval_ms: 200
+
+llm:
+  host: "127.0.0.1"
+  port: 8093
+  model_path: "/home/ali/voice-companion/models/gemma-4-E2B-q4_0.gguf"
+  ctx_size: 2048
+  threads: 3
+  cpu_affinity: [0, 1, 2]
+  n_gpu_layers: 99
+  parallel: 1
+  memory_max_mb: 3500
+  system_prompt: "You are a concise voice assistant. Answer in one or two short sentences."
+  max_tokens: 150
+  temperature: 0.5
+
+tts:
+  voice_path: "/home/ali/voice-companion/models/en_US-lessac-medium.onnx"
+  cpu_threads: 2
+
+telemetry:
+  interval_ms: 100
+
+results_dir: "results/raw"
