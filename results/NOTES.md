@@ -50,8 +50,8 @@ Deviations / open items:
 
 - CLAUDE.md as provided ended at the §4 heading (layout list absent); scaffold
   used an inferred layout. RESOLVED same day: full §4 received; tests moved to
-  src/tests, src/scripts and results/tables added. Remaining §4 delta: LICENSE
-  file required at root — license choice is Ali's. OWNER: Ali.
+  src/tests, src/scripts and results/tables added. LICENSE: DECIDED (Ali,
+  2026-09-15) MIT, © 2026 Ali Salimi Sadr — added.
 - jetson_clocks needs root. DECIDED (Ali, 2026-09-15): passwordless sudoers
   entry /etc/sudoers.d/twl scoped to exact commands (jetson_clocks,
   jetson_clocks --show/--store/--restore, nvpmodel -q), no wildcards, no boot
@@ -68,10 +68,14 @@ Deviations / open items:
   where latexmk is absent.
 - tmux 3.2a: installed by Ali 2026-09-15.
 - CLAUDE.md §5 says "an 8 GB swap file on NVMe exists as an OOM cushion".
-  MEASURED TODAY: swapon shows only 6× zram 635 MiB (3.7 GiB total); no NVMe
-  swapfile in /etc/fstab or on disk. Proposed brief edit: either create the
-  swapfile (Ali decision) or correct §5 to "zram only". Until resolved, the
-  "swap activity ⇒ run invalid" rule applies to zram, which is stricter.
+  MEASURED TODAY: swapon showed only 6× zram 635 MiB (3.7 GiB total); no NVMe
+  swapfile. DECIDED (Ali, 2026-09-15): create /swapfile 8 GB on NVMe as a
+  last-resort OOM cushion (vm.swappiness=10, fstab entry), keep zram as-is.
+  A run touching EITHER swap is still invalid; the swapfile exists so a spike
+  produces an invalid logged run instead of a frozen board. Requirement for
+  Phase 1 telemetry: log zram and /swapfile activity SEPARATELY (per-device
+  from /proc/swaps) so an invalid run traces to which one. Install needs sudo
+  → PENDING Ali's paste.
 - Default boot target is graphical.target today; CLAUDE.md §5 prefers headless.
   Phase 2 sweeps headless vs desktop explicitly, so the default stays until the
   experiments need otherwise; recorded per run regardless.
