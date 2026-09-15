@@ -74,8 +74,10 @@ Deviations / open items:
   A run touching EITHER swap is still invalid; the swapfile exists so a spike
   produces an invalid logged run instead of a frozen board. Requirement for
   Phase 1 telemetry: log zram and /swapfile activity SEPARATELY (per-device
-  from /proc/swaps) so an invalid run traces to which one. Install needs sudo
-  → PENDING Ali's paste.
+  from /proc/swaps) so an invalid run traces to which one. INSTALLED by Ali
+  2026-09-15, verified: /swapfile 8 GiB prio -2 (zram prio 5, so zram drains
+  first), single fstab entry, vm.swappiness=10 active. CLAUDE.md §5 is now
+  factually correct as written. Phase 0 has no remaining open items.
 - Default boot target is graphical.target today; CLAUDE.md §5 prefers headless.
   Phase 2 sweeps headless vs desktop explicitly, so the default stays until the
   experiments need otherwise; recorded per run regardless.
