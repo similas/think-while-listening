@@ -1,0 +1,23 @@
+[project]
+name = "twl"
+version = "0.0.1"
+description = "Resource-budgeted think-while-listening for on-device cascaded voice agents"
+requires-python = ">=3.10"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+strict = true
+files = ["src/twl"]
+mypy_path = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "--cov=twl --cov-report=term-missing"

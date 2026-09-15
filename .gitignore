@@ -1,0 +1,48 @@
+# Raw logs, recorded audio, and anything containing a real voice stay local
+# (CLAUDE.md §1). The directory itself is kept so paths in configs resolve.
+results/raw/*
+!results/raw/.gitkeep
+
+# Model weights and audio are never committed
+*.gguf
+*.onnx
+*.pt
+*.ckpt
+*.safetensors
+*.wav
+*.flac
+*.mp3
+*.ogg
+*.opus
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# LaTeX build files (sources are committed; artifacts are rebuilt by make)
+paper/*.pdf
+thesis/*.pdf
+presentation/*.pdf
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.lot
+*.nav
+*.out
+*.snm
+*.synctex.gz
+*.toc
+*.vrb
+paper/*.log
+thesis/*.log
+presentation/*.log
