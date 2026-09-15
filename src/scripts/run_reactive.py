@@ -72,6 +72,10 @@ async def memory_diagnostics(turns: object, out_path: Path, every: int, pid: int
     tracemalloc attributes to a line of code) or native allocations by
     CTranslate2 / onnxruntime / PortAudio (which it cannot see, and which then
     show up as RSS-minus-traced).
+
+    ``trace`` enables tracemalloc, which perturbs allocation timing — leave it
+    off on runs whose latencies are being measured; the smaps split and RSS
+    are free.
     """
     import ctypes
 
@@ -116,7 +120,7 @@ async def memory_diagnostics(turns: object, out_path: Path, every: int, pid: int
                         "size_diff_kb": round(st.size_diff / 1024, 1),
                         "count_diff": st.count_diff,
                     }
-                    for st in snap.compare_to(last, "lineno")[:8]
+                    for st in (snap.compare_to(last, "lineno")[:8] if snap and last else [])
                 ],
             }
             fh.write(json.dumps(rec, sort_keys=True) + "\n")
@@ -165,11 +169,10 @@ async def run(args: argparse.Namespace) -> None:
     os.sched_setaffinity(0, set(cfg.stt.cpu_affinity))
     os.environ["PULSE_SINK"] = cfg.audio.pulse_sink
 
+    acquire_singleton(Path(cfg.results_dir) / ".run.lock")
     run_id = new_run_id("reactive")
     run_dir = Path(cfg.results_dir) / "reactive" / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-
-    acquire_singleton(Path(cfg.results_dir) / ".run.lock")
     subprocess.run([str(REPO / "src/scripts/audio_env.sh")], check=True)
     baseline = ensure_baseline(Path(cfg.results_dir) / "clocks.baseline")
     if args.clocks:
@@ -262,7 +265,11 @@ async def run(args: argparse.Namespace) -> None:
         diag_task = (
             asyncio.create_task(
                 memory_diagnostics(
-                    built.turns, run_dir / "memory_diag.jsonl", args.diag_every, os.getpid()
+                    built.turns,
+                    run_dir / "memory_diag.jsonl",
+                    args.diag_every,
+                    os.getpid(),
+                    trace=args.diag_trace,
                 )
             )
             if args.diag_memory
@@ -345,7 +352,8 @@ def main() -> None:
     p.add_argument("--live", action="store_true", help="live mic instead of files")
     p.add_argument("--live-seconds", type=float, default=300.0)
     p.add_argument("--clocks", action="store_true", help="jetson_clocks for the run")
-    p.add_argument("--diag-memory", action="store_true", help="tracemalloc/gc snapshots")
+    p.add_argument("--diag-memory", action="store_true", help="periodic memory snapshots")
+    p.add_argument("--diag-trace", action="store_true", help="add tracemalloc (perturbs timing)")
     p.add_argument("--diag-every", type=int, default=8, help="turns between snapshots")
     p.add_argument("--notes", default="")
     a = p.parse_args()
