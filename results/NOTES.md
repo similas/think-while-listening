@@ -57,13 +57,16 @@ Deviations / open items:
   jetson_clocks --show/--store/--restore, nvpmodel -q), no wildcards, no boot
   unit. Every experiment script sets clocks at start, records
   `sudo jetson_clocks --show` + `nvpmodel -q` into the run log, and restores
-  clocks at the end. Sudoers file itself must be installed by Ali (Claude has
-  no sudo password). PENDING install.
+  clocks at the end. INSTALLED by Ali 2026-09-15 and verified: `sudo -n
+  jetson_clocks --show` and `sudo -n nvpmodel -q` both work non-interactively.
+  Note: the bare `/usr/bin/jetson_clocks` sudoers entry permits any arguments
+  to that binary (sudoers semantics) — needed for --store/--restore <file>;
+  nvpmodel is restricted to exactly `-q`.
 - LaTeX. DECIDED (Ali, 2026-09-15): texlive is never installed on the Jetson;
   paper/thesis/presentation are LaTeX sources only, compiled on Ali's Mac or
   Overleaf. Makefile carries LATEX_HOST and the artifact targets refuse to run
   where latexmk is absent.
-- tmux: approved for install now; needs sudo apt. PENDING install by Ali.
+- tmux 3.2a: installed by Ali 2026-09-15.
 - CLAUDE.md §5 says "an 8 GB swap file on NVMe exists as an OOM cushion".
   MEASURED TODAY: swapon shows only 6× zram 635 MiB (3.7 GiB total); no NVMe
   swapfile in /etc/fstab or on disk. Proposed brief edit: either create the
