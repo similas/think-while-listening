@@ -95,6 +95,8 @@ async def run(args: argparse.Namespace) -> None:
     if args.clocks:
         set_clocks(run_dir)
     try:
+        pid = llama_pid()
+        llama_cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
         meta = build_run_meta(
             run_id=run_id,
             config_path=args.config,
@@ -103,8 +105,8 @@ async def run(args: argparse.Namespace) -> None:
                 f"agent affinity={sorted(cfg.stt.cpu_affinity)}; "
                 f"clocks={'set' if args.clocks else 'as-found'}; {args.notes}"
             ),
+            extra_software={"llama-server-cmdline": llama_cmdline},
         )
-        pid = llama_pid()
 
         built_box: list[object] = []  # filled after build; the gate closes over it
 
@@ -156,6 +158,25 @@ async def run(args: argparse.Namespace) -> None:
                 [{"role": "user", "content": "Say ok."}], max_tokens=4, temperature=0.0
             )
 
+        # Poller-lifetime handle; closed in the finally below.
+        slots_fh = open(run_dir / "slots.jsonl", "w", encoding="utf-8")  # noqa: SIM115
+
+        async def poll_slots() -> None:
+            from twl.llm import LlamaClient as _LC
+
+            async with _LC(cfg.llm.host, cfg.llm.port) as lc:
+                while True:
+                    try:
+                        state = await lc.slots()
+                    except Exception:
+                        state = []
+                    slots_fh.write(
+                        json.dumps({"t_ns": now_ns(), "slots": state}, sort_keys=True) + "\n"
+                    )
+                    slots_fh.flush()
+                    await asyncio.sleep(2.0)
+
+        slots_task = asyncio.create_task(poll_slots())
         runner_task = asyncio.create_task(built.runner.run(built.task))
         try:
             if isinstance(source, FileFrameSource):
@@ -168,6 +189,10 @@ async def run(args: argparse.Namespace) -> None:
             else:
                 await asyncio.sleep(args.live_seconds)
         finally:
+            slots_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await slots_task
+            slots_fh.close()
             await built.task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await runner_task

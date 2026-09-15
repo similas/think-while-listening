@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import wave
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Protocol
 
@@ -239,6 +240,10 @@ class TwlAudioOutputTransport(BaseOutputTransport):
         self._py_audio = py_audio
         self._device_substr = device_substr
         self._out_stream: pyaudio.Stream | None = None
+        # One dedicated worker: concurrent writes — or a write racing the
+        # close during teardown — corrupt PortAudio's ALSA state (double free,
+        # observed 2026-09-15). All stream access after start serializes here.
+        self._executor = ThreadPoolExecutor(max_workers=1)
         self.first_audio_out_ns: int = 0
 
     async def start(self, frame: StartFrame) -> None:
@@ -259,18 +264,23 @@ class TwlAudioOutputTransport(BaseOutputTransport):
 
     async def cleanup(self) -> None:
         await super().cleanup()  # type: ignore[no-untyped-call]  # pipecat is untyped
-        if self._out_stream:
-            self._out_stream.stop_stream()
-            self._out_stream.close()
-            self._out_stream = None
+        stream, self._out_stream = self._out_stream, None
+        if stream is not None:
+            # Serialized behind any in-flight write on the same single worker.
+            loop = self.get_event_loop()
+            await loop.run_in_executor(self._executor, stream.stop_stream)
+            await loop.run_in_executor(self._executor, stream.close)
+        self._executor.shutdown(wait=True)
 
     async def write_audio_frame(self, frame: OutputAudioRawFrame) -> bool:
-        if self._out_stream is None:
+        stream = self._out_stream
+        if stream is None:
             return False
         if self.first_audio_out_ns == 0:
             self.first_audio_out_ns = now_ns()
-        # Blocking write in a thread keeps playback paced without stalling the loop.
-        await self.get_event_loop().run_in_executor(None, self._out_stream.write, frame.audio)
+        # Blocking write on the dedicated worker keeps playback paced without
+        # stalling the loop, and serializes against teardown.
+        await self.get_event_loop().run_in_executor(self._executor, stream.write, frame.audio)
         return True
 
 

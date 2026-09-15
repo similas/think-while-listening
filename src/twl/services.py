@@ -53,11 +53,13 @@ FIRST_CHUNK_TARGET_CHARS = 46
 class LlamaChatProcessor(FrameProcessor):
     """Streams a chat completion for each final transcript."""
 
-    def __init__(self, cfg: LlmConfig, turns: TurnManager) -> None:
+    def __init__(
+        self, cfg: LlmConfig, turns: TurnManager, *, client: LlamaClient | None = None
+    ) -> None:
         super().__init__()
         self._cfg = cfg
         self._turns = turns
-        self._client: LlamaClient | None = None
+        self._client = client  # injectable for tests; created lazily otherwise
         self._task: asyncio.Task[None] | None = None
         self.dropped_transcripts = 0
 

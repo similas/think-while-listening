@@ -19,6 +19,7 @@ mypy_path = "src"
 
 [tool.pytest.ini_options]
 testpaths = ["src/tests"]
+asyncio_mode = "auto"
 pythonpath = ["src"]
 addopts = "--cov=twl --cov-report=term-missing"
 
