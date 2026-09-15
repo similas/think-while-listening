@@ -7,7 +7,7 @@ requires-python = ">=3.10"
 [tool.ruff]
 target-version = "py310"
 line-length = 100
-src = ["src", "tests"]
+src = ["src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
@@ -18,6 +18,6 @@ files = ["src/twl"]
 mypy_path = "src"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["src/tests"]
 pythonpath = ["src"]
 addopts = "--cov=twl --cov-report=term-missing"

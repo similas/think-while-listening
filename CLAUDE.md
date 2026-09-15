@@ -77,3 +77,57 @@ Write as a principal engineer whose code will be read by strangers for years.
   owner in `results/NOTES.md`.
 
 ## 4. Repository layout (exactly this; do not add top-level folders)
+
+    README.md  CLAUDE.md  RESEARCH_BRIEF.md  RESEARCH_BRIEF_v2.md  LICENSE  .gitignore  Makefile  pyproject.toml
+    src/            package `twl/`, `configs/`, `scripts/`, `tests/`
+    results/        raw/ (jsonl logs, gitignored if large) · tables/ · figures/ · NOTES.md
+    paper/          LaTeX (Interspeech/ISCA style + extended arXiv version) · figures symlinked from results/figures
+    presentation/   LaTeX Beamer (metropolis, 16:9) + speaker notes
+    thesis/         LaTeX, Concordia format (RESEARCH_BRIEF.md §9), PDF/A output
+
+Root-level files are allowed; no other top-level folders.
+
+## 5. The machine (facts — do not assume otherwise)
+
+- NVIDIA Jetson Orin Nano Super Developer Kit, 8 GB unified CPU/GPU memory
+  (≈7.6 GB usable, ≈5.5–6 GB after OS). JetPack 6.2.1 / L4T 36.4.4. Ampere GPU,
+  6× Cortex-A78AE. Power mode MAXN_SUPER (`nvpmodel -m 2`); `jetson_clocks` does
+  not persist across reboots — set it explicitly in every experiment script and
+  record it. Root on NVMe. Headless (`multi-user.target`) is preferred; an 8 GB swap
+  file on NVMe exists as an OOM cushion, not as working memory — any experiment
+  that swaps is invalid and must be flagged.
+- The box has OOM-frozen several times under full model load and has shown
+  memory creep across turns with the same stack running. Treat memory as the
+  first-class constraint. Log free memory per turn.
+- Installed and working: `faster-whisper` (CTranslate2), `llama-server`
+  (llama.cpp) serving a quantized Gemma, Piper TTS (CPU), Pipecat 0.0.108
+  (pinned — later versions hit an aarch64 wheel wall), `onnxruntime` 1.23.2
+  with **CPU and Azure providers only — there is no CUDA execution provider**.
+  Kokoro-GPU and Piper `use_cuda` are therefore not available.
+- **PyTorch is not installed**, deliberately (≈2–2.5 GB). Anything requiring
+  torch (NeMo, the Mimi codec behind the EPA checkpoint, most HF pipelines)
+  is a decision point, not a default: propose it, state the memory cost, and
+  wait for approval. Prefer torch-free paths (llama.cpp, CTranslate2, ONNX-CPU).
+- Audio: USB webcam mic (source), USB soundbar (sink); a reSpeaker XVF3800 array
+  may be attached. Query devices with `wpctl status` / `arecord -l`; never hard-code.
+- Telemetry: `tegrastats` / `jtop` expose VDD_IN power, GPU/CPU utilization,
+  memory, and temperatures. Energy per turn = ∫ VDD_IN dt over the turn window,
+  sampled at ≥ 10 Hz. Report idle baseline power so per-turn energy is net of idle.
+- Remote access is over Tailscale; sessions drop. Always work inside `tmux`.
+  Long experiments must be resumable and checkpoint progress to `results/raw/`.
+
+## 6. Working rules
+
+- Work in the phases defined in the kickoff prompt. Do not start a phase until
+  the previous phase's acceptance criteria are met, committed, and pushed, and
+  the user has said "go".
+- Before installing anything heavy (> 200 MB or torch-adjacent), before any
+  experiment expected to run > 30 minutes, and before any design decision that
+  changes the research claims, metrics, or benchmarks: stop and ask.
+- Keep `results/NOTES.md` as a dated lab notebook: what was run, what was
+  observed, what surprised you, what is unresolved. Terse. Facts only.
+- Any run with swap activity, an OOM, or a thermal-throttle event is recorded
+  and flagged invalid — never silently dropped or quietly rerun.
+- The user is a senior ML engineer with production voice-agent experience and
+  an expert on this specific machine. When they correct you about the machine,
+  they are usually right; update the relevant brief and say so.

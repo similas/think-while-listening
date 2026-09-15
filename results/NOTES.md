@@ -48,14 +48,30 @@ Device audit (all measured on the box today):
 
 Deviations / open items:
 
-- CLAUDE.md as provided ends at the §4 heading — the repository-layout list
-  itself is absent. Layout was inferred from CLAUDE.md §3, the briefs, and the
-  kickoff: src/twl, src/configs, tests, results/{raw,figures}, paper, thesis,
-  presentation. OWNER: Ali — supply the real §4 text; restructure if it differs.
-- jetson_clocks needs root: decide (sudoers entry vs boot unit) before Phase 2.
-  OWNER: Ali.
-- texlive/latexmk install approval needed before Phase 6. OWNER: Ali.
-- tmux not installed (kickoff assumed it). OWNER: Ali (apt install tmux, small).
+- CLAUDE.md as provided ended at the §4 heading (layout list absent); scaffold
+  used an inferred layout. RESOLVED same day: full §4 received; tests moved to
+  src/tests, src/scripts and results/tables added. Remaining §4 delta: LICENSE
+  file required at root — license choice is Ali's. OWNER: Ali.
+- jetson_clocks needs root. DECIDED (Ali, 2026-09-15): passwordless sudoers
+  entry /etc/sudoers.d/twl scoped to exact commands (jetson_clocks,
+  jetson_clocks --show/--store/--restore, nvpmodel -q), no wildcards, no boot
+  unit. Every experiment script sets clocks at start, records
+  `sudo jetson_clocks --show` + `nvpmodel -q` into the run log, and restores
+  clocks at the end. Sudoers file itself must be installed by Ali (Claude has
+  no sudo password). PENDING install.
+- LaTeX. DECIDED (Ali, 2026-09-15): texlive is never installed on the Jetson;
+  paper/thesis/presentation are LaTeX sources only, compiled on Ali's Mac or
+  Overleaf. Makefile carries LATEX_HOST and the artifact targets refuse to run
+  where latexmk is absent.
+- tmux: approved for install now; needs sudo apt. PENDING install by Ali.
+- CLAUDE.md §5 says "an 8 GB swap file on NVMe exists as an OOM cushion".
+  MEASURED TODAY: swapon shows only 6× zram 635 MiB (3.7 GiB total); no NVMe
+  swapfile in /etc/fstab or on disk. Proposed brief edit: either create the
+  swapfile (Ali decision) or correct §5 to "zram only". Until resolved, the
+  "swap activity ⇒ run invalid" rule applies to zram, which is stricter.
+- Default boot target is graphical.target today; CLAUDE.md §5 prefers headless.
+  Phase 2 sweeps headless vs desktop explicitly, so the default stays until the
+  experiments need otherwise; recorded per run regardless.
 - paper/refs.bib: all 35 works from RESEARCH_BRIEF_v2 §1–§2 were verified
   against fetched arXiv/DOI/proceedings pages on 2026-09-15; none were
   unverifiable. Caveats found during verification:
