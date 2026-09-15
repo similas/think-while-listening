@@ -153,7 +153,7 @@ class StageObserver(BaseObserver):
         """
         while True:
             await asyncio.sleep(0.1)
-            if not self._turns.turn_open:  # noqa: SIM108
+            if not self._turns.turn_open:
                 continue
             turn = self._turns.turn
             age = self._turns.turn_age_ms()

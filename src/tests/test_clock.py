@@ -43,3 +43,16 @@ def test_first_and_last_and_dict() -> None:
     assert clock.first("absent") is None
     # as_dict keeps the FIRST occurrence per stage.
     assert clock.as_dict()["stt_partial"] == pytest.approx(1.0)
+
+
+def test_estimate_clamped_to_origin_never_raises() -> None:
+    """A turn shorter than the VAD hangover must not produce a negative mark.
+
+    Regression: an unclamped speech_end_est raised inside the observer, killed
+    pipecat's observer task, and stalled a 32-turn run (2026-09-15).
+    """
+    origin = now_ns()
+    clock = TurnClock(origin_ns=origin)
+    stopped_at = origin + int(0.6e9)  # 600 ms turn, 800 ms hangover
+    estimate = max(stopped_at - int(0.8e9), origin)
+    assert clock.mark("speech_end_est", at_ns=estimate).t_ms == 0.0
