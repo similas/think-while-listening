@@ -202,3 +202,44 @@ Bugs found by measurement while building (all fixed, all in git history):
   NVMe swapfile growth, or one-turn system zram growth > 5 MB (provisional
   threshold, flagged). All three inputs recorded per turn. OWNER: Ali to
   bless the interpretation.
+
+## 2026-09-15 — Phase 1(d): memory over turns, and two teardown defects
+
+64-turn session (reactive-20260915-163005-37a00e; 16 synthesized turns x 4,
+clocks pinned, file playback through the mic code path, turn-gated):
+- 64/64 turns valid, 0 timeouts, 0 swap growth attributable to the pipeline
+  (system swap flat at 141 MB throughout; no pipeline process ever held pages
+  in swap).
+- NO latency drift across the session: TTFA median 3166 ms (first 16 turns)
+  vs 3118 ms (last 16); STT decode 1726 -> 1773 ms. The creep below does not
+  (yet) cost latency.
+- Agent RSS 583 -> 707 MB (+123 MB over 64 turns), in three regimes:
+  +3.33 MB/turn (turns 1-16, caches filling), +0.09 MB/turn (17-40, flat),
+  +1.40 MB/turn (41-64). It does NOT cleanly plateau — hence the diagnostic
+  run below rather than a "bounded, move on" claim.
+- llama-server RSS +0.38 MB/turn (+20 MB total); its slot stayed at
+  n_ctx 2048 with no truncation (slots.jsonl sampled every 2 s).
+
+Two defects found when this run's process was still alive 2h47m later:
+1. TEARDOWN HANG. All 64 turn records were written, then the run hung in
+   Pipecat's cancel path / PortAudio teardown and never printed its summary.
+   Fix: the turn log and telemetry are closed BEFORE teardown is attempted,
+   teardown is bounded (45 s), and a run that exceeds it restores clocks and
+   exits hard rather than holding the audio device.
+2. OVERLAPPING RUNS. Because that process still held the mic and the llama
+   slot, the next run (memory diagnosis) contended with it and wedged at 9
+   turns; its data was discarded, not analysed. Fix: a kernel flock
+   singleton (results/raw/.run.lock) — a second run now refuses to start with
+   a clear message (verified by test). This is the same lesson the earlier
+   voice-companion project paid for once; it now applies here too.
+   Consequence for clocks: the hung run also never restored them, which is
+   exactly the cascade the canonical baseline (see clocks.py) was added to
+   survive; the board was restored from the baseline and verified idle.
+
+Also measured here: 58/64 turns closed via the watchdog path rather than the
+fast path, i.e. BotStoppedSpeaking arriving while the final TTS flush still
+held its lock is the NORM, not an edge case. playback_done still records the
+true BotStoppedSpeaking timestamp (the deferred one), but each turn was held
+~850 ms longer than necessary. The close now fires immediately when that
+frame arrives after all audio has been queued (the final drain), keeping the
+settle window only as a fallback.
