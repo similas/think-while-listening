@@ -1,0 +1,114 @@
+"""Typed records for everything written to results/raw/ — the JSONL schema.
+
+Responsibility: define every log record as a frozen dataclass with an explicit
+``kind`` tag, and serialize them as single JSON lines. Scripts that build
+tables read these records back; nothing downstream parses free-form text.
+
+Invariants:
+- Every record carries the run id, so a line is attributable even if a file
+  is concatenated or moved.
+- Serialization is stdlib json, one line, sorted keys — byte-stable for a
+  given record, so diffs of raw logs are meaningful.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass, field
+from typing import Any, TextIO
+
+
+def to_jsonl(record: RunMeta | StageEvent | TurnRecord | TelemetrySample) -> str:
+    """One record → one JSON line (no trailing newline)."""
+    d = asdict(record)
+    d["kind"] = record.kind
+    return json.dumps(d, sort_keys=True, separators=(",", ":"))
+
+
+def write_jsonl(fh: TextIO, record: RunMeta | StageEvent | TurnRecord | TelemetrySample) -> None:
+    """Append one record to an open text file and flush (crash-safe logs)."""
+    fh.write(to_jsonl(record) + "\n")
+    fh.flush()
+
+
+@dataclass(frozen=True)
+class RunMeta:
+    """Provenance header, first line of every raw log file (CLAUDE.md §2)."""
+
+    run_id: str
+    wall_time: str
+    git_commit: str
+    config_hash: str
+    config_path: str
+    nvpmodel: str
+    jetson_clocks: str
+    software: dict[str, str]
+    notes: str = ""
+
+    kind: str = field(default="run_meta", init=False)
+
+
+@dataclass(frozen=True)
+class StageEvent:
+    """One stage boundary inside one turn (one JSON line per boundary)."""
+
+    run_id: str
+    turn: int
+    stage: str
+    t_ms: float
+
+    kind: str = field(default="stage_event", init=False)
+
+
+@dataclass(frozen=True)
+class TurnRecord:
+    """Per-turn summary: first offset of each stage plus turn-level facts."""
+
+    run_id: str
+    turn: int
+    wall_time: str
+    stages_ms: dict[str, float]
+    transcript: str
+    reply: str
+    reply_tokens: int
+    rss_mb: dict[str, float]
+    mem_available_mb: float
+    swap_used_mb: dict[str, float]
+    valid: bool
+    invalid_reason: str = ""
+
+    kind: str = field(default="turn_record", init=False)
+
+
+@dataclass(frozen=True)
+class TelemetrySample:
+    """One tegrastats sample (≥10 Hz), parsed into numbers.
+
+    ``t_ms`` is the offset from the sampler's own start; ``wall_time`` links
+    samples to turns via each turn's wall-clock start.
+    """
+
+    run_id: str
+    t_ms: float
+    ram_used_mb: int
+    ram_total_mb: int
+    swap_used_mb: int
+    swap_total_mb: int
+    cpu_pct: list[int]
+    cpu_freq_mhz: list[int]
+    gr3d_pct: int
+    temps_c: dict[str, float]
+    power_mw: dict[str, int]
+
+    kind: str = field(default="telemetry", init=False)
+
+
+def read_jsonl(path: str) -> list[dict[str, Any]]:
+    """Read a raw log back as dicts (result scripts re-type what they need)."""
+    out: list[dict[str, Any]] = []
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                out.append(json.loads(line))
+    return out
