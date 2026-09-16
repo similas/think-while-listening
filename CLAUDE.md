@@ -108,8 +108,18 @@ Root-level files are allowed; no other top-level folders.
   torch (NeMo, the Mimi codec behind the EPA checkpoint, most HF pipelines)
   is a decision point, not a default: propose it, state the memory cost, and
   wait for approval. Prefer torch-free paths (llama.cpp, CTranslate2, ONNX-CPU).
-- Audio: USB webcam mic (source), USB soundbar (sink); a reSpeaker XVF3800 array
-  may be attached. Query devices with `wpctl status` / `arecord -l`; never hard-code.
+- Audio (verified on the box 2026-09-15): capture is a **reSpeaker XVF3800
+  4-Mic Array** (Seeed, USB 2886:001a, firmware bcdDevice 2.0a) running in
+  **USB-audio mode**, presenting a DSP-processed **2-channel 16 kHz S16_LE**
+  stream — beamforming, on-chip AEC and de-reverb are applied upstream of us,
+  and the raw 4-mic signal is NOT exposed. Playback is a **Jieli UACDemoV1.0
+  USB sink** (`alsa_output.usb-Jieli_Technology_UACDemoV1.0_...`). The EMEET
+  webcam/mic is **absent** (not in `lsusb`, no `/dev/video*`). Because the
+  front-end is a DSP, every perception result is a property of the pipeline
+  *behind this firmware*: `twl.audio_device.capture_path_info()` records the
+  firmware revision, USB-audio channel count, ALSA format and negotiated
+  PipeWire node in every run header, and the paper's setup section reports
+  them. Query devices with `wpctl status` / `arecord -l`; never hard-code.
 - Telemetry: `tegrastats` / `jtop` expose VDD_IN power, GPU/CPU utilization,
   memory, and temperatures. Energy per turn = ∫ VDD_IN dt over the turn window,
   sampled at ≥ 10 Hz. Report idle baseline power so per-turn energy is net of idle.

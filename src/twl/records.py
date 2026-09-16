@@ -43,6 +43,7 @@ class RunMeta:
     nvpmodel: str
     jetson_clocks: str
     software: dict[str, str]
+    capture: dict[str, str] = field(default_factory=dict)
     notes: str = ""
 
     kind: str = field(default="run_meta", init=False)

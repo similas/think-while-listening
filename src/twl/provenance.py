@@ -18,6 +18,7 @@ from importlib import metadata
 from pathlib import Path
 from time import strftime
 
+from twl.audio_device import capture_path_info
 from twl.clock import wall_iso
 from twl.records import RunMeta
 
@@ -105,5 +106,6 @@ def build_run_meta(
         nvpmodel=nvpmodel_mode(),
         jetson_clocks=jetson_clocks_show(),
         software=software_versions(extra_software),
+        capture=capture_path_info(),
         notes=notes,
     )
