@@ -7,6 +7,7 @@ architecture diagram and this file cannot drift apart.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -49,9 +50,18 @@ def build_pipeline(
     turns_log: Path,
     rss_pids: dict[str, int],
     device_state: str = "desktop",
+    pressure_pids: Callable[[], dict[str, int]] | None = None,
+    segment_dir: Path | None = None,
 ) -> BuiltPipeline:
     """Assemble the REACTIVE pipeline around the given audio source."""
-    turns = TurnManager(run_id, turns_log, meta, rss_pids, device_state=device_state)
+    turns = TurnManager(
+        run_id,
+        turns_log,
+        meta,
+        rss_pids,
+        device_state=device_state,
+        pressure_pids=pressure_pids,
+    )
     if f"state={device_state}" not in meta.notes and "state=" in meta.notes:
         raise ValueError(
             f"device_state {device_state!r} contradicts the run meta ({meta.notes!r}); "
@@ -84,7 +94,9 @@ def build_pipeline(
     )
     transport = TwlAudioTransport(source, cfg.audio.output_device_substr, params)
 
-    stt = StreamingWhisperSTT(cfg.stt, turns, sample_rate=cfg.audio.sample_rate)
+    stt = StreamingWhisperSTT(
+        cfg.stt, turns, sample_rate=cfg.audio.sample_rate, segment_dir=segment_dir
+    )
     llm: LlamaChatProcessor | StubLlmProcessor = (
         StubLlmProcessor(turns) if cfg.llm.backend == "stub" else LlamaChatProcessor(cfg.llm, turns)
     )

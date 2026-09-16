@@ -225,6 +225,29 @@ def read_trip_points_c(kind: str = "tj-thermal") -> list[float]:
     return sorted(temps)
 
 
+def read_faults(pid: int) -> tuple[int, int]:
+    """(minflt, majflt) of a process from /proc/<pid>/stat.
+
+    A MAJOR fault means a page had to come from storage. For a CPU inference
+    process whose weights are mmap'd, a rising majflt across otherwise
+    identical decodes is direct evidence that those weights were evicted from
+    page cache by something else resident on the machine.
+    """
+    parts = Path(f"/proc/{pid}/stat").read_text().split()
+    # Fields after the (comm) field: minflt is 10th, majflt 12th (1-indexed).
+    tail = parts[parts.index(next(p for p in parts if p.endswith(")"))) + 1 :]
+    return int(tail[7]), int(tail[9])
+
+
+def read_page_cache_mb(path: str = "/proc/meminfo") -> float:
+    """The kernel's page cache size in MB (Cached)."""
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            if line.startswith("Cached:"):
+                return int(line.split()[1]) / 1024.0
+    return -1.0
+
+
 def read_proc_mem_mb(pid: int) -> tuple[float, float]:
     """(VmRSS, VmSwap) of one process in MB.
 

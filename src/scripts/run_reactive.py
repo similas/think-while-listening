@@ -296,6 +296,7 @@ async def run(args: argparse.Namespace) -> None:
                 {"agent": os.getpid(), "llama-server": pid} if pid > 0 else {"agent": os.getpid()}
             ),
             device_state=state,
+            segment_dir=run_dir / "segments",
         )
         built_box.append(built.turns)
 

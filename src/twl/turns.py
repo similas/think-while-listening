@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import TextIO
 
@@ -75,11 +76,17 @@ class TurnManager:
         rss_pids: dict[str, int],
         *,
         device_state: str = "desktop",
+        pressure_pids: Callable[[], dict[str, int]] | None = None,
     ):
         self._run_id = run_id
         self.swap_threshold_mb, self.swap_threshold_source = load_swap_threshold(device_state)
         self.device_state = device_state
         self._rss_pids = dict(rss_pids)
+        # Processes applying memory pressure ON PURPOSE (an adversary). Their
+        # swap use is the condition, not a fault, so it is reported separately
+        # from the pipeline's own. Resolved per turn: an adversary's pids
+        # change whenever it is restarted.
+        self._pressure_pids = pressure_pids or (lambda: {})
         # Log handle spans the whole run; closed by close(). The lifetime is
         # the manager's, not a with-block's.
         self._fh: TextIO = open(out_path, "a", encoding="utf-8")  # noqa: SIM115
@@ -88,6 +95,10 @@ class TurnManager:
         self._turn = 0
         self._transcript = ""
         self._stt_audio_s = -1.0
+        self._stt_minflt = -1
+        self._stt_majflt = -1
+        self._page_cache_mb = -1.0
+        self._segment_wav = ""
         self._reply_parts: list[str] = []
         self._reply_tokens = 0
         self._swap_at_start: dict[str, float] = {}
@@ -123,6 +134,10 @@ class TurnManager:
         self._clock = TurnClock(origin_ns=at_ns)
         self._transcript = ""
         self._stt_audio_s = -1.0
+        self._stt_minflt = -1
+        self._stt_majflt = -1
+        self._page_cache_mb = -1.0
+        self._segment_wav = ""
         self._reply_parts = []
         self._reply_tokens = 0
         self._marked_once = set()
@@ -149,6 +164,15 @@ class TurnManager:
 
     def set_transcript(self, text: str) -> None:
         self._transcript = text
+
+    def set_stt_counters(
+        self, *, minflt: int, majflt: int, page_cache_mb: float, segment_wav: str
+    ) -> None:
+        """Mechanism counters measured around this turn's final STT decode."""
+        self._stt_minflt = minflt
+        self._stt_majflt = majflt
+        self._page_cache_mb = page_cache_mb
+        self._segment_wav = segment_wav
 
     def set_stt_audio_seconds(self, seconds: float) -> None:
         """Duration of the audio the final decode consumed.
@@ -198,27 +222,33 @@ class TurnManager:
                 own_swap[name] = -1.0
                 log.warning("mem probe failed for %s: %s", name, e)
 
-        # Validity (blessed by Ali 2026-09-15): a turn is invalid when swap
-        # activity is attributable to the run — a pipeline process has pages in
-        # swap, or the NVMe spill file grew (both unconditional), or system
-        # zram grew past this device state's measured ambient churn. All three
-        # inputs are recorded regardless of the verdict.
+        # VALIDITY BY PROCESS ATTRIBUTION (Ali, 2026-09-16). Swap activity
+        # invalidates a turn only when it is attributable to the PIPELINE:
+        #   - a pipeline process holds pages in swap (VmSwap > 0), or
+        #   - the NVMe swapfile grows.
+        # System zram growth is NOT a fault. When an adversary is applying
+        # memory pressure, that growth IS the experimental condition, so it is
+        # recorded as a covariate (zram_growth_mb) instead. This supersedes the
+        # earlier system-zram threshold, which invalidated six good turns and
+        # would have invalidated the very condition Phase 2 sets out to create.
+        pressure_swap: dict[str, float] = {}
+        for name, pid in self._pressure_pids().items():
+            try:
+                _rss, pressure_swap[name] = read_proc_mem_mb(pid)
+            except (ProcessLookupError, ValueError):
+                pressure_swap[name] = -1.0
+
         invalid_reason = ""
         pids_in_swap = {n: mb for n, mb in own_swap.items() if mb > 0.0}
         swapfile_grew = {d: mb for d, mb in swap_grew.items() if not d.startswith("/dev/zram")}
         ambient = sum(mb for d, mb in swap_grew.items() if d.startswith("/dev/zram"))
         if pids_in_swap:
-            invalid_reason = "own_pages_in_swap:" + ",".join(
+            invalid_reason = "pipeline_pages_in_swap:" + ",".join(
                 f"{n}={mb}MB" for n, mb in pids_in_swap.items()
             )
         elif swapfile_grew:
             invalid_reason = "swapfile_growth:" + ",".join(
                 f"{d}+{mb}MB" for d, mb in swapfile_grew.items()
-            )
-        elif ambient > self.swap_threshold_mb:
-            invalid_reason = (
-                f"zram_growth:+{ambient:.2f}MB>threshold{self.swap_threshold_mb:.2f}"
-                f"[{self.swap_threshold_source}]"
             )
         if forced:
             invalid_reason = (invalid_reason + ";" if invalid_reason else "") + "unfinished_turn"
@@ -241,6 +271,13 @@ class TurnManager:
             close_reason=close_reason,
             tj_c=read_tj_c(self._tj_zone),
             stt_audio_s=round(self._stt_audio_s, 3),
+            stt_minflt=self._stt_minflt,
+            stt_majflt=self._stt_majflt,
+            page_cache_mb=round(self._page_cache_mb, 1),
+            segment_wav=self._segment_wav,
+            proc_swap_mb={k: round(v, 3) for k, v in own_swap.items()},
+            pressure_swap_mb={k: round(v, 3) for k, v in pressure_swap.items()},
+            zram_growth_mb=round(ambient, 3),
         )
         write_jsonl(self._fh, record)
         self.turns_written += 1

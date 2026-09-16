@@ -82,6 +82,18 @@ class TurnRecord:
     close_reason: str = "bot_stopped"
     tj_c: float = -1.0
     stt_audio_s: float = -1.0
+    # Mechanism counters for the STT decode of this turn. majflt rising under a
+    # co-resident process is the signature of page-cache eviction: the model's
+    # weights being re-read from NVMe rather than found in memory.
+    stt_majflt: int = -1
+    stt_minflt: int = -1
+    page_cache_mb: float = -1.0
+    segment_wav: str = ""
+    # Swap attribution (rule of 2026-09-16): per-process VmSwap decides
+    # validity; system zram growth is the applied-pressure covariate.
+    proc_swap_mb: dict[str, float] = field(default_factory=dict)
+    pressure_swap_mb: dict[str, float] = field(default_factory=dict)
+    zram_growth_mb: float = 0.0
 
     kind: str = field(default="turn_record", init=False)
 

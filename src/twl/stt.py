@@ -21,9 +21,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import threading
+import wave
 from collections import deque
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -46,6 +49,7 @@ from pipecat.utils.time import time_now_iso8601
 
 from twl.clock import now_ns
 from twl.config import SttConfig
+from twl.telemetry import read_faults, read_page_cache_mb
 from twl.turns import TurnManager
 
 # Pipecat 0.0.108 emits VADUser*SpeakingFrame on the plain-VAD path and
@@ -63,7 +67,14 @@ log = logging.getLogger(__name__)
 class StreamingWhisperSTT(STTService):
     """faster-whisper with optional partial hypotheses during speech."""
 
-    def __init__(self, cfg: SttConfig, turns: TurnManager, *, sample_rate: int = 16000) -> None:
+    def __init__(
+        self,
+        cfg: SttConfig,
+        turns: TurnManager,
+        *,
+        sample_rate: int = 16000,
+        segment_dir: Path | None = None,
+    ) -> None:
         super().__init__(
             sample_rate=sample_rate,
             settings=STTSettings(model=cfg.model, language=cfg.language),
@@ -85,6 +96,13 @@ class StreamingWhisperSTT(STTService):
         self._decode_lock = asyncio.Lock()
         self.partials_emitted = 0
         self.finals_emitted = 0
+        # Saving the exact audio the recognizer saw makes the isolation
+        # comparison PAIRED: the same segment, not a different cut of the same
+        # utterance. Without it, "isolation vs pipeline" silently compares
+        # 1.6 s raw files against 2.4 s VAD segments (measured 2026-09-16).
+        self._segment_dir = segment_dir
+        if segment_dir is not None:
+            segment_dir.mkdir(parents=True, exist_ok=True)
 
     async def start(self, frame: StartFrame) -> None:
         await super().start(frame)
@@ -170,15 +188,39 @@ class StreamingWhisperSTT(STTService):
                 audio, self._audio = self._audio, np.zeros(0, dtype=np.float32)
             if len(audio) < 0.08 * self.sample_rate:
                 return
+            faults_before = read_faults(os.getpid())
             async with self._decode_lock:  # waits out any in-flight partial decode
                 text = await asyncio.to_thread(self._decode, audio)
             at = now_ns()
+            faults_after = read_faults(os.getpid())
             self._turns.mark("stt_final", at_ns=at)
             self._turns.set_transcript(text)
             self._turns.set_stt_audio_seconds(len(audio) / self.sample_rate)
+            self._turns.set_stt_counters(
+                minflt=faults_after[0] - faults_before[0],
+                majflt=faults_after[1] - faults_before[1],
+                page_cache_mb=read_page_cache_mb(),
+                segment_wav=self._save_segment(audio),
+            )
             self.finals_emitted += 1
             if text:
                 await self.push_frame(TranscriptionFrame(text, "", time_now_iso8601(), None))
+
+    def _save_segment(self, audio: npt.NDArray[np.float32]) -> str:
+        """Write the decoded segment so it can be re-decoded in isolation."""
+        if self._segment_dir is None or len(audio) == 0:
+            return ""
+        path = self._segment_dir / f"turn_{self._turns.turn:03d}.wav"
+        try:
+            with wave.open(str(path), "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(self.sample_rate)
+                w.writeframes((np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16).tobytes())
+        except OSError:
+            log.exception("could not save segment %s", path)
+            return ""
+        return str(path)
 
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame, None]:  # type: ignore[override]  # matches pipecat 0.0.108 usage
         """Accumulate audio; hypotheses are pushed from the handlers above."""
