@@ -19,6 +19,9 @@ export PYTHONPATH="$REPO/src"
 NOTE="results/raw/headless_window_$(date +%Y%m%d-%H%M%S).log"
 AMBIENT_MIN="${AMBIENT_MIN:-20}"
 SOAK_MIN="${SOAK_MIN:-15}"
+# Space-separated subset of: ambient thresholds baseline attribution soak
+STAGES="${STAGES:-ambient thresholds baseline attribution soak}"
+stage() { [[ " $STAGES " == *" $1 "* ]]; }
 
 log() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$NOTE"; }
 
@@ -58,24 +61,45 @@ log "audio path: $AUDIO_STEP"
 wpctl status 2>/dev/null | sed -n '/Audio/,/Video/p' | grep -E "reSpeaker|UACDemo|Sinks|Sources" | tee -a "$NOTE"
 
 # --- the measurements ---------------------------------------------------------
+require_llama() {
+  if ! src/scripts/llama_server.sh status | grep -q healthy; then
+    log "llama-server not healthy; starting it"
+    src/scripts/llama_server.sh start 2>&1 | tee -a "$NOTE"
+  fi
+  src/scripts/llama_server.sh status | grep -q healthy || { log "ABORT: llama-server unavailable"; exit 1; }
+}
+
+if stage ambient; then
 log "--- ambient swap churn, headless (${AMBIENT_MIN} min) ---"
 "$PY" src/scripts/measure_ambient_swap.py --state headless --minutes "$AMBIENT_MIN" 2>&1 | tee -a "$NOTE"
+fi
 
+if stage thresholds; then
 log "--- deriving swap thresholds from all states ---"
 "$PY" src/scripts/derive_swap_threshold.py 2>&1 | tee -a "$NOTE"
+fi
 
+if stage baseline; then
+require_llama
 log "--- canonical REACTIVE baseline: 64 turns, headless, diagnostics OFF ---"
 "$PY" src/scripts/run_reactive.py --wav-dir results/raw/audio/sixteen --repeat 4 --clocks \
   --notes "canonical REACTIVE baseline, headless, diagnostics off" 2>&1 \
   | grep -vE "DEBUG|ALSA lib|snd_" | tee -a "$NOTE"
+fi
 
+if stage attribution; then
+require_llama
 log "--- STT inflation attribution: 4 conditions ---"
 "$PY" src/scripts/stt_attribution.py --repeat 2 2>&1 | grep -vE "DEBUG|ALSA lib|snd_" | tee -a "$NOTE"
+fi
 
+if stage soak; then
+require_llama
 log "--- soak validation: ${SOAK_MIN} min pre-load, then 16 turns ---"
 "$PY" src/scripts/run_reactive.py --wav-dir results/raw/audio/sixteen --repeat 1 --clocks \
   --soak-minutes "$SOAK_MIN" --soak-cpus 0,1,2 \
   --notes "soak validation: does tj cross the 74 C trip" 2>&1 \
   | grep -vE "DEBUG|ALSA lib|snd_" | tee -a "$NOTE"
+fi
 
 log "=== headless window complete; audio step was: $AUDIO_STEP ==="

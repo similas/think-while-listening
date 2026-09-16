@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -38,6 +39,18 @@ from twl.records import read_jsonl, to_jsonl
 
 REPO = Path(__file__).resolve().parents[2]
 PY = str(REPO / ".." / ".venvs" / "twl" / "bin" / "python")
+
+
+def child_env() -> dict[str, str]:
+    """Environment for a child run: the FULL environment plus PYTHONPATH.
+
+    A hand-built env silently drops XDG_RUNTIME_DIR, without which pactl
+    cannot reach PipeWire and every audio setup step fails — which is how the
+    first attribution attempt died after stopping llama-server (2026-09-15).
+    """
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(REPO / "src")
+    return env
 
 
 def llama_state() -> tuple[int, str]:
@@ -137,6 +150,23 @@ def main() -> None:
     server = str(REPO / "src/scripts/llama_server.sh")
     results: dict[str, Any] = {}
 
+    try:
+        run_conditions(args, cfg, run_id, out_path, server, results)
+    finally:
+        # Condition B stops the server; an abort must not leave it stopped for
+        # whatever runs next (that cost the soak stage once).
+        subprocess.run([server, "start"], check=False, cwd=REPO)
+    report(results, out_path)
+
+
+def run_conditions(
+    args: argparse.Namespace,
+    cfg: Any,
+    run_id: str,
+    out_path: Path,
+    server: str,
+    results: dict[str, Any],
+) -> None:
     with open(out_path, "w", encoding="utf-8") as fh:
         fh.write(
             to_jsonl(
@@ -211,6 +241,12 @@ def main() -> None:
             + "\n"
         )
 
+
+def report(results: dict[str, Any], out_path: Path) -> None:
+    """Print the decomposition. Separated so a failed run still reports what it got."""
+    if "D_full" not in results:
+        print(f"attribution incomplete; partial results in {out_path}")
+        return
     agent_aff = results["agent_cpu_affinity"]
     llama_aff = results["C_llama_cpu_mask"]
     print(f"agent affinity: {agent_aff}  llama affinity: {llama_aff}")

@@ -1,0 +1,9 @@
+# Derived by src/scripts/derive_swap_threshold.py — do not hand-edit.
+# A turn is invalid when total zram growth across devices exceeds the
+# threshold for the run's device state. Where ambient churn measured
+# exactly zero the threshold is 0.0, labelled empirical_zero: the rule
+# is 'any growth invalidates', justified by the counts below rather
+# than by 2 x p99 of a constant.
+thresholds_mb:
+  desktop: 0.0  # empirical_zero; n=149 windows of 8s, nonzero=0, p99=0.000, max=0.000 MB
+  headless: 0.0  # empirical_zero; n=149 windows of 8s, nonzero=0, p99=0.000, max=0.000 MB
