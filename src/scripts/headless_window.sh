@@ -200,6 +200,12 @@ log "--- post-event smoke: 16 turns vs the canonical headless baseline ---"
   | grep -vE "DEBUG|ALSA lib|snd_" | tee -a "$NOTE"
 fi
 
+if stage attribution; then
+require_llama
+log "--- STT inflation attribution: 4 conditions ---"
+"$PY" src/scripts/stt_attribution.py --repeat 2 --yes 2>&1 | grep -vE "DEBUG|ALSA lib|snd_" | tee -a "$NOTE"
+fi
+
 if stage cooldown; then
 log "--- cooldown: waiting for tj < 62 C so the soak can start cold ---"
 cool_deadline=$(( $(date +%s) + 300 ))
@@ -209,12 +215,6 @@ while :; do
   [[ "$(date +%s)" -ge "$cool_deadline" ]] && { log "cooldown timed out at ${tj} C"; break; }
   sleep 10
 done
-fi
-
-if stage attribution; then
-require_llama
-log "--- STT inflation attribution: 4 conditions ---"
-"$PY" src/scripts/stt_attribution.py --repeat 2 --yes 2>&1 | grep -vE "DEBUG|ALSA lib|snd_" | tee -a "$NOTE"
 fi
 
 if stage soak; then
