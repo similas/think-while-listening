@@ -153,6 +153,18 @@ async def memory_diagnostics(
             last = snap
 
 
+def device_state() -> str:
+    """The systemd target in force, as the device-state label for a run.
+
+    The swap-validity threshold and Phase 2's state factor both key on this,
+    so it is read from the machine rather than passed as a flag that could
+    disagree with reality.
+    """
+    out = subprocess.run(["systemctl", "get-default"], capture_output=True, text=True, check=False)
+    target = out.stdout.strip()
+    return "headless" if target.startswith("multi-user") else "desktop"
+
+
 def llama_pid(required: bool = True) -> int:
     out = subprocess.run(
         ["systemctl", "--user", "show", "twl-llama.service", "-p", "MainPID"],
@@ -206,6 +218,7 @@ async def run(args: argparse.Namespace) -> None:
         set_clocks()
     try:
         thermal = f"soaked {args.soak_minutes:g}min" if args.soak_minutes else "cold"
+        state = device_state()
         pid = llama_pid(required=cfg.llm.backend != "stub")
         llama_cmdline = (
             Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
@@ -219,7 +232,7 @@ async def run(args: argparse.Namespace) -> None:
                 f"REACTIVE {'live-mic' if args.live else 'file-playback'} run; "
                 f"agent affinity={sorted(cfg.stt.cpu_affinity)}; "
                 f"clocks={'set' if args.clocks else 'as-found'}; "
-                f"thermal={thermal}; "
+                f"thermal={thermal}; state={state}; "
                 f"{args.notes}"
             ),
             extra_software={"llama-server-cmdline": llama_cmdline},
@@ -373,6 +386,10 @@ async def run(args: argparse.Namespace) -> None:
 
         if isinstance(source, FileFrameSource):
             (run_dir / "playback_timeline.json").write_text(json.dumps(source.timeline))
+        print(
+            f"device state: {state}; swap threshold "
+            f"{built.turns.swap_threshold_mb:.3f} MB ({built.turns.swap_threshold_source})"
+        )
         print(f"run dir: {run_dir}")
         print(summarize_run(run_dir / "turns.jsonl"))
         print(

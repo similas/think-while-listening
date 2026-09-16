@@ -48,9 +48,10 @@ def build_pipeline(
     meta: RunMeta,
     turns_log: Path,
     rss_pids: dict[str, int],
+    device_state: str = "desktop",
 ) -> BuiltPipeline:
     """Assemble the REACTIVE pipeline around the given audio source."""
-    turns = TurnManager(run_id, turns_log, meta, rss_pids)
+    turns = TurnManager(run_id, turns_log, meta, rss_pids, device_state=device_state)
 
     tts = PiperTTSService(cfg.tts, turns)
     tts.load()  # sample rate needed for the output transport

@@ -18,6 +18,8 @@ import logging
 from pathlib import Path
 from typing import TextIO
 
+import yaml
+
 from twl.clock import TurnClock, now_ns, wall_iso
 from twl.records import RunMeta, StageEvent, TurnRecord, write_jsonl
 from twl.telemetry import (
@@ -30,17 +32,50 @@ from twl.telemetry import (
 
 log = logging.getLogger(__name__)
 
-# Provisional threshold, flagged for review: one-turn system zram growth above
-# this is treated as pipeline-caused memory pressure, below it as ambient
-# desktop churn. Measured idle churn is ~0.25 MB/turn (2026-09-15).
-AMBIENT_SWAP_SLACK_MB = 5.0
+_THRESHOLD_FILE = Path(__file__).resolve().parents[1] / "configs/swap_thresholds.yaml"
+# Fallback only for a tree without a derivation yet; a real run always loads
+# the file, and load_swap_threshold says which value it used.
+FALLBACK_SWAP_THRESHOLD_MB = 5.0
+
+
+def load_swap_threshold(state: str, path: Path | None = None) -> tuple[float, str]:
+    """Zram-growth threshold for a device state, and where it came from.
+
+    Derived by src/scripts/derive_swap_threshold.py as 2 x p99 of ambient
+    churn measured with the pipeline stopped, per state (Ali, 2026-09-15).
+
+    Raises:
+        KeyError: the derivation file exists but has no entry for ``state`` —
+            an unmeasured state must not silently borrow another's threshold.
+    """
+    path = path or _THRESHOLD_FILE
+    if not path.exists():
+        return FALLBACK_SWAP_THRESHOLD_MB, "fallback (no derivation file)"
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    table = data.get("thresholds_mb") or {}
+    if state not in table:
+        raise KeyError(
+            f"no ambient-swap derivation for device state {state!r} in {path}; "
+            f"measured states: {sorted(table)}"
+        )
+    return float(table[state]), f"{path.name}:{state}"
 
 
 class TurnManager:
     """Collects per-turn timing and facts; writes the raw log."""
 
-    def __init__(self, run_id: str, out_path: Path, meta: RunMeta, rss_pids: dict[str, int]):
+    def __init__(
+        self,
+        run_id: str,
+        out_path: Path,
+        meta: RunMeta,
+        rss_pids: dict[str, int],
+        *,
+        device_state: str = "desktop",
+    ):
         self._run_id = run_id
+        self.swap_threshold_mb, self.swap_threshold_source = load_swap_threshold(device_state)
+        self.device_state = device_state
         self._rss_pids = dict(rss_pids)
         # Log handle spans the whole run; closed by close(). The lifetime is
         # the manager's, not a with-block's.
@@ -149,12 +184,11 @@ class TurnManager:
                 own_swap[name] = -1.0
                 log.warning("mem probe failed for %s: %s", name, e)
 
-        # Validity (documented in results/NOTES.md 2026-09-15): a turn is
-        # invalid when swap activity is attributable to the run — a pipeline
-        # process has pages in swap, the NVMe spill file grew, or system swap
-        # grew past ambient churn (> AMBIENT_SWAP_SLACK_MB during one turn;
-        # desktop daemons at graphical.target move ~0.25 MB of zram per turn
-        # with the pipeline idle, measured). All three inputs are recorded.
+        # Validity (blessed by Ali 2026-09-15): a turn is invalid when swap
+        # activity is attributable to the run — a pipeline process has pages in
+        # swap, or the NVMe spill file grew (both unconditional), or system
+        # zram grew past this device state's measured ambient churn. All three
+        # inputs are recorded regardless of the verdict.
         invalid_reason = ""
         pids_in_swap = {n: mb for n, mb in own_swap.items() if mb > 0.0}
         swapfile_grew = {d: mb for d, mb in swap_grew.items() if not d.startswith("/dev/zram")}
@@ -167,8 +201,11 @@ class TurnManager:
             invalid_reason = "swapfile_growth:" + ",".join(
                 f"{d}+{mb}MB" for d, mb in swapfile_grew.items()
             )
-        elif ambient > AMBIENT_SWAP_SLACK_MB:
-            invalid_reason = f"zram_growth:+{ambient:.2f}MB"
+        elif ambient > self.swap_threshold_mb:
+            invalid_reason = (
+                f"zram_growth:+{ambient:.2f}MB>threshold{self.swap_threshold_mb:.2f}"
+                f"[{self.swap_threshold_source}]"
+            )
         if forced:
             invalid_reason = (invalid_reason + ";" if invalid_reason else "") + "unfinished_turn"
         if close_reason == "timeout":
