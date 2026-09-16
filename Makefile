@@ -20,10 +20,10 @@ check:
 # The artifact targets are introduced by later phases. Until their inputs exist,
 # building them is a misconfiguration and fails loudly (CLAUDE.md §3).
 results:
-	@echo "error: no result scripts yet — introduced in Phase 1 (src/twl + results/raw)" >&2; exit 2
+	PYTHONPATH=src $(BIN)/python src/scripts/make_tables.py
 
 figures:
-	@echo "error: no figure scripts yet — introduced in Phase 2" >&2; exit 2
+	PYTHONPATH=src $(BIN)/python src/scripts/make_figures.py
 
 paper thesis slides:
 	@command -v latexmk >/dev/null 2>&1 || { \
