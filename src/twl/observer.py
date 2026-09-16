@@ -116,8 +116,6 @@ class StageObserver(BaseObserver):
         if isinstance(frame, _STOPPED):
             if self._first_time(frame):
                 self._turns.mark("vad_user_stopped", at_ns=at)
-                if self._speculation is not None:
-                    self._spec_end_task = asyncio.create_task(self._end_speculation())
                 # The turn actually ended stop_secs earlier; VAD held the
                 # hangover before declaring it. This estimate is replaced by
                 # file-harness ground truth where one exists.
@@ -130,7 +128,19 @@ class StageObserver(BaseObserver):
             return
 
         if isinstance(frame, TranscriptionFrame):
-            # stt_final likewise marked in-service; observer only dedupes flow.
+            # stt_final is marked in-service; the observer ends speculation
+            # HERE, not at vad_user_stopped.
+            #
+            # This matters more than it looks. A speculative reasoner runs
+            # until the transcript it was guessing about is settled — through
+            # the VAD hangover AND the final decode. Cancelling it when VAD
+            # declares the endpoint stops it at exactly the moment the
+            # recognizer begins its heaviest work, so the two never overlap and
+            # the experiment measures contention that was arranged not to
+            # happen (observed 2026-09-16: B=96 and B=256 produced identical
+            # 54-token loads and identical latencies).
+            if self._speculation is not None and self._first_time(frame):
+                self._spec_end_task = asyncio.create_task(self._end_speculation())
             return
 
         if isinstance(frame, LLMTextFrame):
