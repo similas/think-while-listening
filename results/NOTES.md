@@ -341,15 +341,28 @@ conversion layer. Three measurements settle what to do.
    currently unrouted, and Phase 3 barge-in must route TTS through the
    array's own playback endpoint to use it.
 
-3. AMBIGUITY, NOT YET RESOLVED. In the array-output condition the probe was
-   not detected on either channel, but that has two explanations we cannot
-   separate from here: the AEC removed it, or nothing was transduced because
-   no speaker is attached to the array's 3.5 mm output. Suggestive detail:
-   ch0's level FELL 35 dB (rms 0.060 -> 0.001) while ch1 rose ~3 dB, which
-   would fit "ch0 is the AEC-processed channel and suppresses hard when a
-   far-end reference is present, ch1 is the un-cancelled beam". If that is
-   right, the best channel is state-dependent — ch1 while the bot is silent
-   (measured above), ch0 once TTS is routed through the array — and Phase 3
-   should measure both. OWNER: Ali — is anything connected to the XVF3800's
-   audio output? One sentence resolves it and decides whether item 2's
-   conclusion needs the caveat.
+3. AMBIGUITY RESOLVED AS "NO EVIDENCE" (Ali, 2026-09-15): nothing is
+   connected to the XVF3800's 3.5 mm output — the Jieli is a separate USB
+   sink — so the array-output condition TRANSDUCED NO SOUND. Its null result
+   is therefore no evidence either way about the AEC, and is recorded as such
+   rather than as suppression. Item 2's conclusion is unaffected: it rests on
+   the Jieli condition, where both channels reproduce the probe uncancelled.
+
+   WORKING HYPOTHESIS (not yet tested): ch0 = AEC-processed, ch1 =
+   un-cancelled beam. It fits both observations available — ch0's 35 dB level
+   drop when the array's playback endpoint was active (even with no
+   transducer, the DSP sees a far-end reference on its USB playback
+   interface), and the WER ranking with the bot silent (ch1 0.025 < ch0
+   0.050, i.e. AEC processing costs a little accuracy when there is no echo
+   to cancel).
+
+   DECISION (Ali, 2026-09-15): audio.capture_channel = 1, FIXED for all of
+   Phase 2 — the bot is silent while listening there, so the AEC is moot. The
+   state-dependent channel policy (ch1 while silent, ch0 while the bot
+   speaks) is deferred to Phase 3, where TTS plays during listening.
+
+   OPEN ITEM — OWNER: Ali. Attach a wired speaker to the array's 3.5 mm jack,
+   then rerun src/scripts/identify_capture_channels.py's array-output sweep.
+   Only that run can test the working hypothesis and decide the Phase 3
+   channel policy; until it exists, the hypothesis is labelled as such
+   wherever it appears.
