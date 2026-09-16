@@ -675,3 +675,49 @@ drop path in the input transport (unbounded queue, no PortAudio on the input
 side in file mode). Contention here can move TIMING but not TRANSCRIPTION.
 Delta-WER therefore belongs to the live-mic set, and endpoint-detection delay
 is H1's perception metric on the file harness.
+
+## 2026-09-16 — Phase 3 opens: T-EPA memory decision, and a Phase 5 design note
+
+T-EPA COST, MEASURED WITHOUT INSTALLING ANYTHING (sizes from the HF tree API
+and from the torch already present in ~/.venvs/tts-lab):
+
+  torch (package alone)                      897 MB disk
+  nvidia CUDA libs alongside that torch      2.9 GB disk
+  moshi (the Mimi python package)            0.1 MB wheel, pulls torch
+  Mimi codec weights                         385 MB
+    (kyutai/moshiko-pytorch-bf16, tokenizer-e351c8d8-checkpoint125.safetensors;
+     the full Moshi LM in that repo is 15.4 GB and is NOT needed)
+  EPA checkpoint best_val_acc.pt             101 MB
+  ---------------------------------------------------------------
+  disk, CPU-only torch                       ~1.4 GB
+  disk, CUDA torch as currently installed    ~4.3 GB
+  resident RAM, rough                        torch runtime + Mimi 385 MB +
+                                             EPA 25M params (~100 MB fp32)
+
+THREE FACTS THAT BEAR ON THE DECISION:
+1. torch on this box has NO WORKING CUDA (Phase 0: tts-lab's torch 2.13.0+cu130
+   reports cuda.is_available() = False — a cu130 wheel, not a Jetson build). So
+   T-EPA would run Mimi on the CPU, on the same cores as the recognizer.
+2. OUR OWN PHASE 2 RESULT ARGUES AGAINST IT. Residency alone taxes the
+   recognizer: a 2.3 GB neighbour costs ~+130 ms of STT commit latency through
+   THP fragmentation, with no CPU spent. A ~500 MB torch+Mimi+EPA resident set
+   would impose a smaller but real version of the same tax — and unlike
+   llama-server, it buys no answer, only a trigger.
+3. EPA's own paper reports it is "most viable for structured applications" and
+   its fork is ~10 tokens, i.e. it hides first-sentence latency, not reasoning.
+
+RECOMMENDATION: run T-SEM alone for Phase 3, and treat T-EPA as an ablation to
+be attempted only if T-SEM's calibration proves inadequate. If it is attempted,
+install CPU-only torch (~1.4 GB) in a SEPARATE venv behind a sidecar process,
+so the tax it imposes is measurable by stopping one process — exactly the
+design that made the llama occupancy tax measurable.
+AWAITING ALI'S OK; nothing installed.
+
+PHASE 5 DESIGN NOTE (Ali, 2026-09-16), recorded now so it is not rediscovered:
+- ADD one realistic pressure state: TTS-overlap / barge-in, or a concurrent
+  perception load. The synthetic bandwidth adversary earned its place as the
+  Ali & Yun control, but it is not a state the deployed system is ever in.
+- DROP "warm" as a state. Phase 2 measured it and it behaves like cold
+  (+0.159 ms/token, CI [-0.676, +0.979], indistinguishable from cold's +0.083):
+  temperature is not the axis that matters, memory-bandwidth contention is.
+  Keep tj as a per-turn COVARIATE, which it already is.
