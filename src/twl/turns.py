@@ -102,6 +102,12 @@ class TurnManager:
         self._page_cache_mb = -1.0
         self._segment_wav = ""
         self._vmstat_delta: dict[str, int] = {}
+        self._spec: dict[str, float] = {}
+        self._endpoint_delay_ms = -1.0
+        self._wer = -1.0
+        self._reference = ""
+        self._adversary_mb_per_s = -1.0
+        self._energy_j = -1.0
         self._rss_before_mb = -1.0
         self._rss_after_mb = -1.0
         self._anon_huge_before_mb = -1.0
@@ -146,6 +152,12 @@ class TurnManager:
         self._page_cache_mb = -1.0
         self._segment_wav = ""
         self._vmstat_delta = {}
+        self._spec = {}
+        self._endpoint_delay_ms = -1.0
+        self._wer = -1.0
+        self._reference = ""
+        self._adversary_mb_per_s = -1.0
+        self._energy_j = -1.0
         self._rss_before_mb = -1.0
         self._rss_after_mb = -1.0
         self._anon_huge_before_mb = -1.0
@@ -200,6 +212,30 @@ class TurnManager:
         self._rss_after_mb = rss_after_mb
         self._anon_huge_before_mb = anon_huge_before_mb
         self._anon_huge_after_mb = anon_huge_after_mb
+
+    def set_phase2(
+        self,
+        *,
+        spec: dict[str, float] | None = None,
+        endpoint_delay_ms: float = -1.0,
+        wer: float = -1.0,
+        reference: str = "",
+        adversary_mb_per_s: float = -1.0,
+        energy_j: float = -1.0,
+    ) -> None:
+        """Phase 2 quantities for the open turn."""
+        if spec is not None:
+            self._spec = spec
+        if endpoint_delay_ms >= 0:
+            self._endpoint_delay_ms = endpoint_delay_ms
+        if wer >= 0:
+            self._wer = wer
+        if reference:
+            self._reference = reference
+        if adversary_mb_per_s >= 0:
+            self._adversary_mb_per_s = adversary_mb_per_s
+        if energy_j >= 0:
+            self._energy_j = energy_j
 
     def set_stt_audio_seconds(self, seconds: float) -> None:
         """Duration of the audio the final decode consumed.
@@ -304,6 +340,12 @@ class TurnManager:
             stt_majflt=self._stt_majflt,
             page_cache_mb=round(self._page_cache_mb, 1),
             vmstat_delta=dict(self._vmstat_delta),
+            spec=dict(self._spec),
+            endpoint_delay_ms=round(self._endpoint_delay_ms, 1),
+            wer=round(self._wer, 4),
+            reference=self._reference,
+            adversary_mb_per_s=round(self._adversary_mb_per_s, 1),
+            energy_j=round(self._energy_j, 4),
             rss_before_mb=self._rss_before_mb,
             rss_after_mb=self._rss_after_mb,
             anon_huge_before_mb=self._anon_huge_before_mb,

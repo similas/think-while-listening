@@ -34,6 +34,7 @@ from pipecat.observers.base_observer import BaseObserver, FramePushed
 
 from twl.clock import now_ns
 from twl.services import PiperTTSService
+from twl.speculation import SpeculationDriver
 from twl.turns import TurnManager
 
 log = logging.getLogger(__name__)
@@ -56,13 +57,23 @@ _STOPPED = (UserStoppedSpeakingFrame, VADUserStoppedSpeakingFrame)
 class StageObserver(BaseObserver):
     """Stamps turn boundaries and stage firsts as frames flow."""
 
-    def __init__(self, turns: TurnManager, tts: PiperTTSService, *, vad_stop_secs: float) -> None:
+    def __init__(
+        self,
+        turns: TurnManager,
+        tts: PiperTTSService,
+        *,
+        vad_stop_secs: float,
+        speculation: SpeculationDriver | None = None,
+    ) -> None:
         super().__init__()
         self._turns = turns
         self._tts = tts
+        self._speculation = speculation
         self._vad_stop_secs = vad_stop_secs
         self._seen: OrderedDict[int, bool] = OrderedDict()
         self._last_audio_out_ns = 0
+        # Held so the task is not garbage-collected mid-flight; one per turn.
+        self._spec_end_task: asyncio.Task[None] | None = None
         self._deferred_close: tuple[int, int] | None = None
         self.closes_deferred = 0
         self.closes_timed_out = 0
@@ -96,11 +107,17 @@ class StageObserver(BaseObserver):
             if self._first_time(frame):
                 self._turns.turn_started(at)
                 self._turns.mark("vad_user_started", at_ns=at)
+                if self._speculation is not None:
+                    # Speculate WHILE the user speaks: that co-activation is
+                    # the independent variable of Phase 2.
+                    self._speculation.start_turn()
             return
 
         if isinstance(frame, _STOPPED):
             if self._first_time(frame):
                 self._turns.mark("vad_user_stopped", at_ns=at)
+                if self._speculation is not None:
+                    self._spec_end_task = asyncio.create_task(self._end_speculation())
                 # The turn actually ended stop_secs earlier; VAD held the
                 # hangover before declaring it. This estimate is replaced by
                 # file-harness ground truth where one exists.
@@ -142,6 +159,13 @@ class StageObserver(BaseObserver):
                 # the timestamp to the watchdog instead.
                 self._deferred_close = (self._turns.turn, at)
             return
+
+    async def _end_speculation(self) -> None:
+        """Cancel the in-flight decode and record what the turn spent on it."""
+        if self._speculation is None:
+            return
+        stats = await self._speculation.end_turn()
+        self._turns.set_phase2(spec=stats.as_dict())
 
     async def watchdog(self) -> None:
         """Close turns the BotStoppedSpeaking path could not close.

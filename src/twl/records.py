@@ -95,6 +95,13 @@ class TurnRecord:
     anon_huge_after_mb: float = -1.0
     page_cache_mb: float = -1.0
     segment_wav: str = ""
+    # Phase 2: the independent variable and the quantities it moves.
+    spec: dict[str, float] = field(default_factory=dict)
+    endpoint_delay_ms: float = -1.0
+    wer: float = -1.0
+    reference: str = ""
+    adversary_mb_per_s: float = -1.0
+    energy_j: float = -1.0
     # Swap attribution (rule of 2026-09-16): per-process VmSwap decides
     # validity; system zram growth is the applied-pressure covariate.
     # DVFS state at the turn boundary. A resident CUDA context can hold the

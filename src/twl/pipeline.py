@@ -21,6 +21,7 @@ from twl.config import TwlConfig
 from twl.observer import StageObserver
 from twl.records import RunMeta
 from twl.services import LlamaChatProcessor, PiperTTSService, StubLlmProcessor
+from twl.speculation import SpeculationDriver
 from twl.stt import StreamingWhisperSTT
 from twl.transport import FrameSource, TwlAudioTransport
 from twl.turns import TurnManager
@@ -39,6 +40,7 @@ class BuiltPipeline:
     tts: PiperTTSService
     transport: TwlAudioTransport
     observer: StageObserver
+    speculation: SpeculationDriver | None = None
 
 
 def build_pipeline(
@@ -52,6 +54,7 @@ def build_pipeline(
     device_state: str = "desktop",
     pressure_pids: Callable[[], dict[str, int]] | None = None,
     segment_dir: Path | None = None,
+    speculation: SpeculationDriver | None = None,
 ) -> BuiltPipeline:
     """Assemble the REACTIVE pipeline around the given audio source."""
     turns = TurnManager(
@@ -101,7 +104,7 @@ def build_pipeline(
         StubLlmProcessor(turns) if cfg.llm.backend == "stub" else LlamaChatProcessor(cfg.llm, turns)
     )
 
-    observer = StageObserver(turns, tts, vad_stop_secs=cfg.vad.stop_secs)
+    observer = StageObserver(turns, tts, vad_stop_secs=cfg.vad.stop_secs, speculation=speculation)
     pipeline = Pipeline([transport.input(), stt, llm, tts, transport.output()])
     task = PipelineTask(
         pipeline,
@@ -118,4 +121,5 @@ def build_pipeline(
         tts=tts,
         transport=transport,
         observer=observer,
+        speculation=speculation,
     )

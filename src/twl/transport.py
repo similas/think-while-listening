@@ -180,6 +180,11 @@ class FileFrameSource:
         self._gap_ms = gap_ms
         self._tail_ms = tail_silence_ms
         self._turn_gate = turn_gate
+        # (turn number, now_ns of the last speech chunk delivered). Endpoint
+        # delay is measured against THIS, not against the pipeline's own VAD —
+        # a measurement that used the pipeline's opinion of when speech ended
+        # could not detect the pipeline being late.
+        self.speech_end_ns: dict[int, int] = {}
         self._task: asyncio.Task[None] | None = None
         self.finished: asyncio.Event = asyncio.Event()
         # Ground truth per file: (path, start_chunk_index, n_speech_chunks),
@@ -225,6 +230,7 @@ class FileFrameSource:
                     await self._turn_gate(turn)
                 self.timeline.append((str(path), chunk_index, len(pcm) // chunk_bytes))
                 chunk_index += await deliver_paced(pcm, loop.time())
+                self.speech_end_ns[turn] = now_ns()
                 chunk_index += await deliver_paced(silence * gap_chunks, loop.time())
             await deliver_paced(silence * (self._tail_ms // CHUNK_MS), loop.time())
             self.finished.set()

@@ -28,6 +28,7 @@ import tracemalloc
 from dataclasses import asdict, replace
 from pathlib import Path
 
+from twl.adversary import BandwidthAdversary
 from twl.clock import now_ns
 from twl.clocks import ensure_baseline, restore, set_clocks
 from twl.config import load_config
@@ -37,6 +38,7 @@ from twl.pipeline import build_pipeline
 from twl.planning import Plan, add_gate_args, gate
 from twl.provenance import build_run_meta, new_run_id
 from twl.records import read_jsonl
+from twl.speculation import SpeculationDriver
 from twl.telemetry import TegrastatsSampler
 from twl.transport import FileFrameSource, MicFrameSource
 
@@ -233,6 +235,7 @@ async def run(args: argparse.Namespace) -> None:
     try:
         thermal = f"soaked {args.soak_minutes:g}min" if args.soak_minutes else "cold"
         state = device_state()
+        adv_cpus = tuple(int(c) for c in args.adversary_cpus.split(",") if c.strip())
         pid = llama_pid(required=cfg.llm.backend != "stub")
         llama_cmdline = (
             Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
@@ -246,7 +249,8 @@ async def run(args: argparse.Namespace) -> None:
                 f"REACTIVE {'live-mic' if args.live else 'file-playback'} run; "
                 f"agent affinity={sorted(cfg.stt.cpu_affinity)}; "
                 f"clocks={'set' if args.clocks else 'as-found'}; "
-                f"thermal={thermal}; state={state}; "
+                f"thermal={thermal}; state={state}; spec_tokens={args.spec_tokens}; "
+                f"adversary={list(adv_cpus) or 'none'}; "
                 f"{args.notes}"
             ),
             extra_software={"llama-server-cmdline": llama_cmdline},
@@ -286,6 +290,11 @@ async def run(args: argparse.Namespace) -> None:
         )
         sampler.start()
 
+        speculation = (
+            SpeculationDriver(cfg.llm, budget_tokens=args.spec_tokens)
+            if args.spec_tokens > 0
+            else None
+        )
         built = build_pipeline(
             cfg,
             source,
@@ -297,8 +306,15 @@ async def run(args: argparse.Namespace) -> None:
             ),
             device_state=state,
             segment_dir=run_dir / "segments",
+            speculation=speculation,
         )
         built_box.append(built.turns)
+
+        adversary = None
+        if adv_cpus:
+            adversary = BandwidthAdversary(adv_cpus)
+            adversary.start()
+            print(f"bandwidth adversary running on cores {list(adv_cpus)}")
 
         soak_report = None
         if args.soak_minutes > 0:
@@ -428,6 +444,16 @@ async def run(args: argparse.Namespace) -> None:
             # Close the log FIRST (it fsyncs and writes run_complete): teardown
             # may hang, and the results must be durable on disk before anything
             # that can block is attempted.
+            if speculation is not None:
+                with contextlib.suppress(Exception):
+                    await speculation.close()
+            adv_report = adversary.stop() if adversary is not None else None
+            if adv_report is not None:
+                (run_dir / "adversary.json").write_text(json.dumps(asdict(adv_report), indent=1))
+                print(
+                    f"adversary achieved {adv_report.total_mb_per_s:.0f} MB/s "
+                    f"over {adv_report.seconds:.0f}s on cores {list(adv_report.cpus)}"
+                )
             built.turns.close()
             sampler.stop()
             # Report BEFORE teardown is attempted. Teardown can hang (blocked
@@ -534,6 +560,17 @@ def main() -> None:
         "--start-llama-after-warmup",
         action="store_true",
         help="load STT first, then start llama-server (start-order mitigation)",
+    )
+    p.add_argument(
+        "--spec-tokens",
+        type=int,
+        default=0,
+        help="Phase 2: concurrent speculative decode of B tokens during speech",
+    )
+    p.add_argument(
+        "--adversary-cpus",
+        default="",
+        help="Phase 2: comma-separated cores for the bandwidth adversary during the run",
     )
     p.add_argument("--notes", default="")
     add_gate_args(p)
