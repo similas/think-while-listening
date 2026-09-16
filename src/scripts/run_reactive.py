@@ -352,7 +352,6 @@ async def run(args: argparse.Namespace) -> None:
                 )
 
         # Poller-lifetime handle; closed in the finally below.
-        teardown_timed_out = False
         slots_fh = open(run_dir / "slots.jsonl", "w", encoding="utf-8")  # noqa: SIM115
 
         async def poll_slots() -> None:
@@ -423,6 +422,28 @@ async def run(args: argparse.Namespace) -> None:
             # that can block is attempted.
             built.turns.close()
             sampler.stop()
+            # Report BEFORE teardown is attempted. Teardown can hang (blocked
+            # pyaudio write) and the hard-exit guard would then kill the
+            # process before any of this reached stdout — which cost the
+            # attribution script two runs, since it parses the run dir from it.
+            if isinstance(source, FileFrameSource):
+                (run_dir / "playback_timeline.json").write_text(json.dumps(source.timeline))
+            print(
+                f"device state: {state}; swap threshold "
+                f"{built.turns.swap_threshold_mb:.3f} MB ({built.turns.swap_threshold_source})"
+            )
+            print(f"run dir: {run_dir}")
+            print(summarize_run(run_dir / "turns.jsonl"))
+            print(
+                f"stt partials={built.stt.partials_emitted} finals={built.stt.finals_emitted} "
+                f"llm dropped={getattr(built.llm, 'dropped_transcripts', 0)} "
+                f"orphan_marks={built.turns.orphan_marks} "
+                f"watchdog_closes={built.observer.closes_deferred} "
+                f"timeouts={built.observer.closes_timed_out}"
+            )
+            if sampler.samples_written == 0:
+                print("WARNING: telemetry wrote zero samples — run is not usable", file=sys.stderr)
+            sys.stdout.flush()
             # Capture WHO is stuck if the unwind hangs. dump_traceback_later
             # fires from a C-level timer, so it works even when every Python
             # thread is blocked — which is the situation we are diagnosing.
@@ -439,7 +460,7 @@ async def run(args: argparse.Namespace) -> None:
                 await asyncio.wait_for(built.task.cancel(), timeout=TEARDOWN_TIMEOUT_S)
                 await asyncio.wait_for(asyncio.shield(runner_task), timeout=TEARDOWN_TIMEOUT_S)
             except (TimeoutError, asyncio.TimeoutError):
-                teardown_timed_out = True
+                print("teardown did not finish in time", file=sys.stderr)
             except asyncio.CancelledError:
                 pass
             finally:
@@ -452,30 +473,12 @@ async def run(args: argparse.Namespace) -> None:
                 else:
                     print(f"teardown hung; thread stacks in {stacks_path}", file=sys.stderr)
 
-        if isinstance(source, FileFrameSource):
-            (run_dir / "playback_timeline.json").write_text(json.dumps(source.timeline))
-        print(
-            f"device state: {state}; swap threshold "
-            f"{built.turns.swap_threshold_mb:.3f} MB ({built.turns.swap_threshold_source})"
-        )
-        print(f"run dir: {run_dir}")
-        print(summarize_run(run_dir / "turns.jsonl"))
-        print(
-            f"stt partials={built.stt.partials_emitted} finals={built.stt.finals_emitted} "
-            f"llm dropped={built.llm.dropped_transcripts} orphan_marks={built.turns.orphan_marks} "
-            f"watchdog_closes={built.observer.closes_deferred} "
-            f"timeouts={built.observer.closes_timed_out}"
-        )
-        if sampler.samples_written == 0:
-            raise SystemExit("telemetry wrote zero samples — run is not usable")
         # ALWAYS exit hard once the results are printed. A graceful shutdown of
         # this pipeline has hung twice (PortAudio teardown inside pipecat's
         # cancel path, which asyncio.wait_for cannot interrupt because the hang
         # is in an uncancellable section), each time holding the audio device
         # against the next run for hours. Every record is flushed per line as it
         # is written, so there is nothing left to lose by not unwinding.
-        if teardown_timed_out:
-            print(f"teardown exceeded {TEARDOWN_TIMEOUT_S:.0f}s", file=sys.stderr)
         if args.clocks:
             restore(baseline)
         sys.stdout.flush()
