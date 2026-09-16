@@ -604,3 +604,74 @@ DECISION (Ali, 2026-09-16): record the occupancy tax as a PLATFORM PROPERTY of
 unified-memory edge inference and stop investigating THP. It is the floor that
 Phase 2's contention model sits on, not a bug to be fixed. Phase 2 measures
 what ACTIVE speculation adds on top of it.
+
+## 2026-09-16 — Phase 2: what active speculation costs the listener
+
+Grid: B in {0,32,64,96} (and a legacy 256 arm) x {cold, warm, adversary},
+16 utterances per cell, clocks pinned, file playback, speculation running from
+speech start until the transcript is final. Runs indexed under
+results/raw/phase2/; figures rebuilt by `make figures`.
+
+HEADLINE — THE COST OF SPECULATION IS STATE-DEPENDENT, AND THAT IS THE WHOLE
+CASE FOR A LOAD-AWARE CONTROLLER. Paired per utterance against B=0 in the same
+state, STT commit latency cost per speculative token:
+
+    cold        +0.083 ms/token   95% CI [-0.281, +0.426]     n=64 pairs
+    warm        +0.159 ms/token   95% CI [-0.676, +0.979]     n=48 pairs
+    adversary   +2.683 ms/token   95% CI [+2.217, +3.061] *   n=64 pairs
+
+Cold and thermally soaked: FLAT. The cost is a fixed entry fee of roughly
++55 ms (cold: +57/+54/+64/+52 ms at B=32/64/96/256, every CI excluding zero)
+and buying more tokens costs nothing further. Under memory-bandwidth pressure:
+EVERY TOKEN HAS A PRICE, reaching +300 ms [+227, +383] at ~104 tokens. A
+controller that ignores device state must either forgo speculation that is
+nearly free on an idle board, or pay 2.7 ms per token when the memory system
+is contended. That is the decision Phase 4 exists to make.
+
+METHOD NOTE THAT MATTERS: unpaired, NONE of this is visible. Between-utterance
+variance (segments run 1.6-3.2 s) gives CIs of +-300 ms on a ~100 ms effect,
+and every cell looked like noise. Every cell plays the SAME 16 utterances, so
+pairing by utterance removes that variance entirely. The unpaired analysis was
+not wrong, it was underpowered by a factor the design had already paid for.
+
+TWO MECHANISMS FOR SELF-DEFEAT, BOTH REFUTED (rewrite of §7.2 follows):
+- Endpoint-detection delay is FLAT at 252-253 ms in every cell of every state.
+  Speculation does not delay the endpoint.
+- LLM queueing behind the aborted speculation is FLAT: paired LLM TTFT moves
+  by -18 to +24 ms and does not replicate in sign across states (significant
+  and negative only in warm; significant and POSITIVE at B=256 in cold and
+  adversary). Per the pre-registered criterion, not replicated across all
+  three states -> NOISE. The earlier cold B=96 "-62 ms" is noise.
+So the self-defeat route is neither: it is direct per-stage inflation of the
+CO-ACTIVE stage, the recognizer itself.
+
+PREFIX REUSE, MEASURED, AND WHY IT IS SMALL HERE: for the post-endpoint real
+request, cache_n rises 24 -> 31 tokens and prompt_n falls 9 -> 5 when B > 0.
+Real but bounded, and bounded for a reason: Phase 2's speculation is a LOAD
+GENERATOR on a FIXED PLACEHOLDER prompt (identical work in every cell, which
+is what makes B a clean independent variable). A placeholder diverges from the
+real request immediately after the shared system prompt, so the ~7 tokens
+gained are exactly that shared prefix. THIS IS NOT EVIDENCE ABOUT PREFIX
+PRESERVATION; Phase 2 cannot test it by construction.
+
+SPENDABLE BUDGET IS BOUNDED BY THE TURN. B=256 and B=96 produced nearly
+identical load (~104 vs 96 tokens) because the turn ends first: spendable
+budget = remaining speech x decode rate, ~106 tokens for this stimulus set at
+~30 tok/s. The arms are now {0,32,64,96}. Longer utterances widen the range;
+the bound is a property of the turn, not of the hardware.
+
+PHASE 3 DEFAULTS, decided here so they are not rediscovered:
+- CONTINUE THE SLOT, do not cancel-and-resend. Phase 2 cancels every
+  speculation and pays the abort on every turn, which is the worst case.
+- Speculation prompt = the LIVE PARTIAL TRANSCRIPT, in the SAME SLOT as the
+  real request, so its prefix is a true prefix of the final prompt and
+  cache_n should approach the full prompt length.
+- Both changes convert Phase 2's pure cost into Phase 3's cost-minus-gain.
+
+WER: identically 0.042 in every cell, because file-harness audio is bit-exact:
+transcripts are byte-identical across all cells (0 differences) and VAD segment
+durations match to the millisecond (16/16 turns, 0.000 s spread), with no
+drop path in the input transport (unbounded queue, no PortAudio on the input
+side in file mode). Contention here can move TIMING but not TRANSCRIPTION.
+Delta-WER therefore belongs to the live-mic set, and endpoint-detection delay
+is H1's perception metric on the file harness.

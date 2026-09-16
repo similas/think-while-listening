@@ -4,12 +4,17 @@ Fig. 2 — the cost of speculation by device state. TTFA against the tokens a
 speculative decode actually produced, one line per device state, bootstrap 95%
 CI bars, n on every point.
 
-IMPORTANT READING NOTE, carried on the figure itself: in Phase 2 the
-speculation is DISCARDED, never used to answer. This is the COST curve, so it
-can only rise. The U-shape that H2 predicts needs the GAIN side — speculation
-that actually hides latency — which arrives with the policies in Phase 3. A
-monotone cost curve here neither confirms nor refutes H2; it supplies the
-term the H2 test will subtract from.
+IMPORTANT READING NOTE, carried on the figure itself. Phase 2's speculation is
+a LOAD GENERATOR on a fixed placeholder prompt, and its output is DISCARDED:
+  - no answer gain, because the speculation never answers;
+  - almost no prefix reuse, because a placeholder prompt diverges from the real
+    request immediately after the shared system prompt (measured: cache_n rises
+    only 24 -> 31 tokens, the length of that shared system prompt).
+This is therefore the COST curve alone, and it can only rise. The U-shape H2
+predicts needs the gain side, which arrives with Phase 3's policies —
+speculating on the live partial transcript in the same slot. A monotone cost
+curve here neither confirms nor refutes H2; it supplies the term H2 subtracts
+from.
 
 Fig. 3 — STT commit latency and endpoint-detection delay against the same
 axis. ΔWER is deliberately absent: on the file harness the injected audio is
@@ -153,7 +158,7 @@ def main() -> None:
         ax,
         series(cells, "ttfa"),
         "time to first audio (ms)",
-        "Fig. 2  Cost of concurrent speculation (speculation discarded, not used)",
+        "Fig. 2  Cost of placeholder speculation; prefix reuse and answer gain excluded",
     )
     ax.legend(frameon=False, fontsize=8)
     fig.tight_layout()
