@@ -844,33 +844,122 @@ is cross-turn and belongs to analysis: turn N's contention arrived late iff
 turn N+1's quiescent estimate reads contended and turn N's did not, both taken
 in proper windows. On the idle runs the live flag fired on 1 of 16 turns.
 
-## Intensity sweep: continuous or binary? UNDERPOWERED, and it says so
+## The detector is BINARY. Decision taken, and its limits stated
 
-Adversary duty 0.00/0.25/0.50/0.75/1.00, B=96 paired against B=0 on the same
-utterance, 16 pairs per cell, one run per cell.
+Ali, 2026-09-16: skip the linearity sweep. The detector is one bit, threshold
+2950 mW. The controller's cost model has no consumer for a slope, so fitting
+one would be work in service of nothing. The paper gets ONE sentence: the
+signal is monotone in adversary intensity and the threshold is crossed between
+duty 0.50 and 0.75. Nothing about shape beyond that.
 
-    duty   VDD_SOC   ms/token   bootstrap 95% CI     n   turns contended
-    0.00      2401     -0.087   [-0.373, +0.500]    16   0/16
-    0.25      2676     +0.431   [-0.006, +1.121]    16   0/16
-    0.50      2908     +0.422   [-0.064, +1.056]    16   3/16
-    0.75      3104     -2.624   [-4.439, +2.908]    16   15/16
-    1.00      3360     +1.427   [+0.935, +2.072]    16   15/16
+The sweep that produced it, recorded with its limitation rather than dressed
+up. Adversary duty 0.00/0.25/0.50/0.75/1.00, B=96 paired against B=0 on the
+same utterance, 16 pairs per cell, ONE run per cell.
 
-WHAT THIS DOES ESTABLISH: the duty knob moves the detector's own signal
-monotonically (2401 -> 3360 mW), and the threshold turns that into a state
-transition between duty 0.50 and 0.75 — 0/16 and 3/16 turns contended below,
-15/16 at and above.
+    duty   VDD_SOC   ms/token   bootstrap 95% CI     n   contended B=0  B=96
+    0.00      2401     -0.087   [-0.373, +0.500]    16        0/16       0/16
+    0.25      2676     +0.431   [-0.006, +1.121]    16        0/16       0/16
+    0.50      2908     +0.422   [-0.064, +1.056]    16        0/16       3/16
+    0.75      3104     -2.624   [-4.439, +2.908]    16       15/16      15/16
+    1.00      3360     +1.427   [+0.935, +2.072]    16       15/16      15/16
 
-WHAT IT DOES NOT ESTABLISH: whether the COST is continuous in the rail. Four of
-five CIs span zero, and duty=0.75 spans 7.3 ms/token. The reported R^2 of 0.000
-is not evidence of a step function; it is what a regression returns when the
-per-point CIs are wider than the range being fitted. n=16 pairs per cell is
-simply too few, and this must not be reported as "the relationship is a step".
+CONTENDED COUNTS ARE REPORTED PER ARM AND NEVER POOLED (Ali). The arms are
+different measurements: SPEC-ALWAYS samples at pre_decode, B=0 at first_partial
+or stt_final. Pooling hid the one interesting cell — at duty=0.50 the threshold
+is crossed in 3 turns of the SPECULATING arm and none of the B=0 arm, which is
+where self-load contamination would appear. Caveat on these particular numbers:
+this sweep predates the anchor field, so every sample in it was taken at TURN
+START under the old definition and none carries an anchor. No downstream figure
+or table consumes contention yet, so there is no pooled plot to fix.
 
-A DISCREPANCY TO RESOLVE, not to average away: duty=1.00 gives +1.427
-[+0.935, +2.072] ms/token, while the Phase 2 adversary arm gave +2.683
-[+2.217, +3.061] for the nominally identical condition. The CIs do not overlap.
-Candidate causes, none yet tested: the sweep's cells run back-to-back so the
-board warms monotonically through them (the 0.75 cell follows three adversary
-cells); Phase 2 had many more turns per cell; one run per cell here means
-between-run variance is entirely unmodelled.
+The cost column decides nothing about shape. Four of five CIs span zero, one
+spans 7.3 ms/token, and the reported R^2 of 0.000 is what a regression returns
+when the per-point CIs are wider than the range being fitted — not evidence of
+a step. n=16 pairs per cell, one run per cell, and cells run back-to-back so
+tj rose monotonically 64.5 -> 83.8 C across them, making intensity and
+temperature perfectly collinear. CPU and GPU frequencies stayed pinned at
+1728 MHz and 1020 MHz in every cell, so no DVFS throttling occurred despite
+crossing the 74 C trip.
+
+## duty=0.75 was not noise: partial scheduling contaminates the paired metric
+
+Ali declined to file the -2.624 cell as noise without looking, and was right.
+
+Per-utterance deltas in that cell run from -1048 to +1184 ms. It is not one or
+two outliers — the whole cell's pairing is broken. r(STT ms, audio seconds) is
+-0.08 there against +0.52 to +0.65 in every other cell, while transcripts and
+segment durations are byte-identical across all ten cells, so the input is not
+what differs.
+
+THE MECHANISM. The streaming recognizer fires a partial only for utterances
+long enough to finish one before the endpoint; the firing set is near
+deterministic, the same six long utterances in 8 of the 10 cells. The duty=0.75
+B=0 run lost four of them, firing on {10, 14} instead of {4, 10, 11, 14, 15,
+16} — and turns 4, 11, 15 and 16 are exactly the four large positive deltas
+(+684, +995, +1184, +1095 ms). A partial in flight when the utterance ends
+makes the final commit wait for it, inflating both the commit latency and the
+minor-fault count (turns without one sit at a ~119 730 floor regardless of
+audio length; turns with one reach 194 000-240 000).
+
+So the paired STT metric carries an uncontrolled binary per turn. It is a real
+pipeline property — the recognizer genuinely waits — but it is SCHEDULING, not
+contention, and it must be balanced across arms or excluded.
+
+AUDIT OF PHASE 2 AGAINST THIS. Partial-set agreement between each B>0 cell and
+its B=0 baseline, across all six grids:
+    adversary arms   exactly 6 partial turns in EVERY cell, 0 disagreements
+    cold/warm arms   1 to 4 turns disagree in EVERY B>0 cell
+The contended headline (+2.683 ms/token) is therefore NOT contaminated. The
+uncontended arms are, and they are precisely the arms whose CIs span zero
+(+0.083 [-0.281, +0.426] cold, +0.159 [-0.676, +0.979] warm) — part of that
+width is this scheduling noise, not measurement precision. Why the asymmetry:
+under load every decode is slow, so only the six long utterances ever qualify;
+uncontended, decodes are fast and marginal utterances sometimes squeeze an
+extra partial in. Balance is a property of the contended arm, not of the design.
+
+Every paired analysis from here reports partial-set agreement per pair.
+
+## Discrepancy check: is it the adversary variant, or the ordering?
+
++2.683 [+2.217, +3.061] (Phase 2 adversary arm) against +1.427 [+0.935,
++2.072] (sweep duty=1.00) for what was meant to be the same condition; the CIs
+do not overlap. src/scripts/diff_runs.py makes "nominally identical" a diff:
+the two runs agree on audio, config hash, software, nvpmodel, capture,
+partial-turn set, contention anchors, turn count and speculative token count.
+They differ in git revision (654 lines across 9 files, of which the live-path
+changes are the detector's per-turn sampling, LLM cache accounting, and the
+adversary's duty knob) and in the notes string. Both are balanced 6-vs-6 on
+partial turns, so scheduling does not explain this one.
+
+Design (Ali): conditions {none, original (the pre-duty-knob worker verbatim),
+duty1} x B in {0, 96}, 3 reps, randomized order, seed 20260916. Achieved MB/s
+logged per condition; ms/token reported against achieved bandwidth AND against
+run order. The pre-knob worker is kept in src/twl/adversary.py as
+_worker_no_duty_loop so the old code path is an ARM of the comparison rather
+than a hypothesis about it. Standalone, the two variants achieve 23266 and
+23402 MB/s (0.6% apart).
+
+WHAT FOLLOWS EITHER WAY: the Phase 2 report gains a between-run variance
+statement. If the per-token cost is not stable across runs of one condition,
+it is not a constant for BUDGET-R to look up — it is a quantity for BUDGET-L
+to learn, and that changes which controller the evidence supports.
+
+## Fan state is NOT pinned
+
+nvfancontrol is active and drives the fan from the THERMAL MARGIN to the limit
+(profile "quiet": PWM 255 at margin 0, PWM 0 at margin 70), so fan speed is a
+function of temperature and varies exactly where temperature does. Pinning it
+needs a sudoers entry for the hwmon node, which the current
+/etc/sudoers.d/twl does not grant:
+
+    ali orin = (root) NOPASSWD: /usr/bin/tee /sys/class/hwmon/hwmon0/pwm1
+
+Until then it is recorded per turn (PWM, and RPM where the node exists) as a
+covariate and never assumed fixed. nvpmodel (MAXN_SUPER) and jetson_clocks
+(canonical baseline) ARE pinned and already appear in every run manifest.
+
+## Per-turn thermal covariate
+
+Median temperature per zone over each turn — cpu, gpu, soc0, soc1, soc2, tj —
+taken from the 10 Hz stream that already runs, plus fan PWM at the boundary.
+Randomizing cell order does not isolate warming; this puts it in the model.
