@@ -43,8 +43,9 @@ from typing import Any
 
 from twl.clock import now_ns
 from twl.config import load_config
-from twl.llm import LlamaClient, gemma_prompt
+from twl.llm import LlamaClient
 from twl.metrics import median
+from twl.prompting import gemma_prompt, incremental_prompt
 from twl.provenance import build_run_meta, new_run_id
 from twl.records import to_jsonl
 
@@ -75,11 +76,11 @@ def growth_steps(utterance: str) -> list[str]:
 def build_prompt(system: str, partial: str, *, tail_free: bool, final: bool) -> str:
     """The prompt for one incremental prefill.
 
-    tail_free grows bare turn text and appends the closing tail only on the
-    final (commit) step; templated carries the full tail on every step.
+    tail_free is the rule the pipeline follows (twl.prompting); templated is
+    the naive comparison arm that carries the tail on every step.
     """
-    if tail_free and not final:
-        return f"<start_of_turn>user\n{system}\n\n{partial}"
+    if tail_free:
+        return incremental_prompt(system, partial, final=final)
     return gemma_prompt(system, partial)
 
 

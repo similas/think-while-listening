@@ -196,14 +196,3 @@ class LlamaClient:
             total_ms=(end_ns - t0) / 1e6,
             n_chunks=len(chunks),
         )
-
-
-def gemma_prompt(system: str, user: str) -> str:
-    """Gemma chat template for raw /completion calls.
-
-    Matches the template llama-server applies for this GGUF's chat endpoint
-    (system content is folded into the first user turn — Gemma has no system
-    role). Used by measurement scripts that need prefill control; the
-    pipeline itself uses /v1/chat/completions and the server-side template.
-    """
-    return f"<start_of_turn>user\n{system}\n\n{user}<end_of_turn>\n<start_of_turn>model\n"

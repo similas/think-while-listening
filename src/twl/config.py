@@ -68,8 +68,15 @@ class SttConfig:
 
 @dataclass(frozen=True)
 class LlmConfig:
-    """llama-server endpoint and launch parameters."""
+    """llama-server endpoint and launch parameters.
 
+    ``backend`` selects the generation stage: "llama_server" is the real
+    pipeline; "stub" replies instantly with a canned sentence and makes no
+    HTTP call, which is how an experiment removes LLM work from a turn
+    without removing the rest of the pipeline (Phase 1 STT attribution).
+    """
+
+    backend: str = "llama_server"
     host: str = "127.0.0.1"
     port: int = 8093
     model_path: str = "/home/ali/voice-companion/models/gemma-4-E2B-q4_0.gguf"
@@ -113,6 +120,9 @@ class TwlConfig:
     results_dir: str = "results/raw"
 
 
+VALID_LLM_BACKENDS = ("llama_server", "stub")
+
+
 def _build(cls: type[T], data: dict[str, Any], section: str) -> T:
     """Construct a section dataclass, rejecting unknown keys loudly."""
     known = {f.name for f in fields(cls)}
@@ -152,4 +162,7 @@ def load_config(path: Path) -> TwlConfig:
     }
     if "results_dir" in raw:
         kwargs["results_dir"] = str(raw["results_dir"])
-    return TwlConfig(**kwargs)
+    cfg = TwlConfig(**kwargs)
+    if cfg.llm.backend not in VALID_LLM_BACKENDS:
+        raise ValueError(f"{path}: llm.backend must be one of {VALID_LLM_BACKENDS}")
+    return cfg

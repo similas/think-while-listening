@@ -106,6 +106,34 @@ class LlamaChatProcessor(FrameProcessor):
         await self.push_frame(LLMTextFrame(text))
 
 
+class StubLlmProcessor(FrameProcessor):
+    """Replies instantly with a canned sentence; makes no network call.
+
+    Used to measure what the pipeline costs WITHOUT generation, so the
+    inflation of STT commit latency can be attributed between pipeline
+    overhead, a resident-but-idle llama-server, and actual decode.
+    """
+
+    REPLY = "Yes, I can hear you clearly."
+
+    def __init__(self, turns: TurnManager) -> None:
+        super().__init__()
+        self._turns = turns
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+        await super().process_frame(frame, direction)
+        if not (isinstance(frame, TranscriptionFrame) and frame.text.strip()):
+            await self.push_frame(frame, direction)
+            return
+        await self.push_frame(LLMFullResponseStartFrame())
+        self._turns.mark("llm_first_token", once=True)
+        for word in self.REPLY.split():
+            self._turns.add_reply_text(word + " ")
+            await self.push_frame(LLMTextFrame(word + " "))
+        self._turns.mark("llm_done", once=True)
+        await self.push_frame(LLMFullResponseEndFrame())
+
+
 class PiperTTSService(FrameProcessor):
     """Clause-first Piper synthesis on CPU."""
 

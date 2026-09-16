@@ -22,6 +22,7 @@ import os
 import subprocess
 import sys
 import tracemalloc
+from dataclasses import replace
 from pathlib import Path
 
 from twl.clock import now_ns
@@ -152,14 +153,14 @@ async def memory_diagnostics(
             last = snap
 
 
-def llama_pid() -> int:
+def llama_pid(required: bool = True) -> int:
     out = subprocess.run(
         ["systemctl", "--user", "show", "twl-llama.service", "-p", "MainPID"],
         capture_output=True,
         text=True,
     )
     pid = int(out.stdout.strip().split("=")[-1] or 0)
-    if pid <= 0:
+    if pid <= 0 and required:
         raise SystemExit("twl-llama not running; start src/scripts/llama_server.sh first")
     return pid
 
@@ -190,6 +191,8 @@ def summarize_run(turns_path: Path) -> str:
 
 async def run(args: argparse.Namespace) -> None:
     cfg = load_config(args.config)
+    if args.llm_backend is not None:
+        cfg = replace(cfg, llm=replace(cfg.llm, backend=args.llm_backend))
     os.sched_setaffinity(0, set(cfg.stt.cpu_affinity))
     os.environ["PULSE_SINK"] = cfg.audio.pulse_sink
 
@@ -202,8 +205,12 @@ async def run(args: argparse.Namespace) -> None:
     if args.clocks:
         set_clocks()
     try:
-        pid = llama_pid()
-        llama_cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
+        pid = llama_pid(required=cfg.llm.backend != "stub")
+        llama_cmdline = (
+            Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
+            if pid > 0
+            else "llama-server not running"
+        )
         meta = build_run_meta(
             run_id=run_id,
             config_path=args.config,
@@ -250,7 +257,9 @@ async def run(args: argparse.Namespace) -> None:
             run_id=run_id,
             meta=meta,
             turns_log=run_dir / "turns.jsonl",
-            rss_pids={"agent": os.getpid(), "llama-server": pid},
+            rss_pids=(
+                {"agent": os.getpid(), "llama-server": pid} if pid > 0 else {"agent": os.getpid()}
+            ),
         )
         built_box.append(built.turns)
 
@@ -258,18 +267,21 @@ async def run(args: argparse.Namespace) -> None:
         # graph, piper session, llama slot + HTTP) are setup, not turn latency.
         await built.stt.warmup()
         await asyncio.to_thread(built.tts.warm)
-        from twl.llm import LlamaClient
+        if cfg.llm.backend != "stub" and pid > 0:
+            from twl.llm import LlamaClient
 
-        async with LlamaClient(cfg.llm.host, cfg.llm.port) as warm_client:
-            await warm_client.stream_chat(
-                [{"role": "user", "content": "Say ok."}], max_tokens=4, temperature=0.0
-            )
+            async with LlamaClient(cfg.llm.host, cfg.llm.port) as warm_client:
+                await warm_client.stream_chat(
+                    [{"role": "user", "content": "Say ok."}], max_tokens=4, temperature=0.0
+                )
 
         # Poller-lifetime handle; closed in the finally below.
         teardown_timed_out = False
         slots_fh = open(run_dir / "slots.jsonl", "w", encoding="utf-8")  # noqa: SIM115
 
         async def poll_slots() -> None:
+            if cfg.llm.backend == "stub" or pid <= 0:
+                return  # nothing to poll; a stub run must not touch the server
             from twl.llm import LlamaClient as _LC
 
             async with _LC(cfg.llm.host, cfg.llm.port) as lc:
@@ -376,6 +388,12 @@ def main() -> None:
     p.add_argument("--live", action="store_true", help="live mic instead of files")
     p.add_argument("--live-seconds", type=float, default=300.0)
     p.add_argument("--clocks", action="store_true", help="jetson_clocks for the run")
+    p.add_argument(
+        "--llm-backend",
+        choices=["llama_server", "stub"],
+        default=None,
+        help="override llm.backend from the config",
+    )
     p.add_argument("--diag-memory", action="store_true", help="periodic memory snapshots")
     p.add_argument("--diag-trace", action="store_true", help="add tracemalloc (perturbs timing)")
     p.add_argument("--diag-every", type=int, default=8, help="turns between snapshots")

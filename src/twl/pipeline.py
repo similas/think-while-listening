@@ -19,7 +19,7 @@ from pipecat.transports.base_transport import TransportParams
 from twl.config import TwlConfig
 from twl.observer import StageObserver
 from twl.records import RunMeta
-from twl.services import LlamaChatProcessor, PiperTTSService
+from twl.services import LlamaChatProcessor, PiperTTSService, StubLlmProcessor
 from twl.stt import StreamingWhisperSTT
 from twl.transport import FrameSource, TwlAudioTransport
 from twl.turns import TurnManager
@@ -34,7 +34,7 @@ class BuiltPipeline:
     runner: PipelineRunner
     turns: TurnManager
     stt: StreamingWhisperSTT
-    llm: LlamaChatProcessor
+    llm: LlamaChatProcessor | StubLlmProcessor
     tts: PiperTTSService
     transport: TwlAudioTransport
     observer: StageObserver
@@ -79,7 +79,9 @@ def build_pipeline(
     transport = TwlAudioTransport(source, cfg.audio.output_device_substr, params)
 
     stt = StreamingWhisperSTT(cfg.stt, turns, sample_rate=cfg.audio.sample_rate)
-    llm = LlamaChatProcessor(cfg.llm, turns)
+    llm: LlamaChatProcessor | StubLlmProcessor = (
+        StubLlmProcessor(turns) if cfg.llm.backend == "stub" else LlamaChatProcessor(cfg.llm, turns)
+    )
 
     observer = StageObserver(turns, tts, vad_stop_secs=cfg.vad.stop_secs)
     pipeline = Pipeline([transport.input(), stt, llm, tts, transport.output()])
