@@ -86,6 +86,7 @@ class TurnManager:
         self._clock: TurnClock | None = None
         self._turn = 0
         self._transcript = ""
+        self._stt_audio_s = -1.0
         self._reply_parts: list[str] = []
         self._reply_tokens = 0
         self._swap_at_start: dict[str, float] = {}
@@ -120,6 +121,7 @@ class TurnManager:
         self._turn += 1
         self._clock = TurnClock(origin_ns=at_ns)
         self._transcript = ""
+        self._stt_audio_s = -1.0
         self._reply_parts = []
         self._reply_tokens = 0
         self._marked_once = set()
@@ -146,6 +148,15 @@ class TurnManager:
 
     def set_transcript(self, text: str) -> None:
         self._transcript = text
+
+    def set_stt_audio_seconds(self, seconds: float) -> None:
+        """Duration of the audio the final decode consumed.
+
+        Recorded beside the STT latency so the two mechanisms that inflate it
+        are separable: leakage/segmentation effects scale with segment length,
+        compute contention scales per second of audio.
+        """
+        self._stt_audio_s = seconds
 
     def add_reply_text(self, text: str) -> None:
         self._reply_parts.append(text)
@@ -228,6 +239,7 @@ class TurnManager:
             invalid_reason=invalid_reason,
             close_reason=close_reason,
             tj_c=read_tj_c(self._tj_zone),
+            stt_audio_s=round(self._stt_audio_s, 3),
         )
         write_jsonl(self._fh, record)
         self.turns_written += 1

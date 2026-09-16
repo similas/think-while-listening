@@ -32,7 +32,7 @@ from typing import Any
 
 from twl.clock import wall_iso
 from twl.config import load_config
-from twl.metrics import summarize
+from twl.metrics import median, summarize
 from twl.provenance import build_run_meta, new_run_id
 from twl.records import read_jsonl, to_jsonl
 
@@ -101,10 +101,18 @@ def run_pipeline(turns_wavs: Path, backend: str, notes: str, repeat: int) -> Pat
     raise RuntimeError(f"run_reactive produced no run dir\n{tail}")
 
 
-def stt_latencies(run_dir: Path) -> list[float]:
-    """stt_final - vad_user_stopped for every valid turn of a run."""
+def stt_samples(run_dir: Path) -> list[tuple[float, float]]:
+    """(STT latency ms, decoded audio seconds) for every valid turn.
+
+    Both are needed: leakage or segmentation effects inflate latency in
+    proportion to SEGMENT LENGTH, while compute contention inflates it per
+    second of audio. Reporting only the latency cannot tell them apart.
+    """
     return [
-        r["stages_ms"]["stt_final"] - r["stages_ms"]["vad_user_stopped"]
+        (
+            r["stages_ms"]["stt_final"] - r["stages_ms"]["vad_user_stopped"],
+            float(r.get("stt_audio_s", -1.0)),
+        )
         for r in read_jsonl(str(run_dir / "turns.jsonl"))
         if r.get("kind") == "turn_record"
         and r["valid"]
@@ -164,7 +172,7 @@ def main() -> None:
         if not iso_log:
             raise RuntimeError(f"stt_isolation failed:\n{iso.stdout[-1500:]}\n{iso.stderr[-1500:]}")
         results["A_isolation"] = [
-            float(r["decode_ms"])
+            (float(r["decode_ms"]), float(r["audio_s"]))
             for r in read_jsonl(iso_log)
             if r.get("kind") == "stt_isolation_sample"
         ]
@@ -177,7 +185,7 @@ def main() -> None:
         run_b = run_pipeline(
             args.wav_dir, "stub", "attribution B: stub LLM, llama stopped", args.repeat
         )
-        results["B_pipeline_only"] = stt_latencies(run_b)
+        results["B_pipeline_only"] = stt_samples(run_b)
 
         # C — server resident but idle
         subprocess.run([server, "start"], check=True, cwd=REPO)
@@ -188,13 +196,13 @@ def main() -> None:
         run_c = run_pipeline(
             args.wav_dir, "stub", "attribution C: stub LLM, llama resident idle", args.repeat
         )
-        results["C_llama_resident"] = stt_latencies(run_c)
+        results["C_llama_resident"] = stt_samples(run_c)
 
         # D — full pipeline
         run_d = run_pipeline(
             args.wav_dir, "llama_server", "attribution D: full pipeline", args.repeat
         )
-        results["D_full"] = stt_latencies(run_d)
+        results["D_full"] = stt_samples(run_d)
         results["agent_cpu_affinity"] = sorted(cfg.stt.cpu_affinity)
         results["runs"] = {"B": run_b.name, "C": run_c.name, "D": run_d.name, "A": iso_log}
         results["wall_time"] = wall_iso()
@@ -212,12 +220,18 @@ def main() -> None:
     )
     order = ["A_isolation", "B_pipeline_only", "C_llama_resident", "D_full"]
     meds = {}
+    print(f"\n{'condition':>18}  {'n':>3}  {'STT ms':>19}  {'audio s':>8}  {'ms per audio s':>14}")
     for key in order:
-        xs = results[key]
-        s = summarize(xs, n_resamples=2000)
+        pairs = results[key]
+        lat = [p[0] for p in pairs]
+        secs = [p[1] for p in pairs if p[1] > 0]
+        rates = [p[0] / p[1] for p in pairs if p[1] > 0]
+        s = summarize(lat, n_resamples=2000)
         meds[key] = s.median
-        ci = f"[{s.median_ci[0]:.0f}, {s.median_ci[1]:.0f}]"
-        print(f"{key:>18}: n={s.n:>3} median {s.median:7.0f} ms {ci}")
+        ci = f"[{s.median_ci[0]:.0f},{s.median_ci[1]:.0f}]"
+        audio = f"{median(secs):.2f}" if secs else "n/a"
+        rate = f"{median(rates):.0f}" if rates else "n/a"
+        print(f"{key:>18}  {s.n:>3}  {s.median:7.0f} {ci:>11}  {audio:>8}  {rate:>14}")
     base = meds["A_isolation"]
     print(f"\npipeline overhead (B-A): {meds['B_pipeline_only'] - base:+7.0f} ms")
     print(f"llama residency  (C-B): {meds['C_llama_resident'] - meds['B_pipeline_only']:+7.0f} ms")

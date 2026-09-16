@@ -79,6 +79,7 @@ class TurnRecord:
     invalid_reason: str = ""
     close_reason: str = "bot_stopped"
     tj_c: float = -1.0
+    stt_audio_s: float = -1.0
 
     kind: str = field(default="turn_record", init=False)
 

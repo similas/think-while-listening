@@ -175,6 +175,7 @@ class StreamingWhisperSTT(STTService):
             at = now_ns()
             self._turns.mark("stt_final", at_ns=at)
             self._turns.set_transcript(text)
+            self._turns.set_stt_audio_seconds(len(audio) / self.sample_rate)
             self.finals_emitted += 1
             if text:
                 await self.push_frame(TranscriptionFrame(text, "", time_now_iso8601(), None))
