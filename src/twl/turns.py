@@ -20,7 +20,13 @@ from typing import TextIO
 
 from twl.clock import TurnClock, now_ns, wall_iso
 from twl.records import RunMeta, StageEvent, TurnRecord, write_jsonl
-from twl.telemetry import read_mem_available_mb, read_proc_mem_mb, read_swaps
+from twl.telemetry import (
+    find_thermal_zone,
+    read_mem_available_mb,
+    read_proc_mem_mb,
+    read_swaps,
+    read_tj_c,
+)
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +54,7 @@ class TurnManager:
         self._swap_at_start: dict[str, float] = {}
         self._marked_once: set[str] = set()
         self._turn_opened_ns = 0
+        self._tj_zone = find_thermal_zone()
         self.orphan_marks = 0
         self.turns_written = 0
         self.invalid_turns = 0
@@ -181,6 +188,7 @@ class TurnManager:
             valid=not invalid_reason,
             invalid_reason=invalid_reason,
             close_reason=close_reason,
+            tj_c=read_tj_c(self._tj_zone),
         )
         write_jsonl(self._fh, record)
         self.turns_written += 1

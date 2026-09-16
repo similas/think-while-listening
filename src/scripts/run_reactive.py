@@ -22,7 +22,7 @@ import os
 import subprocess
 import sys
 import tracemalloc
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 from twl.clock import now_ns
@@ -205,6 +205,7 @@ async def run(args: argparse.Namespace) -> None:
     if args.clocks:
         set_clocks()
     try:
+        thermal = f"soaked {args.soak_minutes:g}min" if args.soak_minutes else "cold"
         pid = llama_pid(required=cfg.llm.backend != "stub")
         llama_cmdline = (
             Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
@@ -217,7 +218,9 @@ async def run(args: argparse.Namespace) -> None:
             notes=(
                 f"REACTIVE {'live-mic' if args.live else 'file-playback'} run; "
                 f"agent affinity={sorted(cfg.stt.cpu_affinity)}; "
-                f"clocks={'set' if args.clocks else 'as-found'}; {args.notes}"
+                f"clocks={'set' if args.clocks else 'as-found'}; "
+                f"thermal={thermal}; "
+                f"{args.notes}"
             ),
             extra_software={"llama-server-cmdline": llama_cmdline},
         )
@@ -262,6 +265,20 @@ async def run(args: argparse.Namespace) -> None:
             ),
         )
         built_box.append(built.turns)
+
+        soak_report = None
+        if args.soak_minutes > 0:
+            from twl.soak import soak as run_soak
+
+            cpus = tuple(int(c) for c in args.soak_cpus.split(",") if c.strip())
+            soak_report = await run_soak(cfg.llm, minutes=args.soak_minutes, adversary_cpus=cpus)
+            (run_dir / "soak.json").write_text(json.dumps(asdict(soak_report), indent=1))
+            print(
+                f"soak: {soak_report.minutes:.0f} min, tj {soak_report.tj_start_c:.1f} -> "
+                f"{soak_report.tj_max_c:.1f} C (trip {soak_report.throttle_trip_c:.1f} C, "
+                f"crossed={soak_report.crossed_trip}), "
+                f"{soak_report.decode_tokens_per_s:.1f} tok/s"
+            )
 
         # Warm every stage OUTSIDE the measured turns: first-call costs (whisper
         # graph, piper session, llama slot + HTTP) are setup, not turn latency.
@@ -388,6 +405,10 @@ def main() -> None:
     p.add_argument("--live", action="store_true", help="live mic instead of files")
     p.add_argument("--live-seconds", type=float, default=300.0)
     p.add_argument("--clocks", action="store_true", help="jetson_clocks for the run")
+    p.add_argument("--soak-minutes", type=float, default=0.0, help="thermal pre-load (0 = cold)")
+    p.add_argument(
+        "--soak-cpus", default="", help="comma-separated cores for the soak's bandwidth adversary"
+    )
     p.add_argument(
         "--llm-backend",
         choices=["llama_server", "stub"],

@@ -181,6 +181,50 @@ def read_mem_available_mb(path: str = "/proc/meminfo") -> float:
     raise ValueError("MemAvailable not found in /proc/meminfo")
 
 
+_THERMAL = Path("/sys/devices/virtual/thermal")
+
+
+def find_thermal_zone(kind: str = "tj-thermal") -> Path | None:
+    """Locate a thermal zone by its type string (indices are not stable)."""
+    for zone in sorted(_THERMAL.glob("thermal_zone*")):
+        try:
+            if (zone / "type").read_text().strip() == kind:
+                return zone
+        except OSError:
+            continue
+    return None
+
+
+def read_tj_c(zone: Path | None = None) -> float:
+    """Junction temperature in C, or -1.0 if unavailable.
+
+    tj is the zone the SoC throttles on: on this board its first active trip
+    point is 74 C (measured 2026-09-15), which is why tj — not cpu or gpu — is
+    the temperature recorded per turn.
+    """
+    zone = zone or find_thermal_zone()
+    if zone is None:
+        return -1.0
+    try:
+        return int((zone / "temp").read_text().strip()) / 1000.0
+    except (OSError, ValueError):
+        return -1.0
+
+
+def read_trip_points_c(kind: str = "tj-thermal") -> list[float]:
+    """Trip temperatures for a zone, ascending — the throttle thresholds."""
+    zone = find_thermal_zone(kind)
+    if zone is None:
+        return []
+    temps = []
+    for tp in sorted(zone.glob("trip_point_*_temp")):
+        try:
+            temps.append(int(tp.read_text().strip()) / 1000.0)
+        except (OSError, ValueError):
+            continue
+    return sorted(temps)
+
+
 def read_proc_mem_mb(pid: int) -> tuple[float, float]:
     """(VmRSS, VmSwap) of one process in MB.
 

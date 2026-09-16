@@ -77,6 +77,7 @@ class TurnRecord:
     valid: bool
     invalid_reason: str = ""
     close_reason: str = "bot_stopped"
+    tj_c: float = -1.0
 
     kind: str = field(default="turn_record", init=False)
 
