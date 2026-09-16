@@ -33,9 +33,14 @@ trap return_to_desktop EXIT INT TERM
 
 audio_ok() {
   # Same SIGPIPE hazard as llama_healthy: capture first, then match.
+  # BOTH interfaces must work: wpctl talks to PipeWire directly, while the
+  # pipeline's scripts use pactl/paplay over the PulseAudio compatibility
+  # socket that pipewire-pulse provides. Checking only wpctl passed a session
+  # where pipewire-pulse was missing and every pactl call was refused.
   local out
   out="$(wpctl status 2>/dev/null)"
-  [[ "$out" == *reSpeaker* && "$out" == *UACDemo* ]]
+  [[ "$out" == *reSpeaker* && "$out" == *UACDemo* ]] || return 1
+  pactl info >/dev/null 2>&1
 }
 
 log "=== headless window begins ==="

@@ -101,11 +101,7 @@ def run_pipeline(turns_wavs: Path, backend: str, notes: str, repeat: int) -> Pat
         capture_output=True,
         text=True,
         cwd=REPO,
-        env={
-            "PYTHONPATH": str(REPO / "src"),
-            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-            "HOME": str(Path.home()),
-        },
+        env=child_env(),
     )
     for line in out.stdout.splitlines():
         if line.startswith("run dir:"):
@@ -185,11 +181,7 @@ def run_conditions(
             capture_output=True,
             text=True,
             cwd=REPO,
-            env={
-                "PYTHONPATH": str(REPO / "src"),
-                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-                "HOME": str(Path.home()),
-            },
+            env=child_env(),
         )
         iso_log = next(
             (
