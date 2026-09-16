@@ -24,14 +24,45 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 from collections import defaultdict
 from pathlib import Path
 
 from twl.metrics import median
 from twl.records import read_jsonl
 
+
+def boot_ci(xs: list[float], seed: int = 0, n: int = 2000) -> tuple[float, float, float]:
+    """Median with a bootstrap 95% CI — every delta reported carries one."""
+    if not xs:
+        return (float("nan"), float("nan"), float("nan"))
+    rng = random.Random(seed)
+    boots = sorted(median([xs[rng.randrange(len(xs))] for _ in xs]) for _ in range(n))
+    return median(xs), boots[int(0.025 * n)], boots[int(0.975 * n)]
+
+
+def diff_ci(
+    a: list[float], b: list[float], seed: int = 0, n: int = 2000
+) -> tuple[float, float, float]:
+    """median(a) - median(b) with a bootstrap CI on the difference."""
+    if not a or not b:
+        return (float("nan"), float("nan"), float("nan"))
+    rng = random.Random(seed)
+    boots = sorted(
+        median([a[rng.randrange(len(a))] for _ in a])
+        - median([b[rng.randrange(len(b))] for _ in b])
+        for _ in range(n)
+    )
+    return median(a) - median(b), boots[int(0.025 * n)], boots[int(0.975 * n)]
+
+
 REPO = Path(__file__).resolve().parents[2]
+# TTFA is the sum of consecutive stage spans from the true end of speech to
+# the first audio sample out. Listing them all makes the residual meaningful:
+# anything left over is a gap these marks do not cover, or turns missing a
+# mark, and either way it should be named rather than absorbed.
 STAGES = (
+    ("hangover_ms", "speech_end_est", "vad_user_stopped"),
     ("stt_ms", "vad_user_stopped", "stt_final"),
     ("llm_ttft_ms", "stt_final", "llm_first_token"),
     ("tts_ms", "llm_first_token", "tts_first_audio"),
@@ -81,21 +112,33 @@ def main() -> None:
             f"{vals.get('slot_free_ms', float('nan')):>10.1f}"
         )
 
-    print("\nchange from B=0 within each state (ms):")
-    print(f"{'state':>10} {'B':>4} {'dTTFA':>7} {'dSTT':>7} {'dLLM':>7} {'dTTS':>7} {'dout':>6}")
+    print("\nchange from B=0 within each state, median [95% CI] ms:")
+    raw: dict[tuple[str, int], dict[str, list[float]]] = cells
     for (state, budget), d in sorted(cells.items()):
-        if budget == 0 or state not in base:
+        if budget == 0 or (state, 0) not in raw:
             continue
-        vals = {k: median(v) if v else float("nan") for k, v in d.items()}
-        b = base[state]
-        print(
-            f"{state:>10} {budget:>4} "
-            f"{vals.get('ttfa_ms', 0) - b.get('ttfa_ms', 0):>+7.0f} "
-            f"{vals.get('stt_ms', 0) - b.get('stt_ms', 0):>+7.0f} "
-            f"{vals.get('llm_ttft_ms', 0) - b.get('llm_ttft_ms', 0):>+7.0f} "
-            f"{vals.get('tts_ms', 0) - b.get('tts_ms', 0):>+7.0f} "
-            f"{vals.get('out_ms', 0) - b.get('out_ms', 0):>+6.0f}"
-        )
+        b0 = raw[(state, 0)]
+        parts = []
+        stage_sum = 0.0
+        for name, _a, _b in STAGES:
+            delta, lo, hi = diff_ci(d.get(name, []), b0.get(name, []))
+            if delta == delta:  # not NaN
+                stage_sum += delta
+            sig = "*" if (lo > 0 or hi < 0) else " "
+            parts.append(f"{name.replace('_ms', ''):>8} {delta:+7.0f} [{lo:+6.0f},{hi:+6.0f}]{sig}")
+        ttfa_d, tlo, thi = diff_ci(d.get("ttfa_ms", []), b0.get("ttfa_ms", []))
+        tsig = "*" if (tlo > 0 or thi < 0) else " "
+        residual = ttfa_d - stage_sum
+        print(f"  {state} B={budget}:")
+        print(f"    {'TTFA':>8} {ttfa_d:+7.0f} [{tlo:+6.0f},{thi:+6.0f}]{tsig}")
+        for line in parts:
+            print(f"    {line}")
+        print(f"    {'residual':>8} {residual:+7.0f}   (TTFA delta minus the summed stage deltas)")
+        slot = d.get("slot_free_ms", [])
+        if slot:
+            m, lo, hi = boot_ci(slot)
+            label = "cancel-to-slot-free"
+            print(f"    {'abort':>8} {m:+7.1f} [{lo:+6.1f},{hi:+6.1f}]  {label}, n={len(slot)}")
 
 
 if __name__ == "__main__":

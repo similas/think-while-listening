@@ -52,6 +52,8 @@ class StreamedChat:
     ttft_ms: float
     total_ms: float
     n_chunks: int
+    prompt_n: int = -1
+    cache_n: int = -1
 
 
 class LlamaClient:
@@ -215,10 +217,15 @@ class LlamaClient:
             "max_tokens": max_tokens,
             "temperature": temperature,
             "stream": True,
+            # Ask the server to report what it evaluated vs what it reused, so
+            # prefix preservation after a cancelled speculation is measured
+            # rather than assumed.
+            "timings_per_token": True,
         }
         t0 = now_ns()
         first_ns: int | None = None
         chunks: list[str] = []
+        prompt_n = cache_n = -1
         async with self._client.stream(
             "POST", f"{self._base}/v1/chat/completions", json=payload
         ) as r:
@@ -229,7 +236,12 @@ class LlamaClient:
                 body = line[len("data: ") :]
                 if body.strip() == "[DONE]":
                     break
-                delta = json.loads(body)["choices"][0].get("delta", {})
+                parsed = json.loads(body)
+                timings = parsed.get("timings")
+                if isinstance(timings, dict):
+                    prompt_n = int(timings.get("prompt_n", prompt_n))
+                    cache_n = int(timings.get("cache_n", cache_n))
+                delta = parsed["choices"][0].get("delta", {})
                 text = delta.get("content")
                 if text:
                     if first_ns is None:
@@ -245,4 +257,6 @@ class LlamaClient:
             ttft_ms=((first_ns or end_ns) - t0) / 1e6,
             total_ms=(end_ns - t0) / 1e6,
             n_chunks=len(chunks),
+            prompt_n=prompt_n,
+            cache_n=cache_n,
         )

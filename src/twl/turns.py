@@ -237,6 +237,10 @@ class TurnManager:
         if energy_j >= 0:
             self._energy_j = energy_j
 
+    def spec_so_far(self) -> dict[str, float]:
+        """The speculation record for the open turn, for callers adding to it."""
+        return dict(self._spec)
+
     def set_stt_audio_seconds(self, seconds: float) -> None:
         """Duration of the audio the final decode consumed.
 

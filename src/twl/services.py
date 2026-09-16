@@ -98,6 +98,25 @@ class LlamaChatProcessor(FrameProcessor):
         if first_ns:
             self._turns.mark("llm_first_token", at_ns=first_ns[0], once=True)
         self._turns.mark("llm_done", once=True)
+        # Prefix preservation, measured: how much of THIS request's prompt the
+        # server found already in the slot, i.e. left behind by the speculation
+        # that was just cancelled. cache_n > 0 is the evidence.
+        self._turns.set_phase2(
+            spec={
+                **self._turns.spec_so_far(),
+                "real_prompt_n": float(result.prompt_n),
+                "real_cache_n": float(result.cache_n),
+            }
+        )
+        # Prefix preservation, measured: how much of THIS request's prompt the
+        # server found already in the slot from the speculation that just ran.
+        self._turns.set_phase2(
+            spec={
+                **self._turns.spec_so_far(),
+                "real_prompt_n": float(result.prompt_n),
+                "real_cache_n": float(result.cache_n),
+            }
+        )
         await self.push_frame(LLMFullResponseEndFrame())
         log.debug("llm: reply in %d chunks, %.0f ms", result.n_chunks, result.total_ms)
 
