@@ -23,6 +23,7 @@ from typing import TextIO
 import yaml
 
 from twl.clock import TurnClock, now_ns, wall_iso
+from twl.contention import ContentionDetector
 from twl.records import RunComplete, RunMeta, StageEvent, TurnRecord, write_jsonl
 from twl.telemetry import (
     find_thermal_zone,
@@ -79,6 +80,7 @@ class TurnManager:
         *,
         device_state: str = "desktop",
         pressure_pids: Callable[[], dict[str, int]] | None = None,
+        detector: ContentionDetector | None = None,
     ):
         self._run_id = run_id
         self.swap_threshold_mb, self.swap_threshold_source = load_swap_threshold(device_state)
@@ -89,6 +91,10 @@ class TurnManager:
         # from the pipeline's own. Resolved per turn: an adversary's pids
         # change whenever it is restarted.
         self._pressure_pids = pressure_pids or (lambda: {})
+        # Sampled at turn start, before this turn speculates, and held for the
+        # turn: a continuous reading would be confounded by our own decode.
+        self._detector = detector
+        self._contention: dict[str, float | bool] = {}
         # Log handle spans the whole run; closed by close(). The lifetime is
         # the manager's, not a with-block's.
         self._fh: TextIO = open(out_path, "a", encoding="utf-8")  # noqa: SIM115
@@ -166,6 +172,8 @@ class TurnManager:
         self._reply_tokens = 0
         self._marked_once = set()
         self._turn_opened_ns = at_ns
+        if self._detector is not None:
+            self._contention = self._detector.sample_quiescent().as_dict()
         self._swap_at_start = read_swaps().used_mb
 
     def mark(self, stage: str, at_ns: int | None = None, *, once: bool = False) -> None:
@@ -344,6 +352,7 @@ class TurnManager:
             stt_majflt=self._stt_majflt,
             page_cache_mb=round(self._page_cache_mb, 1),
             vmstat_delta=dict(self._vmstat_delta),
+            contention=dict(self._contention),
             spec=dict(self._spec),
             endpoint_delay_ms=round(self._endpoint_delay_ms, 1),
             wer=round(self._wer, 4),

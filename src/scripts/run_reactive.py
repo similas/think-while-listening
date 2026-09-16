@@ -32,6 +32,7 @@ from twl.adversary import BandwidthAdversary
 from twl.clock import now_ns
 from twl.clocks import ensure_baseline, restore, set_clocks
 from twl.config import load_config
+from twl.contention import ContentionDetector
 from twl.device import device_state
 from twl.metrics import median
 from twl.pipeline import build_pipeline
@@ -306,13 +307,14 @@ async def run(args: argparse.Namespace) -> None:
             ),
             device_state=state,
             segment_dir=run_dir / "segments",
+            detector=ContentionDetector(),
             speculation=speculation,
         )
         built_box.append(built.turns)
 
         adversary = None
         if adv_cpus:
-            adversary = BandwidthAdversary(adv_cpus)
+            adversary = BandwidthAdversary(adv_cpus, duty=args.adversary_duty)
             adversary.start()
             print(f"bandwidth adversary running on cores {list(adv_cpus)}")
 
@@ -566,6 +568,12 @@ def main() -> None:
         type=int,
         default=0,
         help="Phase 2: concurrent speculative decode of B tokens during speech",
+    )
+    p.add_argument(
+        "--adversary-duty",
+        type=float,
+        default=1.0,
+        help="fraction of wall time the adversary streams (intensity knob)",
     )
     p.add_argument(
         "--adversary-cpus",

@@ -95,6 +95,9 @@ class TurnRecord:
     anon_huge_after_mb: float = -1.0
     page_cache_mb: float = -1.0
     segment_wav: str = ""
+    # Phase 3: the quiescent contention estimate this turn was decided on,
+    # sampled at turn start before any speculation (see twl.contention).
+    contention: dict[str, float | bool] = field(default_factory=dict)
     # Phase 2: the independent variable and the quantities it moves.
     spec: dict[str, float] = field(default_factory=dict)
     endpoint_delay_ms: float = -1.0

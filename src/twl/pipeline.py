@@ -18,6 +18,7 @@ from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.transports.base_transport import TransportParams
 
 from twl.config import TwlConfig
+from twl.contention import ContentionDetector
 from twl.observer import StageObserver
 from twl.records import RunMeta
 from twl.services import LlamaChatProcessor, PiperTTSService, StubLlmProcessor
@@ -55,6 +56,7 @@ def build_pipeline(
     pressure_pids: Callable[[], dict[str, int]] | None = None,
     segment_dir: Path | None = None,
     speculation: SpeculationDriver | None = None,
+    detector: ContentionDetector | None = None,
 ) -> BuiltPipeline:
     """Assemble the REACTIVE pipeline around the given audio source."""
     turns = TurnManager(
@@ -64,6 +66,7 @@ def build_pipeline(
         rss_pids,
         device_state=device_state,
         pressure_pids=pressure_pids,
+        detector=detector,
     )
     if f"state={device_state}" not in meta.notes and "state=" in meta.notes:
         raise ValueError(

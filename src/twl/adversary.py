@@ -36,17 +36,31 @@ import numpy as np
 DEFAULT_BUFFER_MB = 64
 
 
-def _worker(buffer_mb: int, cpu: int, stop: Any, out: Any) -> None:
-    """Stream writes through a cache-defeating buffer until told to stop."""
+def _worker(buffer_mb: int, cpu: int, stop: Any, out: Any, duty: float = 1.0) -> None:
+    """Stream writes through a cache-defeating buffer until told to stop.
+
+    ``duty`` is the fraction of wall time spent streaming, which turns a
+    single pinned core into a CONTINUOUS intensity knob: the controller's cost
+    model should not rest on one synthetic intensity, so the sweep needs
+    intermediate pressures, not just on and off. Sleeping between passes
+    lowers the bandwidth demanded without changing where it comes from.
+    """
     os.sched_setaffinity(0, {cpu})
     buf = np.zeros(buffer_mb * 1024 * 1024 // 8, dtype=np.int64)
     bytes_written = 0
     t0 = time.perf_counter()
     val = 1
+    duty = min(max(duty, 0.01), 1.0)
     while not stop.is_set():
+        pass_start = time.perf_counter()
         buf[:] = val  # one full streaming pass over the buffer
         bytes_written += buf.nbytes
         val += 1
+        if duty < 1.0:
+            busy = time.perf_counter() - pass_start
+            idle = busy * (1.0 - duty) / duty
+            if idle > 0:
+                time.sleep(idle)
     elapsed = time.perf_counter() - t0
     out.put({"cpu": cpu, "mb_per_s": round(bytes_written / 1e6 / max(elapsed, 1e-9), 1)})
 
@@ -58,6 +72,7 @@ class AdversaryReport:
     workers: int
     cpus: tuple[int, ...]
     buffer_mb: int
+    duty: float
     seconds: float
     total_mb_per_s: float
     per_worker_mb_per_s: list[float]
@@ -66,11 +81,20 @@ class AdversaryReport:
 class BandwidthAdversary:
     """Start/stop a set of pinned bandwidth-hungry worker processes."""
 
-    def __init__(self, cpus: tuple[int, ...], *, buffer_mb: int = DEFAULT_BUFFER_MB) -> None:
+    def __init__(
+        self,
+        cpus: tuple[int, ...],
+        *,
+        buffer_mb: int = DEFAULT_BUFFER_MB,
+        duty: float = 1.0,
+    ) -> None:
         if not cpus:
             raise ValueError("adversary needs at least one CPU to run on")
+        if not 0.0 < duty <= 1.0:
+            raise ValueError(f"duty must be in (0, 1], got {duty}")
         self._cpus = cpus
         self._buffer_mb = buffer_mb
+        self._duty = duty
         self._ctx = mp.get_context("spawn")
         self._stop = self._ctx.Event()
         self._queue: mp.Queue[dict[str, Any]] = self._ctx.Queue()
@@ -82,7 +106,7 @@ class BandwidthAdversary:
         for cpu in self._cpus:
             p = self._ctx.Process(
                 target=_worker,
-                args=(self._buffer_mb, cpu, self._stop, self._queue),
+                args=(self._buffer_mb, cpu, self._stop, self._queue, self._duty),
                 daemon=True,
             )
             p.start()
@@ -106,6 +130,7 @@ class BandwidthAdversary:
             workers=len(self._cpus),
             cpus=self._cpus,
             buffer_mb=self._buffer_mb,
+            duty=self._duty,
             seconds=round(time.perf_counter() - self._t0, 2),
             total_mb_per_s=round(sum(rates), 1),
             per_worker_mb_per_s=rates,

@@ -24,9 +24,34 @@ is rejected for LAG: it is only observable once a decode has finished, i.e.
 one full turn after the contention began, which is too late for a controller
 that must decide at each partial commit.
 
-LAG OF THIS DETECTOR: one INA3221 read (microseconds) plus the EWMA window.
-With the default alpha over ~100 ms samples the effective lag is ~300 ms, and
-``ContentionDetector.lag_ms`` reports it so a run records what it actually had.
+SAMPLED QUIESCENTLY, BECAUSE A CONTINUOUS READING IS CONFOUNDED BY OUR OWN
+LOAD. Checked against the 10 Hz stream rather than the once-per-turn record
+(which samples after the decode and hid this): our OWN speculation raises
+VDD_SOC by ~1000 mW at B=96 (cold median 2632 -> 3669 mW), which alone would
+push an idle board above the 2950 mW threshold and report "contended" when the
+only load is us. A continuously-sampled detector would therefore have told the
+controller that speculating makes speculation expensive — a feedback loop out
+of a measurement artifact.
+
+The fix (Ali's option (b), chosen over self-load correction for being simpler
+and lag-free at the moment of decision): sample the rail ONCE PER TURN, at turn
+start, before any speculation for that turn, and hold that estimate for the
+turn. The quiescent floor separates the states cleanly and is nearly invariant
+to our budget:
+
+    percentile   cold        adversary     gap
+    p5           2322-2479   3220-3340   +741 mW
+    p10          2440-2593   3306-3379   +713 mW
+    (warm sits with cold at 2514-2637: not a contended state)
+
+The 2950 mW threshold sits ~350 mW above every quiescent cold/warm reading and
+~350 mW below every adversary one.
+
+LAG: ZERO at the moment the first decision is made, because the sample is taken
+before deciding. The estimate then ages over the turn: contention arriving
+mid-turn is seen only at the next turn's start. That is the trade, and it is
+recorded per turn so the analysis can see which turns were decided on a stale
+estimate.
 """
 
 from __future__ import annotations
@@ -38,7 +63,8 @@ from twl.telemetry import read_power_rails_mw
 # Midpoint of the measured distributions, with margin: uncontended runs sat at
 # 2554-2594 mW and the contended arm at 3346 mW.
 DEFAULT_THRESHOLD_MW = 2950.0
-DEFAULT_ALPHA = 0.3  # EWMA weight on the newest sample
+# Kept for the record: an EWMA over continuous samples was the first design and
+# is unusable here, because our own decode moves the rail ~1000 mW.
 
 
 @dataclass
@@ -63,45 +89,47 @@ class ContentionReading:
 
 @dataclass
 class ContentionDetector:
-    """EWMA of the SoC rail, thresholded into a contended / not-contended state."""
+    """Quiescent SoC-rail reading, thresholded into contended / not contended.
+
+    ``sample_quiescent`` is called at TURN START, before this turn speculates;
+    ``current`` returns the held estimate for every decision within the turn.
+    """
 
     threshold_mw: float = DEFAULT_THRESHOLD_MW
-    alpha: float = DEFAULT_ALPHA
-    sample_interval_ms: float = 100.0
-    _smoothed: float = field(default=0.0, init=False)
-    readings: int = field(default=0, init=False)
+    n_samples: int = 3
+    _held: ContentionReading | None = field(default=None, init=False)
+    turns_sampled: int = field(default=0, init=False)
 
     @property
     def lag_ms(self) -> float:
-        """Effective lag: the EWMA's time constant over the sampling interval."""
-        if self.alpha <= 0:
-            return float("inf")
-        return round(self.sample_interval_ms / self.alpha, 1)
+        """Zero at the decision point: the sample precedes the decision."""
+        return 0.0
 
-    def sample(self) -> ContentionReading:
-        """Read the rail now and update the state. Cheap enough to call often."""
-        rails = read_power_rails_mw()
-        now = float(rails.get("VDD_SOC", -1.0))
-        if now < 0:
-            # No reading: report the last state rather than inventing one.
-            return ContentionReading(
-                vdd_soc_mw=-1.0,
-                smoothed_mw=self._smoothed,
-                contended=self._smoothed > self.threshold_mw,
-                threshold_mw=self.threshold_mw,
-                lag_ms=self.lag_ms,
-            )
-        self._smoothed = (
-            now if self.readings == 0 else (self.alpha * now + (1 - self.alpha) * self._smoothed)
-        )
-        self.readings += 1
-        return ContentionReading(
-            vdd_soc_mw=now,
-            smoothed_mw=self._smoothed,
-            contended=self._smoothed > self.threshold_mw,
+    def sample_quiescent(self) -> ContentionReading:
+        """Read the rail while nothing of ours is decoding; hold for the turn."""
+        readings = [
+            float(read_power_rails_mw().get("VDD_SOC", -1.0)) for _ in range(self.n_samples)
+        ]
+        valid = [r for r in readings if r > 0]
+        if not valid:
+            # No reading: keep the previous estimate rather than invent one.
+            return self._held or ContentionReading(-1.0, -1.0, False, self.threshold_mw, 0.0)
+        # The MINIMUM of a few samples is the quiescent floor: it rejects a
+        # stray sample caught while something transient was running.
+        floor = min(valid)
+        self._held = ContentionReading(
+            vdd_soc_mw=floor,
+            smoothed_mw=floor,
+            contended=floor > self.threshold_mw,
             threshold_mw=self.threshold_mw,
-            lag_ms=self.lag_ms,
+            lag_ms=0.0,
         )
+        self.turns_sampled += 1
+        return self._held
+
+    def current(self) -> ContentionReading:
+        """The estimate held for this turn; samples once if never sampled."""
+        return self._held or self.sample_quiescent()
 
 
 # Phase 2's fitted cost, in the form the controller consumes. Entry fee is the
