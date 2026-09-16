@@ -721,3 +721,61 @@ PHASE 5 DESIGN NOTE (Ali, 2026-09-16), recorded now so it is not rediscovered:
   (+0.159 ms/token, CI [-0.676, +0.979], indistinguishable from cold's +0.083):
   temperature is not the axis that matters, memory-bandwidth contention is.
   Keep tj as a per-turn COVARIATE, which it already is.
+
+## 2026-09-16 — Phase 3: T-SEM measured, contention detector chosen
+
+T-SEM WORKS, AND THE SIGNAL IS NOT THE ONE THE BRIEF ASSUMED. The completeness
+marker is not <end_of_turn> — that token never appears in the top-k for
+mid-turn user text — it is TERMINAL PUNCTUATION. Measured next-token
+distribution after "what is the capital of France": p("?") = 0.993. The score
+is therefore the probability mass on any token that closes the utterance,
+summed over tokenizer variants ('?', '?"', '?.', <end_of_turn>).
+
+    'what is the capital of'                      0.000
+    'what is the capital of France'               0.998
+    'can you hear'                                0.001
+    'can you hear me'                             0.348
+    'count from one to'                           0.000
+    'count from one to ten'                       0.755
+    'my weekly budget is two hundred dollars'     0.880
+
+Cost: 80-143 ms per evaluation with cache_n 23-26, i.e. it runs off the prefix
+already in the slot and adds NO resident memory. That last point is why T-SEM
+and not T-EPA: Phase 2 showed residency itself taxes the recognizer, so a
+trigger carrying its own model pays that tax before deciding anything.
+
+CONTENTION DETECTOR: VDD_SOC, the SoC power rail. Chosen by measurement over
+592 turns, against the alternatives:
+
+    signal        cold    warm   adversary   verdict
+    VDD_SOC       2554    2594     3346 mW   CHOSEN: +29%, and it is the rail
+                                             feeding the memory controller
+    VDD_IN        8069    8233    10824 mW   separates, but also tracks our own
+                                             CPU/GPU work, so it self-triggers
+    minor faults  129946  126856   147087    weak (+13%) AND one turn of lag:
+                                             only known after a decode finishes
+    AnonHugePages     26      28       22 MB too weak to threshold
+    tj                68      75       76 C  DOES NOT separate adversary from
+                                             warm; temperature is the wrong axis
+
+Threshold 2950 mW (midpoint with margin). LAG: one INA3221 read (microseconds)
+plus the EWMA time constant = 333 ms at alpha 0.3 over 100 ms samples, reported
+by the detector itself so each run records what it actually had. STT commit
+inflation against an isolation baseline was the other candidate and was
+rejected for lag: it is observable only after a decode, one full turn late.
+
+Contention(B, s) enters the controller exactly as Phase 2 fitted it: a flat
+entry fee of 55 ms, plus 0.083 ms/token when uncontended and 2.683 ms/token
+when contended. B=96 costs 63 ms idle and 313 ms contended.
+
+CARRIED FORWARD FROM ALI (2026-09-16), to be honoured in Phase 5 and the paper:
+1. T-SEM is SEMANTIC-ONLY and will fire on text that is complete but whose
+   speaker continues ("...capital of France - and Germany"). Report PAR (EPA's
+   premature anticipation rate) for T-SEM in Phase 5, and make the
+   Pause-and-Repair replication its explicit stress test. This is the honest
+   cost of having no acoustic trigger and must appear as a NUMBER.
+2. Trigger latency is STT-partial latency PLUS T-SEM evaluation time, logged
+   per turn. The 80-143 ms measured above is only the second half; the
+   anticipation horizon actually available must be measured, not assumed.
+3. The paper states the T-EPA decision as a CONSEQUENCE of the Phase 2
+   occupancy result, with the 1.4 GB (CPU-only) / 4.3 GB (CUDA) numbers.
