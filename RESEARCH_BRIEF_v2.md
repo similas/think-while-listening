@@ -267,8 +267,13 @@ isolated accuracy is ≥ 30 %**, so speculation's effect on accuracy is observab
 
 ### 7.1 Decision variable
 At each STT partial commit (or every 80–200 ms while speech continues), choose
-**B ∈ {0, 32, 96, 256}** reasoning tokens for the speculative Thinker (llama.cpp
-`n_predict` = B, stop sequences at reasoning-block end). B = 0 → no speculative decode;
+**B ∈ {0, 32, 64, 96}** reasoning tokens for the speculative Thinker (llama.cpp
+`n_predict` = B, stop sequences at reasoning-block end). The arms were {0,32,96,256}
+until Phase 2 showed that B=256 and B=96 apply nearly identical load: the SPENDABLE
+budget is bounded by remaining-speech x decode rate (~106 tokens for this stimulus set
+at ~30 tok/s), so the turn ends before a larger budget can be spent. Longer utterances
+widen the range; the bound belongs to the turn, not the hardware.
+B = 0 → no speculative decode;
 incremental prefill still runs (cheap, prefix reused via `--cache-prompt` / slot reuse;
 measured, not assumed — Phase 1 verifies prefix reuse and its cost).
 
@@ -283,10 +288,32 @@ U(B) = p_done · Gain(B) − (1 − p_done) · Waste(B) − Contention(B, s)
   monotone with diminishing returns; use the same reasoning-budget lineage as s1's
   budget forcing to justify capping CoT).
 - **Waste(B)** = B · J_per_decode_token(s) (measured).
-- **Contention(B, s)** = predicted added end-to-end latency from STT inflation and
-  endpoint-detection delay when B tokens decode concurrently under s = (free memory,
-  SoC temp, current STT inflation, CPU util, GPU util). Fitted regression from Phase 2
-  (start linear in B with state interactions; report fit).
+- **Contention(B, s)** = predicted added end-to-end latency when B tokens decode
+  concurrently under state s. **MEASURED IN PHASE 2 (2026-09-16), and the shape is not
+  what this brief assumed.** Paired per utterance against B=0, the STT cost per
+  speculative token is:
+
+      cold        +0.083 ms/token   95% CI [-0.281, +0.426]
+      warm        +0.159 ms/token   95% CI [-0.676, +0.979]
+      adversary   +2.683 ms/token   95% CI [+2.217, +3.061]
+
+  So Contention is NOT a single function of B. On a cold or thermally soaked board it
+  is a FIXED ENTRY FEE of ~55 ms and flat in B; under memory-bandwidth pressure it is
+  LINEAR in B, reaching +300 ms at ~104 tokens. The state that matters is memory
+  bandwidth contention, not temperature: the soaked board (tj 74-76 C) behaves like the
+  cold one. The controller's lever is therefore "is the memory system contended", and
+  B matters only when it is.
+
+  TWO ROUTES THIS BRIEF PROPOSED FOR SELF-DEFEAT ARE REFUTED, both by direct
+  measurement. (i) Endpoint-detection delay is FLAT at 252-253 ms in every cell of
+  every state — speculation does not delay the endpoint. (ii) The real request does NOT
+  queue behind the aborted speculation: paired LLM TTFT moves -18 to +24 ms and does
+  not replicate in sign across states. Self-defeat is direct per-stage inflation of the
+  CO-ACTIVE stage — the recognizer — and nothing downstream.
+
+  Phase 2 measures the WORST CASE: every speculation is cancelled and the abort is paid
+  on every turn. Phase 3 continues the slot and speculates on the live partial
+  transcript, so an accepted speculation pays none of it.
 
 ### 7.3 Policies
 BUDGET-R = argmax_B U(B) with fitted terms. BUDGET-L = LinUCB / Thompson sampling over
