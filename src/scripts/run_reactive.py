@@ -421,14 +421,19 @@ async def run(args: argparse.Namespace) -> None:
         )
         if sampler.samples_written == 0:
             raise SystemExit("telemetry wrote zero samples — run is not usable")
+        # ALWAYS exit hard once the results are printed. A graceful shutdown of
+        # this pipeline has hung twice (PortAudio teardown inside pipecat's
+        # cancel path, which asyncio.wait_for cannot interrupt because the hang
+        # is in an uncancellable section), each time holding the audio device
+        # against the next run for hours. Every record is flushed per line as it
+        # is written, so there is nothing left to lose by not unwinding.
         if teardown_timed_out:
-            # Everything measured is already on disk; leaving the process alive
-            # would hold the audio device against the next run.
-            print(f"teardown exceeded {TEARDOWN_TIMEOUT_S:.0f}s — exiting hard", file=sys.stderr)
+            print(f"teardown exceeded {TEARDOWN_TIMEOUT_S:.0f}s", file=sys.stderr)
+        if args.clocks:
             restore(baseline)
-            sys.stdout.flush()
-            sys.stderr.flush()
-            os._exit(0)
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
     finally:
         if args.clocks:
             restore(baseline)
