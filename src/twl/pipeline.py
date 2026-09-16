@@ -52,6 +52,11 @@ def build_pipeline(
 ) -> BuiltPipeline:
     """Assemble the REACTIVE pipeline around the given audio source."""
     turns = TurnManager(run_id, turns_log, meta, rss_pids, device_state=device_state)
+    if f"state={device_state}" not in meta.notes and "state=" in meta.notes:
+        raise ValueError(
+            f"device_state {device_state!r} contradicts the run meta ({meta.notes!r}); "
+            "a run must not record two different device states"
+        )
 
     tts = PiperTTSService(cfg.tts, turns)
     tts.load()  # sample rate needed for the output transport

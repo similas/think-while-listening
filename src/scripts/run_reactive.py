@@ -272,6 +272,7 @@ async def run(args: argparse.Namespace) -> None:
             rss_pids=(
                 {"agent": os.getpid(), "llama-server": pid} if pid > 0 else {"agent": os.getpid()}
             ),
+            device_state=state,
         )
         built_box.append(built.turns)
 
