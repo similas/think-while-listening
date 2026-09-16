@@ -98,6 +98,7 @@ class LlamaClient:
         temperature: float = 0.0,
         stop: list[str] | None = None,
         slot_id: int | None = None,
+        ignore_eos: bool = False,
     ) -> CompletionTimings:
         """One /completion call, returning the server's own timing block.
 
@@ -108,6 +109,10 @@ class LlamaClient:
             temperature: sampling temperature.
             stop: stop strings.
             slot_id: pin the request to a slot (-1/None lets the server pick).
+            ignore_eos: keep decoding to n_predict even past an end-of-turn
+                token. Required when the token count IS the independent
+                variable: otherwise the model stops early and the applied load
+                is whatever the prompt happened to elicit, not B.
 
         Raises:
             httpx.HTTPStatusError: non-200 from the server.
@@ -124,6 +129,8 @@ class LlamaClient:
             payload["stop"] = stop
         if slot_id is not None:
             payload["id_slot"] = slot_id
+        if ignore_eos:
+            payload["ignore_eos"] = True
         t0 = now_ns()
         r = await self._client.post(f"{self._base}/completion", json=payload)
         wall_ms = (now_ns() - t0) / 1e6
@@ -138,6 +145,49 @@ class LlamaClient:
             wall_ms=wall_ms,
             content=str(data.get("content", "")),
         )
+
+    async def stream_completion(
+        self,
+        prompt: str,
+        *,
+        n_predict: int,
+        cache_prompt: bool = True,
+        temperature: float = 0.5,
+        ignore_eos: bool = True,
+        on_token: Callable[[str], None] | None = None,
+    ) -> int:
+        """Stream a raw completion, returning how many tokens actually arrived.
+
+        Streaming is what makes a CANCELLED speculation measurable: a
+        non-streaming request that is cancelled returns nothing, so the tokens
+        it decoded — the waste the controller must account for — would be
+        invisible. Here every token is counted as it arrives, and a cancel
+        leaves the count intact.
+        """
+        payload = {
+            "prompt": prompt,
+            "n_predict": n_predict,
+            "cache_prompt": cache_prompt,
+            "temperature": temperature,
+            "stream": True,
+        }
+        if ignore_eos:
+            payload["ignore_eos"] = True
+        produced = 0
+        async with self._client.stream("POST", f"{self._base}/completion", json=payload) as r:
+            r.raise_for_status()
+            async for line in r.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                chunk = json.loads(line[len("data: ") :])
+                text = chunk.get("content", "")
+                if text:
+                    produced += 1
+                    if on_token is not None:
+                        on_token(text)
+                if chunk.get("stop"):
+                    break
+        return produced
 
     async def stream_chat(
         self,

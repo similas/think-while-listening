@@ -89,21 +89,32 @@ class SpeculationDriver:
     async def _speculate(self, partial: str) -> None:
         client = await self.client()
         t0 = now_ns()
+        streamed = 0
+
+        def count(_token: str) -> None:
+            nonlocal streamed
+            streamed += 1
+            self.stats.tokens_produced += 1
+
         try:
             self.stats.requests += 1
-            timings = await client.completion(
+            await client.stream_completion(
                 incremental_prompt(SPEC_SYSTEM, partial, final=True),
                 n_predict=self.budget_tokens,
                 cache_prompt=True,
                 temperature=0.5,
+                # B is the independent variable: the decode must actually run
+                # B tokens, not stop early on an end-of-turn token and apply
+                # whatever load the prompt happened to elicit.
+                ignore_eos=True,
+                on_token=count,
             )
-            self.stats.tokens_produced += timings.predicted_n
             self.stats.decode_ms += (now_ns() - t0) / 1e6
         except asyncio.CancelledError:
-            # The turn ended before the decode did: everything it produced is
-            # waste by construction, which is exactly what we are here to count.
+            # The turn ended first: every token this decode produced is waste,
+            # and thanks to streaming we know exactly how many that was.
             self.stats.cancelled += 1
-            self.stats.tokens_discarded += self.budget_tokens
+            self.stats.tokens_discarded += streamed
             self.stats.decode_ms += (now_ns() - t0) / 1e6
             raise
         except Exception:
