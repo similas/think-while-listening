@@ -307,7 +307,7 @@ async def run(args: argparse.Namespace) -> None:
             ),
             device_state=state,
             segment_dir=run_dir / "segments",
-            detector=ContentionDetector(),
+            detector=ContentionDetector(history_fn=sampler.recent_soc_mw),
             speculation=speculation,
         )
         built_box.append(built.turns)

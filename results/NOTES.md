@@ -779,3 +779,98 @@ CARRIED FORWARD FROM ALI (2026-09-16), to be honoured in Phase 5 and the paper:
    anticipation horizon actually available must be measured, not assumed.
 3. The paper states the T-EPA decision as a CONSEQUENCE of the Phase 2
    occupancy result, with the 1.4 GB (CPU-only) / 4.3 GB (CUDA) numbers.
+
+## Contention detector: the quiescent window, defined and measured (2026-09-16)
+
+Ali's definition, now implemented and pinned by src/tests/test_contention.py:
+
+    QUIESCENT WINDOW = after this turn's first partial transcript arrives,
+    and before this turn issues its first speculative decode.
+
+It does NOT gate on other pipeline activity — the previous reply's TTS, the
+telemetry sampler, anything else on the board. That is environment, and the
+recognizer pays for it exactly as it pays for an external contender. The only
+thing excluded is our own speculative decode.
+
+ANCHORS, logged per turn, because the window is not always available:
+    first_partial  the definition above
+    pre_decode     this turn speculates before any partial exists (SPEC-ALWAYS
+                   starts at vad_user_started), so the window is empty and the
+                   sample is taken immediately before issuing the decode
+    stt_final      the utterance produced no partial at all, so the window
+                   never opened; taken before this turn talks to the LLM
+Measured on the 16-utterance set: every turn under ~2.4 s of audio produces NO
+partial (8 of 16 turns). An utterance shorter than the recognizer's partial
+cadence gives a controller nothing to decide on — that is a property of the
+trigger, not a defect of the detector, and Phase 3 must report it.
+
+THE SAMPLES COME FROM THE 10 Hz STREAM, NOT FROM REPEATED SENSOR READS. The
+INA3221 updates about every 11 ms: 189 direct reads in 1 s returned 2 distinct
+values, so three back-to-back reads are one conversion three times and a
+"min of 3" over them is theatre. Reads spaced far enough apart to be
+independent would block the decision path for tens of ms — spending the latency
+speculation exists to save. tegrastats and the sysfs INA3221 read the same
+sensor (n=56 paired samples: median difference 0.4 mW, max 3.0 mW), so the
+2950 mW threshold carries over unchanged.
+
+WHAT THE ANCHOR IS WORTH, measured on an idle 16-turn run (n=975 telemetry
+samples). Our own pipeline alone puts 17.7% of individual samples above the
+2950 mW threshold, and 14.5% of 300 ms floors taken at a random moment. At the
+anchor: 0 of 16 turns read contended at B=0, and 1 of 16 at B=96 — and that one
+is the definition working, not failing, since pre_decode counts the previous
+reply's TTS as the environment it is.
+
+BUDGET-INVARIANCE, the property the quiescent design exists to buy. Held
+estimate at B=0 vs B=96, per adversary intensity (16 turns per cell):
+
+    duty   B=0     B=96    delta
+    0.00   2401    2480    +79 mW
+    0.25   2676    2711    +35 mW
+    0.50   2908    2928    +20 mW
+    0.75   3104    3124    +20 mW
+    1.00   3360    3335    -25 mW
+
+Against ~1000 mW for the continuously-sampled detector this replaces (cold
+median 2632 -> 3669 mW at B=96, off the same 10 Hz stream). The estimate is
+now essentially independent of our own budget, which is what makes it usable
+as a controller input rather than a feedback loop.
+
+ESTIMATE_STALE IS AN UPPER BOUND, and the reason is worth stating. The closing
+read cannot be taken in a quiescent window — the turn's own LLM and TTS tail is
+still on the rail — so it is a floor over 2 s rather than over 300 ms, sized on
+the idle run above (fraction of floors above threshold from our own load alone:
+14.5% at 300 ms, 3.5% at 1 s, 0.1% at 1.5 s, 0% at 2 s). The clean derivation
+is cross-turn and belongs to analysis: turn N's contention arrived late iff
+turn N+1's quiescent estimate reads contended and turn N's did not, both taken
+in proper windows. On the idle runs the live flag fired on 1 of 16 turns.
+
+## Intensity sweep: continuous or binary? UNDERPOWERED, and it says so
+
+Adversary duty 0.00/0.25/0.50/0.75/1.00, B=96 paired against B=0 on the same
+utterance, 16 pairs per cell, one run per cell.
+
+    duty   VDD_SOC   ms/token   bootstrap 95% CI     n   turns contended
+    0.00      2401     -0.087   [-0.373, +0.500]    16   0/16
+    0.25      2676     +0.431   [-0.006, +1.121]    16   0/16
+    0.50      2908     +0.422   [-0.064, +1.056]    16   3/16
+    0.75      3104     -2.624   [-4.439, +2.908]    16   15/16
+    1.00      3360     +1.427   [+0.935, +2.072]    16   15/16
+
+WHAT THIS DOES ESTABLISH: the duty knob moves the detector's own signal
+monotonically (2401 -> 3360 mW), and the threshold turns that into a state
+transition between duty 0.50 and 0.75 — 0/16 and 3/16 turns contended below,
+15/16 at and above.
+
+WHAT IT DOES NOT ESTABLISH: whether the COST is continuous in the rail. Four of
+five CIs span zero, and duty=0.75 spans 7.3 ms/token. The reported R^2 of 0.000
+is not evidence of a step function; it is what a regression returns when the
+per-point CIs are wider than the range being fitted. n=16 pairs per cell is
+simply too few, and this must not be reported as "the relationship is a step".
+
+A DISCREPANCY TO RESOLVE, not to average away: duty=1.00 gives +1.427
+[+0.935, +2.072] ms/token, while the Phase 2 adversary arm gave +2.683
+[+2.217, +3.061] for the nominally identical condition. The CIs do not overlap.
+Candidate causes, none yet tested: the sweep's cells run back-to-back so the
+board warms monotonically through them (the 0.75 cell follows three adversary
+cells); Phase 2 had many more turns per cell; one run per cell here means
+between-run variance is entirely unmodelled.

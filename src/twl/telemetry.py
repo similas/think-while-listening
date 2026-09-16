@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 import subprocess
 import threading
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
@@ -98,6 +99,13 @@ class TegrastatsSampler:
     def __init__(self, out_path: Path, *, run_id: str, interval_ms: int = 100) -> None:
         if interval_ms > 100:
             raise ValueError("protocol requires >= 10 Hz sampling (interval <= 100 ms)")
+        # Recent VDD_SOC, kept in memory for the contention detector. Reading
+        # the INA3221 directly cannot give independent samples: the sensor
+        # updates every ~11 ms, so back-to-back reads return one conversion
+        # (measured 2026-09-16: 189 reads in 1 s produced 2 distinct values).
+        # These samples are 100 ms apart, already being taken, and cost the
+        # decision path nothing.
+        self._recent_soc: deque[float] = deque(maxlen=32)
         self._out_path = out_path
         self._run_id = run_id
         self._interval_ms = interval_ms
@@ -132,8 +140,20 @@ class TegrastatsSampler:
                     # First bad line poisons the run: record and stop pumping.
                     self.parse_error = str(e)
                     return
+                soc = sample.power_mw.get("VDD_SOC")
+                if soc is not None:
+                    self._recent_soc.append(float(soc))
                 write_jsonl(fh, sample)
                 self.samples_written += 1
+
+    def recent_soc_mw(self, n: int) -> list[float]:
+        """The last ``n`` VDD_SOC samples, oldest first (fewer if just started).
+
+        tegrastats and the sysfs INA3221 read the same sensor (checked
+        2026-09-16 over 56 paired samples: median difference 0.4 mW, max 3.0
+        mW), so thresholds derived from one apply to the other.
+        """
+        return list(self._recent_soc)[-n:]
 
     def stop(self) -> None:
         """Terminate tegrastats and join the reader."""

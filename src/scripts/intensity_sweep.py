@@ -9,7 +9,7 @@ This sweeps the adversary's duty cycle — the fraction of wall time it streams,
 which modulates bandwidth demand on a single pinned core without changing
 where the demand comes from — and measures, at each intensity:
 
-    quiescent VDD_SOC (the detector's own signal, sampled at turn start)
+    quiescent VDD_SOC (the detector's own signal, sampled at the first partial)
     ms per speculative token (paired B>0 against B=0 at the same intensity)
 
 If ms/token rises roughly linearly with the rail, the controller can price
@@ -105,7 +105,7 @@ def main() -> None:
             steps=[f"duty={d:g} B={b}" for d in DUTIES for b in BUDGETS],
             est_minutes=len(DUTIES) * len(BUDGETS) * 3,
             target_changes=["starts/stops the bandwidth adversary at several intensities"],
-            thresholds={"detector": "quiescent VDD_SOC, sampled at turn start"},
+            thresholds={"detector": "quiescent VDD_SOC, sampled at the first partial"},
         ),
         plan_only=args.plan,
         yes=args.yes,

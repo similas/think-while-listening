@@ -94,7 +94,7 @@ class TurnManager:
         # Sampled at turn start, before this turn speculates, and held for the
         # turn: a continuous reading would be confounded by our own decode.
         self._detector = detector
-        self._contention: dict[str, float | bool] = {}
+        self._contention: dict[str, object] = {}
         # Log handle spans the whole run; closed by close(). The lifetime is
         # the manager's, not a with-block's.
         self._fh: TextIO = open(out_path, "a", encoding="utf-8")  # noqa: SIM115
@@ -172,8 +172,9 @@ class TurnManager:
         self._reply_tokens = 0
         self._marked_once = set()
         self._turn_opened_ns = at_ns
+        self._contention = {}
         if self._detector is not None:
-            self._contention = self._detector.sample_quiescent().as_dict()
+            self._detector.begin_turn()
         self._swap_at_start = read_swaps().used_mb
 
     def mark(self, stage: str, at_ns: int | None = None, *, once: bool = False) -> None:
@@ -193,6 +194,18 @@ class TurnManager:
     def has_mark(self, stage: str) -> bool:
         """True if the open turn already carries this stage (once-marks only)."""
         return stage in self._marked_once
+
+    def sample_contention(self, anchor: str) -> None:
+        """Take this turn's quiescent contention estimate; first caller wins.
+
+        Anchored at the turn's FIRST PARTIAL TRANSCRIPT — or, for a turn that
+        speculates before any partial exists, immediately before that decode is
+        issued. Never after: a reading taken then includes our own decode,
+        which alone moves the rail ~1000 mW (twl.contention).
+        """
+        if self._detector is None or self._clock is None:
+            return
+        self._detector.sample_once(anchor)
 
     def set_transcript(self, text: str) -> None:
         self._transcript = text
@@ -280,6 +293,13 @@ class TurnManager:
         if self._clock is None:
             return
         clock, self._clock = self._clock, None
+
+        # Re-read the rail now the turn's own work is done: did contention
+        # arrive after the estimate this turn was decided on? Records
+        # estimate_stale; changes nothing, the turn is over.
+        if self._detector is not None:
+            self._detector.close_turn()
+            self._contention = self._detector.turn_dict()
 
         swap_now = read_swaps().used_mb
         swap_grew = {

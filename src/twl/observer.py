@@ -110,6 +110,12 @@ class StageObserver(BaseObserver):
                 if self._speculation is not None:
                     # Speculate WHILE the user speaks: that co-activation is
                     # the independent variable of Phase 2.
+                    #
+                    # This turn therefore decodes BEFORE any partial exists, so
+                    # the quiescent window is empty and the estimate has to be
+                    # taken here instead — still ahead of our own load, but
+                    # earlier than the definition. The anchor records which.
+                    self._turns.sample_contention("pre_decode")
                     self._speculation.start_turn()
             return
 
@@ -124,10 +130,23 @@ class StageObserver(BaseObserver):
 
         if isinstance(frame, InterimTranscriptionFrame):
             # stt_partial marks are taken at decode completion inside the STT
-            # service (closer to the event); nothing to do here.
+            # service (closer to the event).
+            #
+            # THIS is the quiescent window: the first partial has arrived and
+            # this turn has not yet spoken to the LLM. Whatever else is running
+            # — the previous reply still playing, telemetry — is environment
+            # the recognizer pays for, so it is deliberately counted.
+            self._turns.sample_contention("first_partial")
             return
 
         if isinstance(frame, TranscriptionFrame):
+            # An utterance shorter than the streaming recognizer's partial
+            # cadence never produces a partial at all (measured 2026-09-16:
+            # every turn under ~2.4 s of audio), so the quiescent window never
+            # opened. Take the estimate here instead — still before this turn
+            # talks to the LLM. First caller wins, so a turn that did get a
+            # partial, or that already speculated, keeps its earlier anchor.
+            self._turns.sample_contention("stt_final")
             # stt_final is marked in-service; the observer ends speculation
             # HERE, not at vad_user_stopped.
             #
