@@ -572,3 +572,35 @@ avoidable — pre-faulting or huge-page-backing the recognizer's weights before
 the LLM loads, or starting STT first, should keep its 196 MB of AnonHugePages.
 That is a cheap experiment and, if it works, a contribution in its own right.
 Not attempted yet; recorded so it is not lost.
+
+## 2026-09-16 — THP mitigation: both levers fail. The tax is a platform property.
+
+Run thp-mitigation-20260916-131754-3e56c1, 16 turns per condition, stub LLM,
+clocks pinned, system THP policy UNTOUCHED (per-process advice only).
+
+| condition                  | STT ms | minflt  | AnonHuge MB | thp_fallback | thp_alloc |
+|----------------------------|--------|---------|-------------|--------------|-----------|
+| (recognizer alone, ref)    |  ~1720 |   5 706 |     196     |       0      |    228    |
+| M0 control (llama first)   |  1883  | 114 684 |      20     |     204      |     56    |
+| M1 start order (STT first) |  1950  | 157 943 |      44     |     288      |      0    |
+| M2 MADV_HUGEPAGE           |  1931  | 148 955 |      46     |     274      |     24    |
+| M3 both                    |  1846  |  88 264 |      66     |     165      |     64    |
+
+VERDICT: NEITHER MITIGATION WORKS. Loading the recognizer before the LLM does
+not let it keep its huge pages (44 MB vs 196 MB alone), and marking its
+buffers MADV_HUGEPAGE — the one case where defrag=madvise makes the kernel
+compact on demand — recovers no more (46 MB). Both together reach 66 MB, a
+third of the unencumbered figure, and the latency differences (-37 to +67 ms)
+are inside the run-to-run variation already measured for these conditions.
+
+Why the levers cannot work, in hindsight: the recognizer's huge pages are not
+lost at allocation time, which is what start order and madvise address. They
+are lost CONTINUOUSLY, because the decoder allocates and frees working buffers
+on every call, and each new allocation faces a pool that the neighbour keeps
+fragmented. There is no moment at which the recognizer can "claim" memory and
+hold it.
+
+DECISION (Ali, 2026-09-16): record the occupancy tax as a PLATFORM PROPERTY of
+unified-memory edge inference and stop investigating THP. It is the floor that
+Phase 2's contention model sits on, not a bug to be fixed. Phase 2 measures
+what ACTIVE speculation adds on top of it.
