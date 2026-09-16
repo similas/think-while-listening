@@ -32,8 +32,10 @@ return_to_desktop() {
 trap return_to_desktop EXIT INT TERM
 
 audio_ok() {
-  wpctl status 2>/dev/null | grep -qi "reSpeaker" && \
-  wpctl status 2>/dev/null | grep -qi "UACDemo"
+  # Same SIGPIPE hazard as llama_healthy: capture first, then match.
+  local out
+  out="$(wpctl status 2>/dev/null)"
+  [[ "$out" == *reSpeaker* && "$out" == *UACDemo* ]]
 }
 
 log "=== headless window begins ==="
@@ -61,19 +63,27 @@ log "audio path: $AUDIO_STEP"
 wpctl status 2>/dev/null | sed -n '/Audio/,/Video/p' | grep -E "reSpeaker|UACDemo|Sinks|Sources" | tee -a "$NOTE"
 
 # --- the measurements ---------------------------------------------------------
+llama_healthy() {
+  # NEVER `status | grep -q` here: under `set -o pipefail`, grep -q exits on the
+  # first match and closes the pipe, the upstream script dies of SIGPIPE, and
+  # the pipeline reports failure for a HEALTHY server. That cost two windows on
+  # 2026-09-15. Capture the output, then match it.
+  local out
+  out="$(src/scripts/llama_server.sh status 2>&1)"
+  [[ "$out" == *healthy* ]]
+}
+
 require_llama() {
-  # Health can refuse transiently while systemd switches targets, so probe for
-  # a few seconds before concluding the server is down (2026-09-15: a check one
-  # second after isolation aborted a whole window against a healthy server).
+  # Health can also refuse transiently while systemd switches targets, so probe
+  # for a few seconds before concluding the server is down.
   for _ in $(seq 1 15); do
-    src/scripts/llama_server.sh status | grep -q healthy && return 0
+    llama_healthy && return 0
     sleep 2
   done
   log "llama-server not healthy after 30s; restarting it"
   src/scripts/llama_server.sh stop 2>&1 | tee -a "$NOTE"
   src/scripts/llama_server.sh start 2>&1 | tee -a "$NOTE"
-  src/scripts/llama_server.sh status | grep -q healthy \
-    || { log "ABORT: llama-server unavailable"; exit 1; }
+  llama_healthy || { log "ABORT: llama-server unavailable"; exit 1; }
 }
 
 if stage ambient; then
