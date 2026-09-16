@@ -91,6 +91,11 @@ class TurnRecord:
     segment_wav: str = ""
     # Swap attribution (rule of 2026-09-16): per-process VmSwap decides
     # validity; system zram growth is the applied-pressure covariate.
+    # DVFS state at the turn boundary. A resident CUDA context can hold the
+    # GPU — and with it the memory controller — in a raised state with no work
+    # submitted, which would not show up in CPU time or fault counters.
+    gpu_freq_mhz: float = -1.0
+    power_mw: dict[str, float] = field(default_factory=dict)
     proc_swap_mb: dict[str, float] = field(default_factory=dict)
     pressure_swap_mb: dict[str, float] = field(default_factory=dict)
     zram_growth_mb: float = 0.0

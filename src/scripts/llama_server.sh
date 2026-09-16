@@ -32,6 +32,11 @@ PY
 )
 PORT="${VALS[0]}"; MODEL="${VALS[1]}"; CTX="${VALS[2]}"; THREADS="${VALS[3]}"
 NGL="${VALS[4]}"; PARALLEL="${VALS[5]}"; MEM_MAX="${VALS[6]}"; AFFINITY="${VALS[7]}"
+# Controls for the C'' experiment: LLAMA_NGL overrides GPU-layer offload, and
+# LLAMA_NO_CUDA=1 starts without the CUDA backend at all, so no CUDA context
+# is ever created. Together they separate "footprint" from "idle GPU context".
+NGL="${LLAMA_NGL:-$NGL}"
+NO_CUDA="${LLAMA_NO_CUDA:-0}"
 CACHE_REUSE="${VALS[8]}"
 
 health() { curl -sf "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; }
@@ -44,7 +49,9 @@ case "${1:-status}" in
     systemctl --user stop "$UNIT" 2>/dev/null || true
     systemctl --user reset-failed "$UNIT" 2>/dev/null || true
     [ -f "$MODEL" ] || { echo "model not found: $MODEL" >&2; exit 1; }
-    [ -r "$BACKEND" ] || { echo "missing CUDA backend $BACKEND" >&2; exit 1; }
+    if [[ "$NO_CUDA" != "1" ]]; then
+      [ -r "$BACKEND" ] || { echo "missing CUDA backend $BACKEND" >&2; exit 1; }
+    fi
     systemd-run --user --quiet --unit="$UNIT" --slice=twl.slice \
       --property=MemoryMax="${MEM_MAX}M" \
       --property=MemorySwapMax=0 \
@@ -55,7 +62,7 @@ case "${1:-status}" in
       --property=StandardOutput="append:$LOG" \
       --property=StandardError="append:$LOG" \
       --setenv=LD_LIBRARY_PATH="$OLLAMA_LIB/cuda_jetpack6:$OLLAMA_LIB" \
-      --setenv=GGML_BACKEND_PATH="$BACKEND" \
+      ${NO_CUDA:+} $( [[ "$NO_CUDA" == "1" ]] || echo --setenv=GGML_BACKEND_PATH="$BACKEND" ) \
       "$BIN" \
         --model "$MODEL" \
         --host 127.0.0.1 --port "$PORT" \
@@ -67,7 +74,7 @@ case "${1:-status}" in
       if health; then
         # Refuse a silent CPU-only start: the GPU warning appears within the
         # first log lines if the backend failed to load.
-        if grep -q "no usable GPU found" "$LOG"; then
+        if [[ "$NO_CUDA" != "1" ]] && tail -c "+$((LOG_OFFSET + 1))" "$LOG" | grep -q "no usable GPU found"; then
           echo "twl-llama: started CPU-ONLY (backend failed to load) — stopping" >&2
           systemctl --user stop "$UNIT"; exit 1
         fi

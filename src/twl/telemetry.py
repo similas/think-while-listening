@@ -248,6 +248,47 @@ def read_page_cache_mb(path: str = "/proc/meminfo") -> float:
     return -1.0
 
 
+_GPU_DEVFREQ = Path("/sys/class/devfreq/17000000.gpu/cur_freq")
+_INA3221 = Path("/sys/class/hwmon/hwmon1")
+
+
+def read_gpu_freq_mhz(path: Path = _GPU_DEVFREQ) -> float:
+    """GPU clock in MHz from devfreq, or -1.0.
+
+    tegrastats on this board reports GR3D as a percentage only, with no
+    frequency, and the EMC clock is not exposed outside root debugfs — so the
+    GPU's devfreq node is the only directly observable clock. It matters
+    because a resident CUDA context can hold the GPU (and with it the memory
+    controller) in a higher DVFS state even with no work submitted.
+    """
+    try:
+        return int(path.read_text().strip()) / 1e6
+    except (OSError, ValueError):
+        return -1.0
+
+
+def read_power_rails_mw(hwmon: Path = _INA3221) -> dict[str, float]:
+    """Instantaneous rail power in mW from the INA3221, by label.
+
+    VDD_SOC is the closest available proxy for memory-controller activity,
+    since EMC frequency itself needs root.
+    """
+    rails: dict[str, float] = {}
+    try:
+        for label_file in sorted(hwmon.glob("in*_label")):
+            idx = label_file.name.removeprefix("in").removesuffix("_label")
+            label = label_file.read_text().strip()
+            volt = hwmon / f"in{idx}_input"
+            curr = hwmon / f"curr{idx}_input"
+            if volt.exists() and curr.exists():
+                mv = int(volt.read_text().strip())
+                ma = int(curr.read_text().strip())
+                rails[label] = round(mv * ma / 1000.0, 1)
+    except (OSError, ValueError):
+        return rails
+    return rails
+
+
 def read_proc_mem_mb(pid: int) -> tuple[float, float]:
     """(VmRSS, VmSwap) of one process in MB.
 

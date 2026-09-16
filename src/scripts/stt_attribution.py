@@ -100,6 +100,33 @@ def smaps(pid: int) -> dict[str, float]:
     return {k: round(v, 1) for k, v in out.items()}
 
 
+def start_llama(env_overrides: dict[str, str]) -> tuple[int, dict[str, Any]]:
+    """Start llama-server with overrides; return (pid, footprint)."""
+    subprocess.run([str(REPO / "src/scripts/llama_server.sh"), "stop"], check=False, cwd=REPO)
+    time.sleep(3)
+    subprocess.run(
+        [str(REPO / "src/scripts/llama_server.sh"), "start"],
+        check=True,
+        cwd=REPO,
+        env={**child_env(), **env_overrides},
+    )
+    pid, mask = llama_state()
+    return pid, {
+        "pid": pid,
+        "cpu_mask": mask,
+        "smaps": smaps(pid),
+        "idle_cpu_s_per_20s": idle_cpu_probe(pid, 20.0),
+        "gpu_freq_mhz": gpu_freq_mhz(),
+    }
+
+
+def gpu_freq_mhz() -> float:
+    try:
+        return int(Path("/sys/class/devfreq/17000000.gpu/cur_freq").read_text()) / 1e6
+    except (OSError, ValueError):
+        return -1.0
+
+
 def run_pipeline(wav_dir: Path, notes: str, repeat: int) -> Path:
     """One run_reactive invocation; returns its run directory."""
     out = subprocess.run(
@@ -239,9 +266,11 @@ def main() -> None:
                 "A isolation: decode exactly those segments, paired",
                 "C llama resident: stub LLM, llama-server running but idle",
                 "C' ballast resident: stub LLM, inert process with llama's footprint",
+                "C'' a: llama ngl 0 WITH cuda backend (context, no GPU weights)",
+                "C'' b: llama with NO cuda backend (no context, largest footprint)",
                 "D full pipeline: real generation",
             ],
-            est_minutes=6 + 4 * (args.repeat * n_wavs * 7 / 60),
+            est_minutes=8 + 6 * (args.repeat * n_wavs * 7 / 60),
             target_changes=[
                 "stops and restarts twl-llama.service",
                 "starts/stops a memory ballast",
@@ -342,8 +371,27 @@ def main() -> None:
         ballast.wait(timeout=10)
         ballast = None
 
+        # --- C'' : does a CUDA CONTEXT explain the rest? ----------------------
+        # Two variants whose FOOTPRINT ordering is the reverse of their context
+        # ordering, so the two hypotheses cannot both fit:
+        #   C''a  ngl 0 WITH the CUDA backend  -> context, weights in page cache
+        #   C''b  no CUDA backend at all       -> no context, largest footprint
+        # If the cost tracks the context, C''a is slow and C''b is fast despite
+        # being the biggest. If it tracks footprint, they rise with RSS.
+        _pid, results["llama_ngl0_cuda"] = start_llama({"LLAMA_NGL": "0"})
+        run_c2a = run_pipeline(
+            args.wav_dir, "attribution C2a: stub LLM, llama ngl0 with cuda", args.repeat
+        )
+        results["C2a_context_no_offload"] = condition_summary(turn_rows(run_c2a))
+
+        _pid, results["llama_no_cuda"] = start_llama({"LLAMA_NGL": "0", "LLAMA_NO_CUDA": "1"})
+        run_c2b = run_pipeline(
+            args.wav_dir, "attribution C2b: stub LLM, llama cpu-only no cuda", args.repeat
+        )
+        results["C2b_no_cuda_context"] = condition_summary(turn_rows(run_c2b))
+
         # --- D: the full pipeline ---------------------------------------------
-        subprocess.run([server, "start"], check=True, cwd=REPO)
+        _pid, results["llama_full"] = start_llama({})
         run_d = run_pipeline(args.wav_dir, "attribution D: full pipeline", args.repeat)
         rows_d = turn_rows(run_d)
         results["D_full"] = condition_summary(rows_d)
@@ -357,6 +405,8 @@ def main() -> None:
             "B": run_b.name,
             "C": run_c.name,
             "Cprime": run_cp.name,
+            "C2a": run_c2a.name,
+            "C2b": run_c2b.name,
             "D": run_d.name,
         }
         results["agent_cpu_affinity"] = sorted(cfg.stt.cpu_affinity)
@@ -399,6 +449,8 @@ def main() -> None:
         "B_pipeline_only",
         "C_llama_resident",
         "Cprime_ballast_resident",
+        "C2a_context_no_offload",
+        "C2b_no_cuda_context",
         "D_full",
     ):
         c = results.get(key)

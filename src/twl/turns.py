@@ -26,7 +26,9 @@ from twl.clock import TurnClock, now_ns, wall_iso
 from twl.records import RunComplete, RunMeta, StageEvent, TurnRecord, write_jsonl
 from twl.telemetry import (
     find_thermal_zone,
+    read_gpu_freq_mhz,
     read_mem_available_mb,
+    read_power_rails_mw,
     read_proc_mem_mb,
     read_swaps,
     read_tj_c,
@@ -270,6 +272,8 @@ class TurnManager:
             invalid_reason=invalid_reason,
             close_reason=close_reason,
             tj_c=read_tj_c(self._tj_zone),
+            gpu_freq_mhz=read_gpu_freq_mhz(),
+            power_mw=read_power_rails_mw(),
             stt_audio_s=round(self._stt_audio_s, 3),
             stt_minflt=self._stt_minflt,
             stt_majflt=self._stt_majflt,
