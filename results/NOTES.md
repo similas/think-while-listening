@@ -303,3 +303,53 @@ PHASE 1 ACCEPTANCE vs the kickoff criteria:
 - "all per-stage latencies logged": MET (stage events + per-turn records).
 - "unit, integration (mocked, 5 s synthetic turn), smoke (real models) tests
   pass in < 5 min": MET — 29 tests, 23 s.
+
+## 2026-09-15 — Capture path: the array's two channels, and its idle AEC
+
+The XVF3800 presents 2 DSP-processed channels over USB audio (firmware
+bcdDevice 2.0a, S16_LE 16 kHz; the raw 4-mic signal is not exposed). Until
+now the pipeline opened it with channels=1, which leaves the choice to ALSA's
+conversion layer. Three measurements settle what to do.
+
+1. WHICH CHANNEL — decided by decoding, not by level
+   (results/raw/capture_channels/channel-compare-20260915-220026-81553a.json;
+   4 known utterances played through the Jieli speaker, decoded with the
+   pipeline's own model):
+     ch1     mean WER 0.025   rms 0.31-0.40
+     ch0     mean WER 0.050   rms 0.06-0.17
+     downmix mean WER 0.250   rms 0.19-0.26
+   The DOWNMIX IS HARMFUL: 10x the WER of ch1, including one catastrophic
+   error ("Can you hear me?" -> "What's going on here, me?"). The capture
+   channel is now an explicit config value (audio.device_channels=2,
+   audio.capture_channel=1); MicFrameSource opens the device at its native
+   channel count and slices that channel, and the choice is recorded in every
+   run header. SCOPE: all Phase 1 baselines used FILE playback, which injects
+   PCM directly and never touches the array, so no earlier result is affected.
+   This matters for live-mic turns (Phase 2's >=200-turn calibration set).
+
+2. THE ARRAY'S AEC IS NOT BEING FED
+   (results/raw/capture_channels/capture-channels-20260915-215843-7f24f0.json;
+   log sweep 200-4000 Hz, normalized cross-correlation with lag search, plus
+   a playback-off control that fixes the correlation floor at ncc 0.021):
+     control       ch0 ncc 0.018        ch1 ncc 0.021
+     via Jieli     ch0 ncc 0.320 @ 38.9 ms   ch1 ncc 0.326 @ 38.9 ms
+     via array out ch0 ncc 0.034        ch1 ncc 0.061   (not above floor)
+   Through the USB speaker BOTH channels reproduce the probe, equally, at the
+   same ~39 ms lag — an acoustic path, not a loopback, and NOT cancelled. The
+   array cannot cancel a reference it never receives: TTS goes to the Jieli
+   sink, which the XVF3800 never sees. CONCLUSION: the on-chip AEC is
+   currently unrouted, and Phase 3 barge-in must route TTS through the
+   array's own playback endpoint to use it.
+
+3. AMBIGUITY, NOT YET RESOLVED. In the array-output condition the probe was
+   not detected on either channel, but that has two explanations we cannot
+   separate from here: the AEC removed it, or nothing was transduced because
+   no speaker is attached to the array's 3.5 mm output. Suggestive detail:
+   ch0's level FELL 35 dB (rms 0.060 -> 0.001) while ch1 rose ~3 dB, which
+   would fit "ch0 is the AEC-processed channel and suppresses hard when a
+   far-end reference is present, ch1 is the un-cancelled beam". If that is
+   right, the best channel is state-dependent — ch1 while the bot is silent
+   (measured above), ch0 once TTS is routed through the array — and Phase 3
+   should measure both. OWNER: Ali — is anything connected to the XVF3800's
+   audio output? One sentence resolves it and decides whether item 2's
+   conclusion needs the caveat.
