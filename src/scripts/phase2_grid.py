@@ -41,7 +41,12 @@ from twl.telemetry import read_tj_c
 REPO = Path(__file__).resolve().parents[2]
 PY = str(REPO / ".." / ".venvs" / "twl" / "bin" / "python")
 SERVER = str(REPO / "src/scripts/llama_server.sh")
-BUDGETS = (0, 32, 96, 256)
+# Controller arms (Ali, 2026-09-16). 256 is dropped: the spendable budget is
+# bounded by remaining speech x decode rate, which on this device and this
+# stimulus set saturates near 106 tokens, so B=256 and B=96 applied nearly
+# identical load and were not distinct conditions. Longer utterances widen the
+# spendable range; the bound is a property of the turn, not of the hardware.
+BUDGETS = (0, 32, 64, 96)
 COOL_CEILING_C = 62.0
 
 
@@ -148,7 +153,11 @@ def main() -> None:
     try:
         for state in states:
             for budget in BUDGETS:
-                if state == "cold":
+                if state in ("cold", "warm"):
+                    # Cold cells must START cold; warm cells must start cold
+                    # ENOUGH for the soak to run at all (it refuses above 65 C),
+                    # so that every warm cell is heated the same way rather than
+                    # inheriting the previous cell's heat.
                     tj = cool_to(COOL_CEILING_C)
                     print(f"[{state} B={budget}] starting at tj {tj:.1f} C")
                 run_dir = run_cell(

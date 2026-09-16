@@ -46,6 +46,12 @@ class SpeculationStats:
     decode_ms: float = 0.0
     cancelled: int = 0
     errors: int = 0
+    # How long after we cancel before the server's slot is actually free. An
+    # aborted decode does not stop instantly: the slot stays busy until the
+    # server notices, and until it does, the REAL request for this turn queues
+    # behind it. This is the abort cost that Phase 2 pays on every turn and
+    # that Phase 3 avoids whenever a speculation is accepted.
+    cancel_to_slot_free_ms: float = -1.0
 
     def as_dict(self) -> dict[str, float]:
         return {
@@ -56,6 +62,7 @@ class SpeculationStats:
             "decode_ms": round(self.decode_ms, 1),
             "cancelled": self.cancelled,
             "errors": self.errors,
+            "cancel_to_slot_free_ms": round(self.cancel_to_slot_free_ms, 1),
         }
 
 
@@ -124,11 +131,27 @@ class SpeculationDriver:
     async def end_turn(self) -> SpeculationStats:
         """Cancel any in-flight decode and return what this turn spent."""
         if self._task is not None and not self._task.done():
+            cancel_ns = now_ns()
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
+            self.stats.cancel_to_slot_free_ms = await self._wait_for_slot(cancel_ns)
         self._task = None
         return self.stats
+
+    async def _wait_for_slot(self, cancel_ns: int, timeout_s: float = 2.0) -> float:
+        """Milliseconds from cancelling until the server reports its slot idle."""
+        client = await self.client()
+        deadline = now_ns() + int(timeout_s * 1e9)
+        while now_ns() < deadline:
+            try:
+                slots = await client.slots()
+            except Exception:
+                return -1.0
+            if not any(s.get("is_processing") for s in slots):
+                return (now_ns() - cancel_ns) / 1e6
+            await asyncio.sleep(0.01)
+        return (now_ns() - cancel_ns) / 1e6
 
     async def close(self) -> None:
         await self.end_turn()
