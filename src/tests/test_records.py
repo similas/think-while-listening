@@ -51,3 +51,20 @@ def test_turn_record_carries_validity() -> None:
     d = json.loads(to_jsonl(rec))
     assert d["valid"] is False
     assert d["invalid_reason"] == "swap_activity:/dev/zram0"
+
+
+def test_run_complete_marks_a_finished_log(tmp_path: Path) -> None:
+    """A log without run_complete is truncated; with it, it is finished."""
+    from twl.records import RunComplete
+
+    rec = RunComplete(
+        run_id="r1",
+        wall_time="2026-09-16T00:00:00-0400",
+        turns_written=32,
+        valid_turns=31,
+        invalid_turns=1,
+    )
+    d = json.loads(to_jsonl(rec))
+    assert d["kind"] == "run_complete"
+    assert d["turns_written"] == 32
+    assert d["valid_turns"] + d["invalid_turns"] == d["turns_written"]

@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import faulthandler
 import fcntl
 import gc
 import json
@@ -393,10 +394,17 @@ async def run(args: argparse.Namespace) -> None:
             with contextlib.suppress(asyncio.CancelledError):
                 await slots_task
             slots_fh.close()
-            # Close the log FIRST: teardown may hang, and the results must be
-            # complete on disk before anything that can block is attempted.
+            # Close the log FIRST (it fsyncs and writes run_complete): teardown
+            # may hang, and the results must be durable on disk before anything
+            # that can block is attempted.
             built.turns.close()
             sampler.stop()
+            # Capture WHO is stuck if the unwind hangs. dump_traceback_later
+            # fires from a C-level timer, so it works even when every Python
+            # thread is blocked — which is the situation we are diagnosing.
+            stacks_path = run_dir / "teardown_stacks.txt"
+            stacks_fh = open(stacks_path, "w", encoding="utf-8")  # noqa: SIM115
+            faulthandler.dump_traceback_later(10.0, exit=False, file=stacks_fh)
             try:
                 await asyncio.wait_for(built.task.cancel(), timeout=TEARDOWN_TIMEOUT_S)
                 await asyncio.wait_for(asyncio.shield(runner_task), timeout=TEARDOWN_TIMEOUT_S)
@@ -404,6 +412,15 @@ async def run(args: argparse.Namespace) -> None:
                 teardown_timed_out = True
             except asyncio.CancelledError:
                 pass
+            finally:
+                faulthandler.cancel_dump_traceback_later()
+                stacks_fh.flush()
+                os.fsync(stacks_fh.fileno())
+                stacks_fh.close()
+                if stacks_path.stat().st_size == 0:
+                    stacks_path.unlink()  # nothing hung; no artifact to keep
+                else:
+                    print(f"teardown hung; thread stacks in {stacks_path}", file=sys.stderr)
 
         if isinstance(source, FileFrameSource):
             (run_dir / "playback_timeline.json").write_text(json.dumps(source.timeline))

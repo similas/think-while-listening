@@ -18,14 +18,16 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, TextIO
 
 
-def to_jsonl(record: RunMeta | StageEvent | TurnRecord | TelemetrySample) -> str:
+def to_jsonl(record: RunMeta | StageEvent | TurnRecord | TelemetrySample | RunComplete) -> str:
     """One record → one JSON line (no trailing newline)."""
     d = asdict(record)
     d["kind"] = record.kind
     return json.dumps(d, sort_keys=True, separators=(",", ":"))
 
 
-def write_jsonl(fh: TextIO, record: RunMeta | StageEvent | TurnRecord | TelemetrySample) -> None:
+def write_jsonl(
+    fh: TextIO, record: RunMeta | StageEvent | TurnRecord | TelemetrySample | RunComplete
+) -> None:
     """Append one record to an open text file and flush (crash-safe logs)."""
     fh.write(to_jsonl(record) + "\n")
     fh.flush()
@@ -82,6 +84,25 @@ class TurnRecord:
     stt_audio_s: float = -1.0
 
     kind: str = field(default="turn_record", init=False)
+
+
+@dataclass(frozen=True)
+class RunComplete:
+    """Final line of a turn log: the run wrote everything it meant to write.
+
+    A reader that does not find this record is looking at a TRUNCATED file —
+    a killed run, a crash, or a hard exit that raced the writer — and must
+    treat the tail as suspect rather than as data.
+    """
+
+    run_id: str
+    wall_time: str
+    turns_written: int
+    valid_turns: int
+    invalid_turns: int
+    notes: str = ""
+
+    kind: str = field(default="run_complete", init=False)
 
 
 @dataclass(frozen=True)

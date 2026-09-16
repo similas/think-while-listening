@@ -15,13 +15,14 @@ Invariants:
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import TextIO
 
 import yaml
 
 from twl.clock import TurnClock, now_ns, wall_iso
-from twl.records import RunMeta, StageEvent, TurnRecord, write_jsonl
+from twl.records import RunComplete, RunMeta, StageEvent, TurnRecord, write_jsonl
 from twl.telemetry import (
     find_thermal_zone,
     read_mem_available_mb,
@@ -247,6 +248,27 @@ class TurnManager:
             self.invalid_turns += 1
             log.warning("turn %d INVALID: %s", self._turn, invalid_reason)
 
-    def close(self) -> None:
+    def close(self, notes: str = "") -> None:
+        """Close the open turn, mark the log complete, and fsync it.
+
+        flush() only moves bytes into the kernel; fsync() puts them on the
+        device. This matters because the process may be hard-exited
+        immediately afterwards (see run_reactive), and because the terminating
+        ``run_complete`` record is what lets a reader distinguish a finished
+        run from a truncated one.
+        """
         self.finish_turn()
+        write_jsonl(
+            self._fh,
+            RunComplete(
+                run_id=self._run_id,
+                wall_time=wall_iso(),
+                turns_written=self.turns_written,
+                valid_turns=self.turns_written - self.invalid_turns,
+                invalid_turns=self.invalid_turns,
+                notes=notes,
+            ),
+        )
+        self._fh.flush()
+        os.fsync(self._fh.fileno())
         self._fh.close()
