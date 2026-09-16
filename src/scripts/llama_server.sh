@@ -39,6 +39,10 @@ health() { curl -sf "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; }
 case "${1:-status}" in
   start)
     if health; then echo "twl-llama: already serving on :$PORT"; exit 0; fi
+    # A unit that exists but is not serving would make systemd-run fail with
+    # "already exists"; clear it first so start is idempotent.
+    systemctl --user stop "$UNIT" 2>/dev/null || true
+    systemctl --user reset-failed "$UNIT" 2>/dev/null || true
     [ -f "$MODEL" ] || { echo "model not found: $MODEL" >&2; exit 1; }
     [ -r "$BACKEND" ] || { echo "missing CUDA backend $BACKEND" >&2; exit 1; }
     systemd-run --user --quiet --unit="$UNIT" --slice=twl.slice \

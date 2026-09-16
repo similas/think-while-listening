@@ -39,7 +39,7 @@ audio_ok() {
 log "=== headless window begins ==="
 log "pre-isolate state: $(systemctl is-active graphical.target)"
 sudo -n /usr/bin/systemctl isolate multi-user.target || { log "isolate FAILED"; exit 1; }
-sleep 5
+sleep 10  # let the target switch settle before probing anything
 log "post-isolate graphical.target: $(systemctl is-active graphical.target)"
 
 # --- PipeWire survival check and escalation -----------------------------------
@@ -62,11 +62,18 @@ wpctl status 2>/dev/null | sed -n '/Audio/,/Video/p' | grep -E "reSpeaker|UACDem
 
 # --- the measurements ---------------------------------------------------------
 require_llama() {
-  if ! src/scripts/llama_server.sh status | grep -q healthy; then
-    log "llama-server not healthy; starting it"
-    src/scripts/llama_server.sh start 2>&1 | tee -a "$NOTE"
-  fi
-  src/scripts/llama_server.sh status | grep -q healthy || { log "ABORT: llama-server unavailable"; exit 1; }
+  # Health can refuse transiently while systemd switches targets, so probe for
+  # a few seconds before concluding the server is down (2026-09-15: a check one
+  # second after isolation aborted a whole window against a healthy server).
+  for _ in $(seq 1 15); do
+    src/scripts/llama_server.sh status | grep -q healthy && return 0
+    sleep 2
+  done
+  log "llama-server not healthy after 30s; restarting it"
+  src/scripts/llama_server.sh stop 2>&1 | tee -a "$NOTE"
+  src/scripts/llama_server.sh start 2>&1 | tee -a "$NOTE"
+  src/scripts/llama_server.sh status | grep -q healthy \
+    || { log "ABORT: llama-server unavailable"; exit 1; }
 }
 
 if stage ambient; then
