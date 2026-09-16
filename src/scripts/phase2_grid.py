@@ -48,6 +48,7 @@ SERVER = str(REPO / "src/scripts/llama_server.sh")
 # spendable range; the bound is a property of the turn, not of the hardware.
 BUDGETS = (0, 32, 64, 96)
 COOL_CEILING_C = 62.0
+WARM_FLOOR_C = 70.0  # a cell labelled "warm" must actually still be warm
 
 
 def child_env() -> dict[str, str]:
@@ -162,20 +163,33 @@ def main() -> None:
     try:
         for state in states:
             for budget in budgets:
-                if state in ("cold", "warm"):
-                    # Cold cells must START cold; warm cells must start cold
-                    # ENOUGH for the soak to run at all (it refuses above 65 C),
-                    # so that every warm cell is heated the same way rather than
-                    # inheriting the previous cell's heat.
+                soak_this_cell = 0.0
+                if state == "cold":
                     tj = cool_to(COOL_CEILING_C)
                     print(f"[{state} B={budget}] starting at tj {tj:.1f} C")
+                elif state == "warm":
+                    # Soak ONCE, then measure every budget while the board is
+                    # still hot. Re-soaking per cell would mean cooling the
+                    # board for ten minutes only to reheat it, and the soak
+                    # refuses to start above 65 C anyway — which is how the
+                    # first attempt at this arm died. The board stays warm
+                    # because the pipeline itself runs at 68-79 C; tj is
+                    # recorded per turn, so a cell that drifted cool is
+                    # visible in the data rather than assumed away.
+                    tj = read_tj_c()
+                    if tj < WARM_FLOOR_C:
+                        tj = cool_to(COOL_CEILING_C, timeout_s=900.0)
+                        soak_this_cell = args.soak_minutes
+                        print(f"[{state} B={budget}] re-soaking from tj {tj:.1f} C")
+                    else:
+                        print(f"[{state} B={budget}] already warm at tj {tj:.1f} C, no re-soak")
                 run_dir = run_cell(
                     args.wav_dir,
                     budget,
                     state,
                     args.repeat,
                     adversary_cpus="0" if state == "adversary" else "",
-                    soak_minutes=args.soak_minutes if state == "warm" else 0.0,
+                    soak_minutes=soak_this_cell,
                 )
                 index["cells"].append({"state": state, "budget": budget, "run": run_dir.name})
                 print(f"[{state} B={budget}] -> {run_dir.name}")
