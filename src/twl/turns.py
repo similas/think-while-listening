@@ -41,8 +41,10 @@ FALLBACK_SWAP_THRESHOLD_MB = 5.0
 def load_swap_threshold(state: str, path: Path | None = None) -> tuple[float, str]:
     """Zram-growth threshold for a device state, and where it came from.
 
-    Derived by src/scripts/derive_swap_threshold.py as 2 x p99 of ambient
-    churn measured with the pipeline stopped, per state (Ali, 2026-09-15).
+    Derived by src/scripts/derive_swap_threshold.py from ambient churn
+    measured with the pipeline stopped, per state (Ali, 2026-09-15). A state
+    whose ambient churn measured exactly zero gets a threshold of 0.0, so the
+    rule there is "any zram growth invalidates the turn".
 
     Raises:
         KeyError: the derivation file exists but has no entry for ``state`` —

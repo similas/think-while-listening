@@ -71,6 +71,22 @@ def reactive_run_rows(run_dir: Path) -> tuple[dict[str, Any], list[dict[str, Any
     return meta, turns
 
 
+def invalidation_summary(turns: list[dict[str, Any]]) -> str:
+    """Per-run invalidation counts by reason — flagged rows are kept, never dropped."""
+    reasons: dict[str, int] = {}
+    for t in turns:
+        if not t["valid"]:
+            key = t["invalid_reason"].split(":")[0] or "unspecified"
+            reasons[key] = reasons.get(key, 0) + 1
+    if not reasons:
+        return "0"
+    return (
+        f"{sum(reasons.values())} ("
+        + ", ".join(f"{k} x{v}" for k, v in sorted(reasons.items()))
+        + ")"
+    )
+
+
 def table_reactive(raw: Path, out: list[str]) -> None:
     runs = sorted((raw / "reactive").glob("reactive-*"))
     if not runs:
@@ -88,7 +104,7 @@ def table_reactive(raw: Path, out: list[str]) -> None:
             continue
         _meta, turns = reactive_run_rows(run_dir)
         valid = [t for t in turns if t["valid"]]
-        cells = [run_dir.name, str(len(turns)), str(len(turns) - len(valid))]
+        cells = [run_dir.name, str(len(turns)), invalidation_summary(turns)]
         for stage in STAGE_ORDER[:6]:
             xs = [t["stages_ms"][stage] for t in valid if stage in t["stages_ms"]]
             cells.append(fmt(median(xs)) if xs else "—")

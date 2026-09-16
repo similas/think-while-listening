@@ -1,15 +1,19 @@
 """Derive the zram run-validity threshold from measured ambient churn.
 
-The blessed rule (Ali, 2026-09-15): a turn is invalid when swap activity is
+The rule (Ali, 2026-09-15): a turn is invalid when swap activity is
 attributable to the pipeline — a pipeline process holding pages in swap, or
-the NVMe swapfile growing, unconditionally; and system zram growth above
-2 x p99 of the ambient churn measured for that device state.
+the NVMe swapfile growing, unconditionally; and system zram growth beyond
+this device state's ambient floor.
 
-This script reads every ambient-swap log, computes the p99 per device state,
-and writes the derived constants to src/configs/swap_thresholds.yaml, which
-twl.turns loads. The derivation (n, window, percentiles) is printed for
-results/NOTES.md and stored in the file's header so the constant can never
-drift from its evidence.
+Where the ambient floor MEASURES ZERO — no window of the idle machine and no
+turn of a clean run moved zram at all — the threshold is not dressed up as a
+statistic. It is written as 0.0 and labelled ``empirical_zero``: the rule
+becomes "any zram growth invalidates the turn", justified by the counts
+recorded alongside it (windows sampled, nonzero windows, max observed), not
+by a percentile of a constant.
+
+If a state ever shows real ambient churn, the 2 x p99 form applies and is
+labelled ``p99x2``; both labels carry their evidence into the YAML.
 """
 
 from __future__ import annotations
@@ -61,23 +65,29 @@ def main() -> None:
     lines = [
         "# Derived by src/scripts/derive_swap_threshold.py — do not hand-edit.",
         "# A turn is invalid when total zram growth across devices exceeds the",
-        "# threshold for the run's device state. Thresholds are "
-        f"{args.multiplier:g} x p99 of ambient churn measured with the pipeline",
-        "# not running, per state, over windows of the measured turn cadence.",
+        "# threshold for the run's device state. Where ambient churn measured",
+        "# exactly zero the threshold is 0.0, labelled empirical_zero: the rule",
+        "# is 'any growth invalidates', justified by the counts below rather",
+        f"# than by {args.multiplier:g} x p99 of a constant.",
         "thresholds_mb:",
     ]
-    print(f"{'state':>10} {'n':>5} {'median':>8} {'p95':>8} {'p99':>8} {'max':>8} -> threshold")
+    print(f"{'state':>10} {'n':>5} {'nonzero':>8} {'median':>8} {'p99':>8} {'max':>8} -> threshold")
     for state in sorted(per_state):
         xs = per_state[state]
+        nonzero = sum(1 for x in xs if x > 0)
         p99 = percentile(xs, 99.0)
-        thr = round(args.multiplier * p99, 3)
+        if nonzero == 0:
+            thr, label = 0.0, "empirical_zero"
+        else:
+            thr, label = round(args.multiplier * p99, 3), f"p99x{args.multiplier:g}"
         print(
-            f"{state:>10} {len(xs):>5} {median(xs):8.3f} {percentile(xs, 95.0):8.3f} "
-            f"{p99:8.3f} {max(xs):8.3f} -> {thr:.3f} MB"
+            f"{state:>10} {len(xs):>5} {nonzero:>8} {median(xs):8.3f} "
+            f"{p99:8.3f} {max(xs):8.3f} -> {thr:.3f} MB ({label})"
         )
         lines.append(
-            f"  {state}: {thr}  # n={len(xs)} windows of {windows.get(state, 8.0):g}s, "
-            f"p99={p99:.3f}, max={max(xs):.3f} MB"
+            f"  {state}: {thr}  # {label}; n={len(xs)} windows of "
+            f"{windows.get(state, 8.0):g}s, nonzero={nonzero}, p99={p99:.3f}, "
+            f"max={max(xs):.3f} MB"
         )
     args.out.write_text("\n".join(lines) + "\n")
     print(f"wrote {args.out}")

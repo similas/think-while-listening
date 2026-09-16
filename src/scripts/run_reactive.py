@@ -28,6 +28,7 @@ from pathlib import Path
 from twl.clock import now_ns
 from twl.clocks import ensure_baseline, restore, set_clocks
 from twl.config import load_config
+from twl.device import device_state
 from twl.metrics import median
 from twl.pipeline import build_pipeline
 from twl.provenance import build_run_meta, new_run_id
@@ -151,18 +152,6 @@ async def memory_diagnostics(
             fh.write(json.dumps(rec, sort_keys=True) + "\n")
             fh.flush()
             last = snap
-
-
-def device_state() -> str:
-    """The systemd target in force, as the device-state label for a run.
-
-    The swap-validity threshold and Phase 2's state factor both key on this,
-    so it is read from the machine rather than passed as a flag that could
-    disagree with reality.
-    """
-    out = subprocess.run(["systemctl", "get-default"], capture_output=True, text=True, check=False)
-    target = out.stdout.strip()
-    return "headless" if target.startswith("multi-user") else "desktop"
 
 
 def llama_pid(required: bool = True) -> int:
