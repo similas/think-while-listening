@@ -1,7 +1,8 @@
 """An independent thermal watchdog. It does not trust the thing it guards.
 
 Started BEFORE a soak and running as its own process, this polls junction
-temperature and, on breach, kills the load and restores clocks itself. It
+temperature and, on breach, kills the load and restores clocks AND the fan
+itself. It
 shares no control flow with the script it protects: a load that wedges,
 corrupts its own interpreter (as a soak did on 2026-09-15 when its shell
 script was edited mid-execution), or simply ignores its own limits is still
@@ -25,6 +26,7 @@ from pathlib import Path
 from twl.clock import wall_iso
 from twl.telemetry import find_thermal_zone, read_tj_c, read_trip_points_c
 
+REPO = Path(__file__).resolve().parents[2]
 DEFAULT_CEILING_C = 85.0
 ADVERSARY_PATTERN = "multiprocessing.spawn"
 
@@ -102,6 +104,16 @@ def main() -> int:
                 ["sudo", "-n", "/usr/bin/jetson_clocks", "--restore", str(args.baseline)],
                 check=False,
             )
+            # A measured run may have pinned the fan and stopped nvfancontrol.
+            # On breach the board must go back to being actively managed, and
+            # the watchdog cannot assume the thing it just killed will do it.
+            fan = subprocess.run(
+                [str(REPO / "src/scripts/fan.sh"), "restore"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            log.write(f"fan: {(fan.stdout or fan.stderr).strip() or 'restore attempted'}")
             log.write(f"clocks restored from {args.baseline}; tj now {read_tj_c(zone):.1f} C")
             break
         time.sleep(args.poll_s)

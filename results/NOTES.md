@@ -944,19 +944,32 @@ statement. If the per-token cost is not stable across runs of one condition,
 it is not a constant for BUDGET-R to look up — it is a quantity for BUDGET-L
 to learn, and that changes which controller the evidence supports.
 
-## Fan state is NOT pinned
+## Fan is PINNED at PWM 255 for measured runs (decision, 2026-09-16)
 
-nvfancontrol is active and drives the fan from the THERMAL MARGIN to the limit
-(profile "quiet": PWM 255 at margin 0, PWM 0 at margin 70), so fan speed is a
-function of temperature and varies exactly where temperature does. Pinning it
-needs a sudoers entry for the hwmon node, which the current
-/etc/sudoers.d/twl does not grant:
+nvfancontrol drives the fan from the THERMAL MARGIN to the limit (profile
+"quiet": PWM 255 at margin 0, PWM 0 at margin 70), so fan speed is a function
+of temperature and varies exactly where temperature does. Pinned at 255 it is
+a constant instead.
 
-    ali orin = (root) NOPASSWD: /usr/bin/tee /sys/class/hwmon/hwmon0/pwm1
+src/scripts/fan.sh {pin|restore|state}. The hwmon index is not stable across
+boots, so the node is resolved by device NAME (pwmfan) at call time and the
+name is verified before anything is written; pin refuses unless exactly one
+matching node exists, and re-reads the node to confirm the write took.
 
-Until then it is recorded per turn (PWM, and RPM where the node exists) as a
-covariate and never assumed fixed. nvpmodel (MAXN_SUPER) and jetson_clocks
-(canonical baseline) ARE pinned and already appear in every run manifest.
+255 is maximum cooling, so the pinned state is the safe direction: a crash that
+leaves it pinned cools the board rather than cooking it. Restoring is still
+mandatory on every exit path — restore is idempotent and is called from the run
+scripts' traps and from the thermal watchdog on breach, which cannot assume the
+process it just killed will clean up after itself.
+
+Requires one install, which needs a password and so is Ali's to run:
+
+    sudo install -m 0440 -o root -g root src/scripts/sudoers.twl /etc/sudoers.d/twl
+    sudo visudo -c -f /etc/sudoers.d/twl
+
+Until it is installed, fan.sh pin fails loudly ("sudo: a password is required")
+rather than running a measurement on an unpinned fan. Fan state is recorded in
+every manifest alongside nvpmodel and jetson_clocks, and per turn as well.
 
 ## Per-turn thermal covariate
 

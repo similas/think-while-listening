@@ -1,0 +1,10 @@
+# Install with:
+#   sudo install -m 0440 -o root -g root src/scripts/sudoers.twl /etc/sudoers.d/twl
+# Verify before trusting it:
+#   sudo visudo -c -f /etc/sudoers.d/twl
+#
+# The fan lines let src/scripts/fan.sh pin the fan at PWM 255 for measured runs
+# and hand control back to nvfancontrol afterwards. The hwmon index is not
+# stable across boots, so the tee target is a bounded wildcard; fan.sh resolves
+# and verifies the device NAME before it writes to any of them.
+ali orin = (root) NOPASSWD: /usr/bin/jetson_clocks, /usr/bin/jetson_clocks --show, /usr/bin/jetson_clocks --store, /usr/bin/jetson_clocks --restore, /usr/sbin/nvpmodel -q, /usr/bin/systemctl isolate multi-user.target, /usr/bin/systemctl isolate graphical.target, /usr/bin/systemctl stop nvfancontrol, /usr/bin/systemctl start nvfancontrol, /usr/bin/tee /sys/class/hwmon/hwmon[0-9]/pwm1
