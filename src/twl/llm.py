@@ -18,6 +18,7 @@ Invariants:
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from types import TracebackType
@@ -147,6 +148,43 @@ class LlamaClient:
             wall_ms=wall_ms,
             content=str(data.get("content", "")),
         )
+
+    async def next_token_probs(
+        self, prompt: str, *, n_probs: int = 12
+    ) -> tuple[dict[str, float], int, int]:
+        """Probabilities of the next token after ``prompt``.
+
+        One forward pass with n_predict=1 and n_probs set, which is what makes
+        a training-free completeness trigger affordable: the prompt shares its
+        prefix with the speculation and the real request, so the slot has it
+        cached and this costs a handful of tokens of prefill, not a sequence.
+
+        Returns (token -> probability, prompt_n, cache_n).
+        """
+        payload = {
+            "prompt": prompt,
+            "n_predict": 1,
+            "n_probs": n_probs,
+            "cache_prompt": True,
+            "temperature": 0.0,
+        }
+        r = await self._client.post(f"{self._base}/completion", json=payload)
+        r.raise_for_status()
+        data = r.json()
+        timings = data.get("timings", {})
+        probs: dict[str, float] = {}
+        for entry in data.get("completion_probabilities", []):
+            # This build reports top_logprobs: [{token, logprob, bytes, id}].
+            for alt in entry.get("top_logprobs", entry.get("probs", [])):
+                token = alt.get("token", alt.get("tok_str", ""))
+                if "logprob" in alt:
+                    prob = math.exp(float(alt["logprob"]))
+                else:
+                    prob = float(alt.get("prob", 0.0))
+                if token:
+                    probs[token] = max(probs.get(token, 0.0), prob)
+            break  # only the first generated position is the "next token"
+        return probs, int(timings.get("prompt_n", -1)), int(timings.get("cache_n", -1))
 
     async def stream_completion(
         self,
