@@ -24,6 +24,7 @@ from pathlib import Path
 
 from twl.clock import now_ns
 from twl.metrics import median, percentile
+from twl.planning import Plan, add_gate_args, gate
 from twl.provenance import build_run_meta, new_run_id
 from twl.records import to_jsonl
 from twl.telemetry import read_swaps
@@ -35,7 +36,22 @@ def main() -> None:
     p.add_argument("--minutes", type=float, default=20.0)
     p.add_argument("--window-s", type=float, default=8.0)
     p.add_argument("--state", required=True, help="device state label, e.g. desktop / headless")
+    add_gate_args(p)
     args = p.parse_args()
+
+    gate(
+        Plan(
+            name="measure_ambient_swap",
+            steps=[
+                f"sample /proc/swaps every 1 s for {args.minutes:g} min, "
+                f"state={args.state}, {args.window_s:g}s windows"
+            ],
+            est_minutes=args.minutes,
+            thresholds={"pipeline": "must NOT be running during this measurement"},
+        ),
+        plan_only=args.plan,
+        yes=args.yes,
+    )
 
     run_id = new_run_id(f"ambient-swap-{args.state}")
     out_dir = Path("results/raw/ambient_swap")

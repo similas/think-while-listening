@@ -34,6 +34,7 @@ from typing import Any
 from twl.clock import wall_iso
 from twl.config import load_config
 from twl.metrics import median, summarize
+from twl.planning import Plan, add_gate_args, gate
 from twl.provenance import build_run_meta, new_run_id
 from twl.records import read_jsonl, to_jsonl
 
@@ -97,6 +98,7 @@ def run_pipeline(turns_wavs: Path, backend: str, notes: str, repeat: int) -> Pat
             backend,
             "--notes",
             notes,
+            "--yes",
         ],
         capture_output=True,
         text=True,
@@ -136,7 +138,26 @@ def main() -> None:
     p.add_argument("--wav-dir", type=Path, default=Path("results/raw/audio/sixteen"))
     p.add_argument("--repeat", type=int, default=2, help="passes over the wav set per condition")
     p.add_argument("--isolation-reps", type=int, default=3)
+    add_gate_args(p)
     args = p.parse_args()
+
+    n_wavs = len(sorted(args.wav_dir.glob("*.wav")))
+    gate(
+        Plan(
+            name="stt_attribution",
+            steps=[
+                f"A isolation: {args.isolation_reps} reps x {n_wavs} wavs, standalone decode",
+                "B pipeline-only: stub LLM, llama-server STOPPED",
+                "C llama resident: stub LLM, llama-server running but idle",
+                "D full pipeline: real generation",
+            ],
+            est_minutes=4 + 3 * (args.repeat * n_wavs * 7 / 60),
+            target_changes=["stops and restarts twl-llama.service"],
+            thresholds={"clocks": "pinned per child run, restored from the baseline"},
+        ),
+        plan_only=args.plan,
+        yes=args.yes,
+    )
 
     cfg = load_config(args.config)
     run_id = new_run_id("stt-attribution")

@@ -31,6 +31,7 @@ from twl.config import load_config
 from twl.device import device_state
 from twl.metrics import median
 from twl.pipeline import build_pipeline
+from twl.planning import Plan, add_gate_args, gate
 from twl.provenance import build_run_meta, new_run_id
 from twl.records import read_jsonl
 from twl.telemetry import TegrastatsSampler
@@ -462,7 +463,33 @@ def main() -> None:
     p.add_argument("--diag-trace", action="store_true", help="add tracemalloc (perturbs timing)")
     p.add_argument("--diag-every", type=int, default=8, help="turns between snapshots")
     p.add_argument("--notes", default="")
+    add_gate_args(p)
     a = p.parse_args()
+
+    n_wavs = len(sorted(Path(a.wav_dir).glob("*.wav"))) if not a.live else 0
+    turns = n_wavs * a.repeat
+    steps = [
+        f"{'live mic for ' + str(a.live_seconds) + 's' if a.live else str(turns) + ' turns'}"
+        f", clocks={'pinned' if a.clocks else 'as-found'}, llm={a.llm_backend or 'config'}"
+    ]
+    if a.soak_minutes:
+        steps.insert(
+            0, f"soak <= {a.soak_minutes:g} min under watchdog ceiling {a.soak_ceiling_c:g} C"
+        )
+    gate(
+        Plan(
+            name="run_reactive",
+            steps=steps,
+            est_minutes=(a.live_seconds / 60 if a.live else turns * 7 / 60) + a.soak_minutes,
+            thresholds=(
+                {"soak ceiling": f"{a.soak_ceiling_c:g} C", "soak start max": "65 C"}
+                if a.soak_minutes
+                else {}
+            ),
+        ),
+        plan_only=a.plan,
+        yes=a.yes,
+    )
     asyncio.run(run(a))
 
 

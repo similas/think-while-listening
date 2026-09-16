@@ -36,9 +36,68 @@ export PYTHONPATH="$REPO/src"
 NOTE="results/raw/headless_window_$(date +%Y%m%d-%H%M%S).log"
 AMBIENT_MIN="${AMBIENT_MIN:-20}"
 SOAK_MIN="${SOAK_MIN:-15}"
-# Space-separated subset of: ambient thresholds baseline attribution soak
-STAGES="${STAGES:-ambient thresholds baseline attribution soak}"
+SOAK_CEILING_C="${SOAK_CEILING_C:-85}"
+KNOWN_STAGES="ambient thresholds baseline attribution soak"
+
+# PLAN-THEN-CONFIRM. This script isolates the systemd target, so it must never
+# act on a default or a lost variable: --plan shows what would happen and
+# touches nothing, --yes is required to run, and an empty stage list is an
+# ERROR rather than a silent no-op (2026-09-15: a stray invocation isolated
+# the target for a no-op, and a wrapping bug lost STAGES and ran a 20-minute
+# measurement nobody asked for).
+PLAN_ONLY=0
+CONFIRMED=0
+STAGES="${STAGES:-}"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --plan) PLAN_ONLY=1 ;;
+    --yes) CONFIRMED=1 ;;
+    --stages) shift; STAGES="${1:-}" ;;
+    --stages=*) STAGES="${1#*=}" ;;
+    *) echo "unknown argument: $1" >&2; exit 64 ;;
+  esac
+  shift
+done
+
 stage() { [[ " $STAGES " == *" $1 "* ]]; }
+
+# Resolve the plan before anything is touched.
+RESOLVED=""
+for s in $STAGES; do
+  [[ " $KNOWN_STAGES " == *" $s "* ]] || { echo "unknown stage: $s (known: $KNOWN_STAGES)" >&2; exit 64; }
+  RESOLVED="$RESOLVED $s"
+done
+RESOLVED="${RESOLVED# }"
+
+est_minutes() {
+  local total=0
+  stage ambient && total=$((total + AMBIENT_MIN))
+  stage thresholds && total=$((total + 1))
+  stage baseline && total=$((total + 11))
+  stage attribution && total=$((total + 15))
+  stage soak && total=$((total + SOAK_MIN + 3))
+  echo "$total"
+}
+
+PLAN="PLAN headless_window: stages [${RESOLVED:-none}], ~$(est_minutes) min
+  system change: isolate multi-user.target, then back to graphical.target on exit
+  durations: ambient ${AMBIENT_MIN} min | baseline 64 turns ~11 min | attribution ~15 min | soak <= ${SOAK_MIN} min + 16 turns
+  thresholds: soak ceiling ${SOAK_CEILING_C} C (independent watchdog), soak start <= 65 C, throttle trip 74 C
+  swap validity: empirical_zero per device state (src/configs/swap_thresholds.yaml)"
+
+echo "$PLAN"
+if [[ "$PLAN_ONLY" == "1" ]]; then
+  echo "(--plan: nothing was touched)"
+  exit 0
+fi
+if [[ -z "${RESOLVED// /}" ]]; then
+  echo "refusing: no stages resolved — an empty selection is an error, not a no-op" >&2
+  exit 3
+fi
+if [[ "$CONFIRMED" != "1" ]]; then
+  echo "refusing: headless_window changes the systemd target; pass --yes to run" >&2
+  exit 2
+fi
 
 log() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$NOTE"; }
 
@@ -60,13 +119,11 @@ audio_ok() {
   pactl info >/dev/null 2>&1
 }
 
-if [[ -z "${STAGES// /}" ]]; then
-  echo "no stages selected (STAGES is empty); nothing to do"
-  trap - EXIT INT TERM
-  exit 0
-fi
-
 log "=== headless window begins ==="
+# The resolved plan is the FIRST thing in the artifact, so a wrapping bug that
+# lost an argument is visible in the log itself, not only in a lost terminal.
+printf '%s\n' "$PLAN" | tee -a "$NOTE" >/dev/null
+log "resolved stages: $RESOLVED"
 log "executing snapshot: ${TWL_SNAPSHOT_PATH:-unknown} (source edits cannot affect this run)"
 log "pre-isolate state: $(systemctl is-active graphical.target)"
 sudo -n /usr/bin/systemctl isolate multi-user.target || { log "isolate FAILED"; exit 1; }
@@ -117,7 +174,7 @@ require_llama() {
 
 if stage ambient; then
 log "--- ambient swap churn, headless (${AMBIENT_MIN} min) ---"
-"$PY" src/scripts/measure_ambient_swap.py --state headless --minutes "$AMBIENT_MIN" 2>&1 | tee -a "$NOTE"
+"$PY" src/scripts/measure_ambient_swap.py --state headless --minutes "$AMBIENT_MIN" --yes 2>&1 | tee -a "$NOTE"
 fi
 
 if stage thresholds; then
@@ -129,22 +186,22 @@ if stage baseline; then
 require_llama
 log "--- canonical REACTIVE baseline: 64 turns, headless, diagnostics OFF ---"
 "$PY" src/scripts/run_reactive.py --wav-dir results/raw/audio/sixteen --repeat 4 --clocks \
-  --notes "canonical REACTIVE baseline, headless, diagnostics off" 2>&1 \
+  --yes --notes "canonical REACTIVE baseline, headless, diagnostics off" 2>&1 \
   | grep -vE "DEBUG|ALSA lib|snd_" | tee -a "$NOTE"
 fi
 
 if stage attribution; then
 require_llama
 log "--- STT inflation attribution: 4 conditions ---"
-"$PY" src/scripts/stt_attribution.py --repeat 2 2>&1 | grep -vE "DEBUG|ALSA lib|snd_" | tee -a "$NOTE"
+"$PY" src/scripts/stt_attribution.py --repeat 2 --yes 2>&1 | grep -vE "DEBUG|ALSA lib|snd_" | tee -a "$NOTE"
 fi
 
 if stage soak; then
 require_llama
 log "--- soak validation: ${SOAK_MIN} min pre-load, then 16 turns ---"
 "$PY" src/scripts/run_reactive.py --wav-dir results/raw/audio/sixteen --repeat 1 --clocks \
-  --soak-minutes "$SOAK_MIN" --soak-cpus 0,1,2 \
-  --notes "soak validation: does tj cross the 74 C trip" 2>&1 \
+  --soak-minutes "$SOAK_MIN" --soak-cpus 0 --soak-ceiling-c "$SOAK_CEILING_C" \
+  --yes --notes "soak validation: does tj cross the 74 C trip" 2>&1 \
   | grep -vE "DEBUG|ALSA lib|snd_" | tee -a "$NOTE"
 fi
 
