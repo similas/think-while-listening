@@ -37,7 +37,7 @@ NOTE="results/raw/headless_window_$(date +%Y%m%d-%H%M%S).log"
 AMBIENT_MIN="${AMBIENT_MIN:-20}"
 SOAK_MIN="${SOAK_MIN:-15}"
 SOAK_CEILING_C="${SOAK_CEILING_C:-85}"
-KNOWN_STAGES="ambient thresholds baseline attribution soak"
+KNOWN_STAGES="ambient thresholds baseline smoke attribution cooldown soak"
 
 # PLAN-THEN-CONFIRM. This script isolates the systemd target, so it must never
 # act on a default or a lost variable: --plan shows what would happen and
@@ -74,6 +74,8 @@ est_minutes() {
   stage ambient && total=$((total + AMBIENT_MIN))
   stage thresholds && total=$((total + 1))
   stage baseline && total=$((total + 11))
+  stage smoke && total=$((total + 3))
+  stage cooldown && total=$((total + 5))
   stage attribution && total=$((total + 15))
   stage soak && total=$((total + SOAK_MIN + 3))
   echo "$total"
@@ -81,7 +83,7 @@ est_minutes() {
 
 PLAN="PLAN headless_window: stages [${RESOLVED:-none}], ~$(est_minutes) min
   system change: isolate multi-user.target, then back to graphical.target on exit
-  durations: ambient ${AMBIENT_MIN} min | baseline 64 turns ~11 min | attribution ~15 min | soak <= ${SOAK_MIN} min + 16 turns
+  durations: ambient ${AMBIENT_MIN} min | baseline 64 turns ~11 min | smoke 16 turns ~3 min | attribution ~15 min | cooldown <= 5 min | soak <= ${SOAK_MIN} min + 16 turns
   thresholds: soak ceiling ${SOAK_CEILING_C} C (independent watchdog), soak start <= 65 C, throttle trip 74 C
   swap validity: empirical_zero per device state (src/configs/swap_thresholds.yaml)"
 
@@ -188,6 +190,25 @@ log "--- canonical REACTIVE baseline: 64 turns, headless, diagnostics OFF ---"
 "$PY" src/scripts/run_reactive.py --wav-dir results/raw/audio/sixteen --repeat 4 --clocks \
   --yes --notes "canonical REACTIVE baseline, headless, diagnostics off" 2>&1 \
   | grep -vE "DEBUG|ALSA lib|snd_" | tee -a "$NOTE"
+fi
+
+if stage smoke; then
+require_llama
+log "--- post-event smoke: 16 turns vs the canonical headless baseline ---"
+"$PY" src/scripts/run_reactive.py --wav-dir results/raw/audio/sixteen --repeat 1 --clocks \
+  --yes --notes "post-thermal-event smoke, headless, diagnostics off" 2>&1 \
+  | grep -vE "DEBUG|ALSA lib|snd_" | tee -a "$NOTE"
+fi
+
+if stage cooldown; then
+log "--- cooldown: waiting for tj < 62 C so the soak can start cold ---"
+cool_deadline=$(( $(date +%s) + 300 ))
+while :; do
+  tj=$(( $(cat /sys/devices/virtual/thermal/thermal_zone8/temp) / 1000 ))
+  [[ "$tj" -lt 62 ]] && { log "cooled to ${tj} C"; break; }
+  [[ "$(date +%s)" -ge "$cool_deadline" ]] && { log "cooldown timed out at ${tj} C"; break; }
+  sleep 10
+done
 fi
 
 if stage attribution; then
