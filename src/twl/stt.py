@@ -101,6 +101,7 @@ class StreamingWhisperSTT(STTService):
         self._decode_lock = asyncio.Lock()
         self.partials_emitted = 0
         self.finals_emitted = 0
+        self.madvise_report: object | None = None
         # Saving the exact audio the recognizer saw makes the isolation
         # comparison PAIRED: the same segment, not a different cut of the same
         # utterance. Without it, "isolation vs pipeline" silently compares
@@ -130,10 +131,24 @@ class StreamingWhisperSTT(STTService):
         self._model = await asyncio.to_thread(load)
         log.info("stt: faster-whisper %s loaded", self._cfg.model)
 
-    async def warmup(self) -> None:
-        """One decode of silence: pays first-call graph costs outside any turn."""
+    async def warmup(self, *, request_hugepages_after: bool = False) -> None:
+        """One decode of silence: pays first-call graph costs outside any turn.
+
+        With ``request_hugepages_after``, the model's buffers are marked
+        MADV_HUGEPAGE once they exist and have been touched — the point at
+        which the kernel can actually back them with huge pages.
+        """
         await self.ensure_loaded()
         await asyncio.to_thread(self._decode, np.zeros(8000, dtype=np.float32))
+        if request_hugepages_after:
+            from twl.hugepages import request_hugepages
+
+            self.madvise_report = await asyncio.to_thread(request_hugepages)
+            log.info(
+                "stt: requested huge pages for %s MB across %d regions",
+                self.madvise_report.mb_marked,
+                self.madvise_report.regions_marked,
+            )
 
     def _decode(self, audio: npt.NDArray[np.float32]) -> str:
         assert self._model is not None

@@ -342,8 +342,15 @@ async def run(args: argparse.Namespace) -> None:
 
         # Warm every stage OUTSIDE the measured turns: first-call costs (whisper
         # graph, piper session, llama slot + HTTP) are setup, not turn latency.
-        await built.stt.warmup()
+        await built.stt.warmup(request_hugepages_after=args.madvise_hugepage)
         await asyncio.to_thread(built.tts.warm)
+        if args.start_llama_after_warmup:
+            # STT-FIRST ORDER: the recognizer claims its huge pages while the
+            # pool is still unfragmented, and only then does the LLM load.
+            subprocess.run(
+                [str(REPO / "src/scripts/llama_server.sh"), "start"], check=True, cwd=REPO
+            )
+            print("llama-server started AFTER stt warmup (stt-first order)")
         if cfg.llm.backend != "stub" and pid > 0:
             from twl.llm import LlamaClient
 
@@ -518,6 +525,16 @@ def main() -> None:
     p.add_argument("--diag-memory", action="store_true", help="periodic memory snapshots")
     p.add_argument("--diag-trace", action="store_true", help="add tracemalloc (perturbs timing)")
     p.add_argument("--diag-every", type=int, default=8, help="turns between snapshots")
+    p.add_argument(
+        "--madvise-hugepage",
+        action="store_true",
+        help="mark the recognizer's buffers MADV_HUGEPAGE after warmup",
+    )
+    p.add_argument(
+        "--start-llama-after-warmup",
+        action="store_true",
+        help="load STT first, then start llama-server (start-order mitigation)",
+    )
     p.add_argument("--notes", default="")
     add_gate_args(p)
     a = p.parse_args()
