@@ -138,6 +138,23 @@ Root-level files are allowed; no other top-level folders.
   observed, what surprised you, what is unresolved. Terse. Facts only.
 - Any run with swap activity, an OOM, or a thermal-throttle event is recorded
   and flagged invalid — never silently dropped or quietly rerun.
+- **Never edit a script that is executing.** bash reads a script incrementally
+  by byte offset, so editing the source shifts the interpreter's position and
+  it will execute fragments of lines. On 2026-09-15 that restarted a thermal
+  soak on an already-hot board and drove tj to 96.8 C, past the 95 C hardware
+  trip. Long-running scripts therefore SNAPSHOT THEMSELVES into
+  `results/raw/script_snapshots/` and exec the copy; the file under `src/` is
+  never the file being executed. Edit freely — the running copy is immune.
+- **Every soak runs under the independent watchdog**
+  (`src/scripts/thermal_watchdog.py`), started before the load, guarding by
+  pid, sharing no control flow with what it guards: it kills the load and runs
+  `jetson_clocks --restore` on breach even if the load has wedged.
+- **Thermal ceilings and preconditions.** tj trips: 74 C active throttle,
+  95 C hardware throttle, 104.5 C shutdown. A soak REFUSES to start above
+  65 C (never stack a soak on a hot board) and ABORTS above 85 C. The target
+  is "throttle active" (tj >= 74 C held for a minute), not maximum
+  temperature: the pipeline alone reaches 73 C, so the state needs a nudge,
+  not a furnace.
 - The user is a senior ML engineer with production voice-agent experience and
   an expert on this specific machine. When they correct you about the machine,
   they are usually right; update the relevant brief and say so.

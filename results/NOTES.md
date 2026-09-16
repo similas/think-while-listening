@@ -366,3 +366,46 @@ conversion layer. Three measurements settle what to do.
    Only that run can test the working hypothesis and decide the Phase 3
    channel policy; until it exists, the hypothesis is labelled as such
    wherever it appears.
+
+## 2026-09-15 — Thermal incident: 96.8 C, and the guards added because of it
+
+WHAT HAPPENED. The first soak validation drove tj to 96.8 C — past the 95 C
+hardware trip, ~8 C below the 104.5 C shutdown. Two causes, both mine:
+1. The soak recipe stacked every heat source at once: continuous decode with
+   cache_prompt=False (full prefill AND decode every request), a THREE-core
+   bandwidth adversary, jetson_clocks pinning max frequency and disabling CPU
+   idle states, under MAXN_SUPER. The pipeline alone reaches 73 C; this was
+   built to guarantee crossing 74 C and overshot by 20 C.
+2. I EDITED headless_window.sh WHILE BASH WAS EXECUTING IT. bash reads a
+   script incrementally by byte offset, so the edit shifted its position and
+   it ran line fragments (`line 121: e_llama: command not found`) and
+   RESTARTED the soak stage on a board already at ~90 C. A fresh soak starts
+   from ~60 C and is bounded; a second soak on a hot board is not.
+No damage: the SoC's own protection had engaged, the board cooled to 65 C
+within minutes of the load stopping, and the fan was running throughout
+(pwm 121-229/255). Nothing scientific was lost — the canonical headless
+baseline and both ambient measurements had already completed.
+
+GUARDS ADDED (Ali, 2026-09-15), all now in CLAUDE.md §6:
+- INDEPENDENT WATCHDOG (src/scripts/thermal_watchdog.py): a separate process
+  started before the load, guarding by pid, polling tj every 2 s; on breach it
+  SIGTERMs the load's process group, pkills the adversary's workers, and runs
+  jetson_clocks --restore itself. It shares no control flow with what it
+  guards, so a wedged or self-corrupted load is still stopped. Verified by
+  test: guarding a sleeping process with a ceiling below the current
+  temperature killed it (waitpid -15) and restored clocks.
+- SNAPSHOT-THEN-EXEC: headless_window.sh copies itself to
+  results/raw/script_snapshots/ and execs the copy, so the source can be
+  edited freely while a run is in flight. TWL_REPO carries the repo root
+  across the exec (after it, $0 is the snapshot and its parents are not the
+  repo — caught in testing).
+- SOAK PRECONDITIONS: refuse to start above 65 C, abort above 85 C, and stop
+  as soon as tj has held at or above the 74 C trip for 60 s. The target is
+  "throttle active", not maximum temperature. The recipe is now a realistic
+  decode loop (cache_prompt=True, the pipeline's own token budget) plus a
+  ONE-core adversary.
+- The window script also refuses to isolate targets when no stage is
+  selected: a stray invocation had taken the desktop down for a no-op.
+
+STILL OWED: the four-condition STT attribution (its env bug is fixed but it
+has not produced numbers yet) and a bounded soak under the new guards.

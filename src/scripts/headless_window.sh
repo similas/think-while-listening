@@ -12,7 +12,24 @@
 # is a reproducibility fact for anyone repeating these runs.
 set -uo pipefail
 
-REPO="$(cd "$(dirname "$0")/../.." && pwd)"
+# The repo root must survive the exec below: after it, $0 is the snapshot in
+# results/raw/script_snapshots, whose parents are not the repo.
+REPO="${TWL_REPO:-$(cd "$(dirname "$0")/../.." && pwd)}"
+
+# SNAPSHOT-THEN-EXEC. bash reads a script incrementally by byte offset, so
+# editing the source while it runs shifts the interpreter's position and can
+# execute fragments of lines. On 2026-09-15 that restarted a thermal soak on an
+# already-hot board and drove tj to 96.8 C. Every invocation therefore copies
+# itself somewhere stable and runs the copy; the file under src/ is never the
+# file being executed.
+if [[ "${TWL_SNAPSHOT:-}" != "1" ]]; then
+  snap_dir="$REPO/results/raw/script_snapshots"
+  mkdir -p "$snap_dir"
+  snap="$snap_dir/$(basename "$0" .sh)-$(date +%Y%m%d-%H%M%S)-$$.sh"
+  cp "$0" "$snap"
+  echo "running snapshot: $snap"
+  TWL_SNAPSHOT=1 TWL_SNAPSHOT_PATH="$snap" TWL_REPO="$REPO" exec bash "$snap" "$@"
+fi
 cd "$REPO"
 PY="$HOME/.venvs/twl/bin/python"
 export PYTHONPATH="$REPO/src"
@@ -43,7 +60,14 @@ audio_ok() {
   pactl info >/dev/null 2>&1
 }
 
+if [[ -z "${STAGES// /}" ]]; then
+  echo "no stages selected (STAGES is empty); nothing to do"
+  trap - EXIT INT TERM
+  exit 0
+fi
+
 log "=== headless window begins ==="
+log "executing snapshot: ${TWL_SNAPSHOT_PATH:-unknown} (source edits cannot affect this run)"
 log "pre-isolate state: $(systemctl is-active graphical.target)"
 sudo -n /usr/bin/systemctl isolate multi-user.target || { log "isolate FAILED"; exit 1; }
 sleep 10  # let the target switch settle before probing anything

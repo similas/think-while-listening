@@ -278,13 +278,39 @@ async def run(args: argparse.Namespace) -> None:
             from twl.soak import soak as run_soak
 
             cpus = tuple(int(c) for c in args.soak_cpus.split(",") if c.strip())
-            soak_report = await run_soak(cfg.llm, minutes=args.soak_minutes, adversary_cpus=cpus)
+            # An INDEPENDENT guard, started before the load and sharing no
+            # control flow with it: if this process wedges or misbehaves, the
+            # watchdog still kills it and restores clocks (2026-09-15).
+            watchdog = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(REPO / "src/scripts/thermal_watchdog.py"),
+                    "--pid",
+                    str(os.getpid()),
+                    "--ceiling-c",
+                    str(args.soak_ceiling_c),
+                    "--baseline",
+                    str(baseline),
+                    "--log",
+                    str(run_dir / "thermal_watchdog.log"),
+                    "--summary",
+                    str(run_dir / "thermal_watchdog.json"),
+                ],
+                env={**os.environ, "PYTHONPATH": str(REPO / "src")},
+                start_new_session=True,
+            )
+            try:
+                soak_report = await run_soak(
+                    cfg.llm, minutes=args.soak_minutes, adversary_cpus=cpus
+                )
+            finally:
+                watchdog.terminate()
             (run_dir / "soak.json").write_text(json.dumps(asdict(soak_report), indent=1))
             print(
-                f"soak: {soak_report.minutes:.0f} min, tj {soak_report.tj_start_c:.1f} -> "
-                f"{soak_report.tj_max_c:.1f} C (trip {soak_report.throttle_trip_c:.1f} C, "
-                f"crossed={soak_report.crossed_trip}), "
-                f"{soak_report.decode_tokens_per_s:.1f} tok/s"
+                f"soak: tj {soak_report.tj_start_c:.1f} -> {soak_report.tj_max_c:.1f} C "
+                f"(trip {soak_report.throttle_trip_c:.1f} C, crossed={soak_report.crossed_trip}, "
+                f"held {soak_report.held_above_trip_s:.0f}s); ended because "
+                f"{soak_report.ended_because}; {soak_report.decode_tokens_per_s:.1f} tok/s"
             )
 
         # Warm every stage OUTSIDE the measured turns: first-call costs (whisper
@@ -417,6 +443,12 @@ def main() -> None:
     p.add_argument("--live-seconds", type=float, default=300.0)
     p.add_argument("--clocks", action="store_true", help="jetson_clocks for the run")
     p.add_argument("--soak-minutes", type=float, default=0.0, help="thermal pre-load (0 = cold)")
+    p.add_argument(
+        "--soak-ceiling-c",
+        type=float,
+        default=85.0,
+        help="independent watchdog kills the run above this tj",
+    )
     p.add_argument(
         "--soak-cpus", default="", help="comma-separated cores for the soak's bandwidth adversary"
     )

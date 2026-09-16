@@ -4,16 +4,26 @@ Responsibility: the "soaked" level of Phase 2's device-state factor. A run
 labelled soaked must have reached that state the same way every time, so the
 soak is a fixed recipe rather than "we ran it for a while".
 
-RECIPE (Ali, 2026-09-15): 15 minutes of continuous LLM decode plus the
-memory-bandwidth adversary, immediately before the measured turns. Both
-loads are recorded: the decode's achieved tokens/s and the adversary's
-achieved MB/s, so a soak that under-delivered is visible in the log rather
-than silently producing a cool "soaked" run.
+RECIPE (Ali, 2026-09-15, revised after the 96.8 C incident): a realistic
+decode loop (cache_prompt=True, the pipeline's own token budget) plus a
+ONE-CORE bandwidth adversary, run only until the board is demonstrably
+throttling, not until a timer expires. The pipeline alone reached 73 C, so
+the target 74 C needs only a nudge; the first recipe stacked three adversary
+cores and full prefill on every request and overshot by 20 C.
 
-THRESHOLD: this board's tj zone trips at 74.0 C (trip_point_1, read from
-sysfs). A soak that does not cross it has not induced throttling, and the
-protocol then treats temperature as a covariate rather than a state — the
-soak report carries the tj range achieved so that decision is made on data.
+TARGET, not maximum: the soak ends as soon as tj has held at or above the
+throttle trip for HOLD_SECONDS, or when ``minutes`` elapses, whichever comes
+first. State reached, no further heating.
+
+CEILINGS, enforced here AND by an independent watchdog process (see
+src/scripts/thermal_watchdog.py, which does not share this control flow):
+  - refuse to start above START_MAX_C (65 C): a soak must never stack on an
+    already-hot board, which is exactly what drove tj to 96.8 C;
+  - abort above ABORT_C (85 C), well below the 95 C hardware trip.
+
+Both loads are recorded — achieved tokens/s and MB/s — so a soak that
+under-delivered is visible rather than silently producing a cool "soaked"
+run.
 """
 
 from __future__ import annotations
@@ -30,11 +40,19 @@ from twl.llm import LlamaClient
 from twl.prompting import gemma_prompt
 from twl.telemetry import find_thermal_zone, read_tj_c, read_trip_points_c
 
+START_MAX_C = 65.0
+ABORT_C = 85.0
+HOLD_SECONDS = 60.0
+
 SOAK_PROMPT = (
     "Explain, step by step and in full sentences, how a heat pump moves thermal "
     "energy from a cold reservoir to a warm one, and why that does not violate "
     "the second law of thermodynamics."
 )
+
+
+class SoakTooHot(RuntimeError):
+    """The board was too hot to start, or got too hot to continue."""
 
 
 @dataclass(frozen=True)
@@ -51,6 +69,8 @@ class SoakReport:
     decode_tokens: int
     decode_tokens_per_s: float
     adversary: AdversaryReport | None
+    ended_because: str = ""
+    held_above_trip_s: float = 0.0
     tj_samples_c: list[float] = field(default_factory=list)
 
 
@@ -76,6 +96,13 @@ async def soak(
     # passive/monitoring point on this board, not a throttle.
     throttle_trip = next((t for t in trips if t > 50.0), float("nan"))
 
+    tj_now = read_tj_c(zone)
+    if tj_now > START_MAX_C:
+        raise SoakTooHot(
+            f"tj is {tj_now:.1f} C, above the {START_MAX_C:.1f} C start ceiling; "
+            "let the board idle — a soak must never begin on a hot board"
+        )
+
     adversary = BandwidthAdversary(adversary_cpus) if adversary_cpus else None
     if adversary is not None:
         adversary.start()
@@ -93,20 +120,42 @@ async def soak(
                 adversary.stop()
             raise RuntimeError("soak needs a serving llama-server")
 
+        # A tiny mutable box so the sampler task and the decode loop agree on
+        # when to stop; typed explicitly so mypy keeps the fields honest.
+        stop_reason: list[str] = [""]
+        held_s: list[float] = [0.0]
+
         async def sampler() -> None:
-            while time.monotonic() < deadline:
+            above_since: float | None = None
+            while time.monotonic() < deadline and not stop_reason[0]:
                 await asyncio.sleep(sample_every_s)
-                samples.append(read_tj_c(zone))
+                tj = read_tj_c(zone)
+                samples.append(tj)
+                if tj >= ABORT_C:
+                    stop_reason[0] = f"abort: tj {tj:.1f} C >= {ABORT_C:.1f} C"
+                    return
+                if tj >= throttle_trip:
+                    above_since = above_since or time.monotonic()
+                    held_s[0] = time.monotonic() - above_since
+                    if held_s[0] >= HOLD_SECONDS:
+                        stop_reason[0] = (
+                            f"target reached: tj held >= {throttle_trip:.1f} C for "
+                            f"{HOLD_SECONDS:.0f}s"
+                        )
+                        return
+                else:
+                    above_since = None
+                    held_s[0] = 0.0
 
         sampler_task = asyncio.create_task(sampler())
         try:
-            while time.monotonic() < deadline:
-                # cache_prompt=False so every request pays full prefill too:
-                # a soak should load prefill and decode, not replay a cache.
+            while time.monotonic() < deadline and not stop_reason[0]:
+                # cache_prompt=True and the pipeline's own token budget: this
+                # is a realistic load, not a synthetic worst case.
                 t = await client.completion(
                     gemma_prompt("You are a physics tutor.", SOAK_PROMPT),
-                    n_predict=128,
-                    cache_prompt=False,
+                    n_predict=llm.max_tokens,
+                    cache_prompt=True,
                     temperature=0.8,
                 )
                 requests += 1
@@ -117,6 +166,7 @@ async def soak(
                 await sampler_task
 
     report_adv = adversary.stop() if adversary is not None else None
+    ended = stop_reason[0] or f"{minutes:g} minutes elapsed"
     elapsed_s = (now_ns() - t0) / 1e9
     tj_end = read_tj_c(zone)
     samples.append(tj_end)
@@ -132,5 +182,7 @@ async def soak(
         decode_tokens=tokens,
         decode_tokens_per_s=round(tokens / max(elapsed_s, 1e-9), 2),
         adversary=report_adv,
+        ended_because=ended,
+        held_above_trip_s=round(held_s[0], 1),
         tj_samples_c=valid,
     )
