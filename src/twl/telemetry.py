@@ -106,6 +106,9 @@ class TegrastatsSampler:
         # These samples are 100 ms apart, already being taken, and cost the
         # decision path nothing.
         self._recent_soc: deque[float] = deque(maxlen=32)
+        # (absolute ns, temps by zone) for the per-turn thermal covariate.
+        # 4096 samples at 10 Hz is ~7 minutes, far longer than any turn.
+        self._recent_temps: deque[tuple[int, dict[str, float]]] = deque(maxlen=4096)
         self._out_path = out_path
         self._run_id = run_id
         self._interval_ms = interval_ms
@@ -143,6 +146,7 @@ class TegrastatsSampler:
                 soc = sample.power_mw.get("VDD_SOC")
                 if soc is not None:
                     self._recent_soc.append(float(soc))
+                self._recent_temps.append((self._origin_ns + int(t_ms * 1e6), sample.temps_c))
                 write_jsonl(fh, sample)
                 self.samples_written += 1
 
@@ -154,6 +158,24 @@ class TegrastatsSampler:
         mW), so thresholds derived from one apply to the other.
         """
         return list(self._recent_soc)[-n:]
+
+    def temps_since(self, start_ns: int) -> dict[str, float]:
+        """Median temperature per zone over the samples since ``start_ns``.
+
+        The per-turn thermal covariate. A turn is seconds long and the stream
+        runs at 10 Hz, so this is a median over tens of samples rather than a
+        single reading taken at whatever the boundary happened to be.
+        """
+        rows = [temps for ns, temps in self._recent_temps if ns >= start_ns]
+        if not rows:
+            return {}
+        zones = {z for r in rows for z in r}
+        out: dict[str, float] = {}
+        for z in zones:
+            vals = sorted(r[z] for r in rows if z in r)
+            if vals:
+                out[z] = round(vals[len(vals) // 2], 2)
+        return out
 
     def stop(self) -> None:
         """Terminate tegrastats and join the reader."""
@@ -213,6 +235,30 @@ def find_thermal_zone(kind: str = "tj-thermal") -> Path | None:
         except OSError:
             continue
     return None
+
+
+def read_fan() -> dict[str, float]:
+    """Fan PWM and RPM, and whether anything is controlling them.
+
+    NOT pinned: nvfancontrol drives the fan from the thermal MARGIN to the
+    limit (profile "quiet": PWM 255 at margin 0, PWM 0 at margin 70), so fan
+    speed is a function of temperature and therefore varies exactly where
+    temperature does. Pinning it needs a sudoers entry for the hwmon node; in
+    the meantime it is recorded per turn as a covariate, never assumed fixed.
+    """
+    out: dict[str, float] = {}
+    for h in sorted(Path("/sys/class/hwmon").glob("hwmon*")):
+        try:
+            if (h / "name").read_text().strip() != "pwmfan":
+                continue
+            for key, node in (("pwm", "pwm1"), ("rpm", "rpm")):
+                try:
+                    out[key] = float((h / node).read_text().strip())
+                except (OSError, ValueError):
+                    continue
+        except OSError:
+            continue
+    return out
 
 
 def read_tj_c(zone: Path | None = None) -> float:

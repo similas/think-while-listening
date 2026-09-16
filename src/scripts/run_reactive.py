@@ -251,7 +251,8 @@ async def run(args: argparse.Namespace) -> None:
                 f"agent affinity={sorted(cfg.stt.cpu_affinity)}; "
                 f"clocks={'set' if args.clocks else 'as-found'}; "
                 f"thermal={thermal}; state={state}; spec_tokens={args.spec_tokens}; "
-                f"adversary={list(adv_cpus) or 'none'}; "
+                f"adversary={list(adv_cpus) or 'none'}"
+                f"{'/no-duty-loop' if args.adversary_no_duty_loop else ''}; "
                 f"{args.notes}"
             ),
             extra_software={"llama-server-cmdline": llama_cmdline},
@@ -308,13 +309,16 @@ async def run(args: argparse.Namespace) -> None:
             device_state=state,
             segment_dir=run_dir / "segments",
             detector=ContentionDetector(history_fn=sampler.recent_soc_mw),
+            temps_fn=sampler.temps_since,
             speculation=speculation,
         )
         built_box.append(built.turns)
 
         adversary = None
         if adv_cpus:
-            adversary = BandwidthAdversary(adv_cpus, duty=args.adversary_duty)
+            adversary = BandwidthAdversary(
+                adv_cpus, duty=args.adversary_duty, duty_loop=not args.adversary_no_duty_loop
+            )
             adversary.start()
             print(f"bandwidth adversary running on cores {list(adv_cpus)}")
 
@@ -568,6 +572,11 @@ def main() -> None:
         type=int,
         default=0,
         help="Phase 2: concurrent speculative decode of B tokens during speech",
+    )
+    p.add_argument(
+        "--adversary-no-duty-loop",
+        action="store_true",
+        help="run the pre-duty-knob adversary worker verbatim (duty must be 1.0)",
     )
     p.add_argument(
         "--adversary-duty",

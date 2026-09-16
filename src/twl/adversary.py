@@ -36,6 +36,29 @@ import numpy as np
 DEFAULT_BUFFER_MB = 64
 
 
+def _worker_no_duty_loop(buffer_mb: int, cpu: int, stop: Any, out: Any, duty: float = 1.0) -> None:
+    """The pre-duty-knob worker, kept verbatim so it can be RUN, not assumed.
+
+    At duty=1.0 the duty-cycle worker below differs only by a clamp and one
+    ``perf_counter`` call per pass, which should be unmeasurable against a
+    ~10 ms pass. "Should be" is not a measurement: two nominally identical
+    contended runs disagreed by 1.43 vs 2.68 ms/token with non-overlapping
+    CIs, and this variant lets the old code path be one arm of the comparison
+    rather than a hypothesis about it.
+    """
+    os.sched_setaffinity(0, {cpu})
+    buf = np.zeros(buffer_mb * 1024 * 1024 // 8, dtype=np.int64)
+    bytes_written = 0
+    t0 = time.perf_counter()
+    val = 1
+    while not stop.is_set():
+        buf[:] = val  # one full streaming pass over the buffer
+        bytes_written += buf.nbytes
+        val += 1
+    elapsed = time.perf_counter() - t0
+    out.put({"cpu": cpu, "mb_per_s": round(bytes_written / 1e6 / max(elapsed, 1e-9), 1)})
+
+
 def _worker(buffer_mb: int, cpu: int, stop: Any, out: Any, duty: float = 1.0) -> None:
     """Stream writes through a cache-defeating buffer until told to stop.
 
@@ -73,6 +96,7 @@ class AdversaryReport:
     cpus: tuple[int, ...]
     buffer_mb: int
     duty: float
+    duty_loop: bool
     seconds: float
     total_mb_per_s: float
     per_worker_mb_per_s: list[float]
@@ -87,6 +111,7 @@ class BandwidthAdversary:
         *,
         buffer_mb: int = DEFAULT_BUFFER_MB,
         duty: float = 1.0,
+        duty_loop: bool = True,
     ) -> None:
         if not cpus:
             raise ValueError("adversary needs at least one CPU to run on")
@@ -95,6 +120,10 @@ class BandwidthAdversary:
         self._cpus = cpus
         self._buffer_mb = buffer_mb
         self._duty = duty
+        # False selects the pre-knob worker verbatim (see _worker_no_duty_loop).
+        self._duty_loop = duty_loop
+        if not duty_loop and duty != 1.0:
+            raise ValueError("the pre-knob worker has no duty cycle; duty must be 1.0")
         self._ctx = mp.get_context("spawn")
         self._stop = self._ctx.Event()
         self._queue: mp.Queue[dict[str, Any]] = self._ctx.Queue()
@@ -105,7 +134,7 @@ class BandwidthAdversary:
         self._t0 = time.perf_counter()
         for cpu in self._cpus:
             p = self._ctx.Process(
-                target=_worker,
+                target=(_worker if self._duty_loop else _worker_no_duty_loop),
                 args=(self._buffer_mb, cpu, self._stop, self._queue, self._duty),
                 daemon=True,
             )
@@ -131,6 +160,7 @@ class BandwidthAdversary:
             cpus=self._cpus,
             buffer_mb=self._buffer_mb,
             duty=self._duty,
+            duty_loop=self._duty_loop,
             seconds=round(time.perf_counter() - self._t0, 2),
             total_mb_per_s=round(sum(rates), 1),
             per_worker_mb_per_s=rates,

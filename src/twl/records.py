@@ -81,6 +81,13 @@ class TurnRecord:
     invalid_reason: str = ""
     close_reason: str = "bot_stopped"
     tj_c: float = -1.0
+    # Median temperature per zone over this turn, from the 10 Hz stream:
+    # cpu, gpu, soc0, soc1, soc2, tj. A covariate, not a validity gate —
+    # randomizing cell order does not isolate warming, so it enters the model.
+    temps_c: dict[str, float] = field(default_factory=dict)
+    # Fan PWM/RPM at the turn boundary. nvfancontrol drives the fan from the
+    # thermal margin, so it moves with temperature and is NOT a fixed setting.
+    fan: dict[str, float] = field(default_factory=dict)
     stt_audio_s: float = -1.0
     # Mechanism counters for the STT decode of this turn. majflt rising under a
     # co-resident process is the signature of page-cache eviction: the model's

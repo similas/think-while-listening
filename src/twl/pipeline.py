@@ -57,6 +57,7 @@ def build_pipeline(
     segment_dir: Path | None = None,
     speculation: SpeculationDriver | None = None,
     detector: ContentionDetector | None = None,
+    temps_fn: Callable[[int], dict[str, float]] | None = None,
 ) -> BuiltPipeline:
     """Assemble the REACTIVE pipeline around the given audio source."""
     turns = TurnManager(
@@ -67,6 +68,7 @@ def build_pipeline(
         device_state=device_state,
         pressure_pids=pressure_pids,
         detector=detector,
+        temps_fn=temps_fn,
     )
     if f"state={device_state}" not in meta.notes and "state=" in meta.notes:
         raise ValueError(

@@ -27,6 +27,7 @@ from twl.contention import ContentionDetector
 from twl.records import RunComplete, RunMeta, StageEvent, TurnRecord, write_jsonl
 from twl.telemetry import (
     find_thermal_zone,
+    read_fan,
     read_gpu_freq_mhz,
     read_mem_available_mb,
     read_power_rails_mw,
@@ -81,6 +82,7 @@ class TurnManager:
         device_state: str = "desktop",
         pressure_pids: Callable[[], dict[str, int]] | None = None,
         detector: ContentionDetector | None = None,
+        temps_fn: Callable[[int], dict[str, float]] | None = None,
     ):
         self._run_id = run_id
         self.swap_threshold_mb, self.swap_threshold_source = load_swap_threshold(device_state)
@@ -94,6 +96,8 @@ class TurnManager:
         # Sampled at turn start, before this turn speculates, and held for the
         # turn: a continuous reading would be confounded by our own decode.
         self._detector = detector
+        # Median temps over the turn, from the telemetry stream (see records).
+        self._temps_fn = temps_fn
         self._contention: dict[str, object] = {}
         # Log handle spans the whole run; closed by close(). The lifetime is
         # the manager's, not a with-block's.
@@ -365,6 +369,8 @@ class TurnManager:
             invalid_reason=invalid_reason,
             close_reason=close_reason,
             tj_c=read_tj_c(self._tj_zone),
+            temps_c=(self._temps_fn(self._turn_opened_ns) if self._temps_fn is not None else {}),
+            fan=read_fan(),
             gpu_freq_mhz=read_gpu_freq_mhz(),
             power_mw=read_power_rails_mw(),
             stt_audio_s=round(self._stt_audio_s, 3),
