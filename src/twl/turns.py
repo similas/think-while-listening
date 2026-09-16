@@ -101,6 +101,11 @@ class TurnManager:
         self._stt_majflt = -1
         self._page_cache_mb = -1.0
         self._segment_wav = ""
+        self._vmstat_delta: dict[str, int] = {}
+        self._rss_before_mb = -1.0
+        self._rss_after_mb = -1.0
+        self._anon_huge_before_mb = -1.0
+        self._anon_huge_after_mb = -1.0
         self._reply_parts: list[str] = []
         self._reply_tokens = 0
         self._swap_at_start: dict[str, float] = {}
@@ -140,6 +145,11 @@ class TurnManager:
         self._stt_majflt = -1
         self._page_cache_mb = -1.0
         self._segment_wav = ""
+        self._vmstat_delta = {}
+        self._rss_before_mb = -1.0
+        self._rss_after_mb = -1.0
+        self._anon_huge_before_mb = -1.0
+        self._anon_huge_after_mb = -1.0
         self._reply_parts = []
         self._reply_tokens = 0
         self._marked_once = set()
@@ -168,13 +178,28 @@ class TurnManager:
         self._transcript = text
 
     def set_stt_counters(
-        self, *, minflt: int, majflt: int, page_cache_mb: float, segment_wav: str
+        self,
+        *,
+        minflt: int,
+        majflt: int,
+        page_cache_mb: float,
+        segment_wav: str,
+        vmstat_delta: dict[str, int] | None = None,
+        rss_before_mb: float = -1.0,
+        rss_after_mb: float = -1.0,
+        anon_huge_before_mb: float = -1.0,
+        anon_huge_after_mb: float = -1.0,
     ) -> None:
         """Mechanism counters measured around this turn's final STT decode."""
         self._stt_minflt = minflt
         self._stt_majflt = majflt
         self._page_cache_mb = page_cache_mb
         self._segment_wav = segment_wav
+        self._vmstat_delta = vmstat_delta or {}
+        self._rss_before_mb = rss_before_mb
+        self._rss_after_mb = rss_after_mb
+        self._anon_huge_before_mb = anon_huge_before_mb
+        self._anon_huge_after_mb = anon_huge_after_mb
 
     def set_stt_audio_seconds(self, seconds: float) -> None:
         """Duration of the audio the final decode consumed.
@@ -278,6 +303,11 @@ class TurnManager:
             stt_minflt=self._stt_minflt,
             stt_majflt=self._stt_majflt,
             page_cache_mb=round(self._page_cache_mb, 1),
+            vmstat_delta=dict(self._vmstat_delta),
+            rss_before_mb=self._rss_before_mb,
+            rss_after_mb=self._rss_after_mb,
+            anon_huge_before_mb=self._anon_huge_before_mb,
+            anon_huge_after_mb=self._anon_huge_after_mb,
             segment_wav=self._segment_wav,
             proc_swap_mb={k: round(v, 3) for k, v in own_swap.items()},
             pressure_swap_mb={k: round(v, 3) for k, v in pressure_swap.items()},

@@ -87,6 +87,12 @@ class TurnRecord:
     # weights being re-read from NVMe rather than found in memory.
     stt_majflt: int = -1
     stt_minflt: int = -1
+    # Around the decode: which sub-mechanism produced the faults.
+    vmstat_delta: dict[str, int] = field(default_factory=dict)
+    rss_before_mb: float = -1.0
+    rss_after_mb: float = -1.0
+    anon_huge_before_mb: float = -1.0
+    anon_huge_after_mb: float = -1.0
     page_cache_mb: float = -1.0
     segment_wav: str = ""
     # Swap attribution (rule of 2026-09-16): per-process VmSwap decides

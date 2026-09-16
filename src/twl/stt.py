@@ -49,7 +49,12 @@ from pipecat.utils.time import time_now_iso8601
 
 from twl.clock import now_ns
 from twl.config import SttConfig
-from twl.telemetry import read_faults, read_page_cache_mb
+from twl.telemetry import (
+    read_faults,
+    read_page_cache_mb,
+    read_smaps_summary,
+    read_vmstat,
+)
 from twl.turns import TurnManager
 
 # Pipecat 0.0.108 emits VADUser*SpeakingFrame on the plain-VAD path and
@@ -188,11 +193,16 @@ class StreamingWhisperSTT(STTService):
                 audio, self._audio = self._audio, np.zeros(0, dtype=np.float32)
             if len(audio) < 0.08 * self.sample_rate:
                 return
-            faults_before = read_faults(os.getpid())
+            pid = os.getpid()
+            faults_before = read_faults(pid)
+            vm_before = read_vmstat()
+            sm_before = read_smaps_summary(pid)
             async with self._decode_lock:  # waits out any in-flight partial decode
                 text = await asyncio.to_thread(self._decode, audio)
-            at = now_ns()
-            faults_after = read_faults(os.getpid())
+            at = now_ns()  # timestamp BEFORE the counters, so probing never inflates it
+            faults_after = read_faults(pid)
+            vm_after = read_vmstat()
+            sm_after = read_smaps_summary(pid)
             self._turns.mark("stt_final", at_ns=at)
             self._turns.set_transcript(text)
             self._turns.set_stt_audio_seconds(len(audio) / self.sample_rate)
@@ -201,6 +211,11 @@ class StreamingWhisperSTT(STTService):
                 majflt=faults_after[1] - faults_before[1],
                 page_cache_mb=read_page_cache_mb(),
                 segment_wav=self._save_segment(audio),
+                vmstat_delta={k: vm_after.get(k, 0) - vm_before.get(k, 0) for k in vm_after},
+                rss_before_mb=sm_before["rss_mb"],
+                rss_after_mb=sm_after["rss_mb"],
+                anon_huge_before_mb=sm_before["anon_huge_mb"],
+                anon_huge_after_mb=sm_after["anon_huge_mb"],
             )
             self.finals_emitted += 1
             if text:

@@ -21,6 +21,7 @@ from time import strftime
 from twl.audio_device import capture_path_info
 from twl.clock import wall_iso
 from twl.records import RunMeta
+from twl.telemetry import read_thp_settings
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -79,6 +80,9 @@ def software_versions(extra: dict[str, str] | None = None) -> dict[str, str]:
         except metadata.PackageNotFoundError:
             versions[pkg] = "not installed"
     versions["python"] = _run(["python3", "--version"])
+    # THP policy changes how many faults a given amount of memory costs, so it
+    # belongs in the header of any run whose faults are being interpreted.
+    versions.update(read_thp_settings())
     if extra:
         versions.update(extra)
     return versions

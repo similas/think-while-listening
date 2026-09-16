@@ -248,8 +248,75 @@ def read_page_cache_mb(path: str = "/proc/meminfo") -> float:
     return -1.0
 
 
+# Two families of counter that a minor-fault storm could come from, and which
+# tell very different stories: RECLAIM (the kernel took the pages back and the
+# process re-maps them) versus THP FALLBACK (no huge page available, so one
+# 2 MB mapping becomes 512 4 KB ones and the fault count rises with no reclaim
+# at all). Both are sampled around every decode so the data can separate them.
+VMSTAT_RECLAIM = (
+    "pgsteal_kswapd",
+    "pgsteal_direct",
+    "pgscan_kswapd",
+    "pgscan_direct",
+    "pgdeactivate",
+    "pgrefill",
+)
+VMSTAT_THP = (
+    "thp_fault_alloc",
+    "thp_fault_fallback",
+    "thp_collapse_alloc",
+    "thp_collapse_alloc_failed",
+)
+VMSTAT_KEYS = VMSTAT_RECLAIM + VMSTAT_THP
+
 _GPU_DEVFREQ = Path("/sys/class/devfreq/17000000.gpu/cur_freq")
 _INA3221 = Path("/sys/class/hwmon/hwmon1")
+
+
+def read_vmstat(keys: tuple[str, ...] = VMSTAT_KEYS, path: str = "/proc/vmstat") -> dict[str, int]:
+    """Selected /proc/vmstat counters (system-wide, monotonic)."""
+    wanted = set(keys)
+    out: dict[str, int] = {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                name, _, value = line.partition(" ")
+                if name in wanted:
+                    out[name] = int(value)
+    except (OSError, ValueError):
+        return out
+    return out
+
+
+def read_smaps_summary(pid: int) -> dict[str, float]:
+    """Rss and AnonHugePages for a process, in MB.
+
+    AnonHugePages is the THP discriminator: if the recognizer's memory is
+    backed by huge pages in one condition and by 4 KB pages in another, the
+    fault counts differ by up to 512x for identical memory.
+    """
+    out = {"rss_mb": -1.0, "anon_huge_mb": -1.0}
+    try:
+        for line in Path(f"/proc/{pid}/smaps_rollup").read_text().splitlines():
+            if line.startswith("Rss:"):
+                out["rss_mb"] = round(int(line.split()[1]) / 1024.0, 1)
+            elif line.startswith("AnonHugePages:"):
+                out["anon_huge_mb"] = round(int(line.split()[1]) / 1024.0, 1)
+    except OSError:
+        return out
+    return out
+
+
+def read_thp_settings() -> dict[str, str]:
+    """THP policy in force, for the run header."""
+    base = Path("/sys/kernel/mm/transparent_hugepage")
+    out: dict[str, str] = {}
+    for name in ("enabled", "defrag"):
+        try:
+            out[f"thp_{name}"] = (base / name).read_text().strip()
+        except OSError:
+            out[f"thp_{name}"] = "unavailable"
+    return out
 
 
 def read_gpu_freq_mhz(path: Path = _GPU_DEVFREQ) -> float:
