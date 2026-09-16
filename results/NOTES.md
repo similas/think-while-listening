@@ -447,3 +447,71 @@ DURABILITY. The same run proved the new guarantees: turns.jsonl held all 32
 turn records AND the terminating run_complete record despite the process
 hanging, because the log is fsynced and closed before teardown is attempted.
 A reader can tell a finished log from a truncated one.
+
+## 2026-09-16 — STT inflation attributed: page reclaim, not GPU, not storage
+
+Run stt-attribution-20260916-104404-a81993, headless, clocks pinned, n=32 per
+condition, AUDIO HELD FIXED (every condition decodes VAD segments of the same
+2.4 s median; conditions A and B decode literally the same files).
+
+| condition                         | STT ms | vs B | minflt/decode | majflt | GPU MHz | VDD_SOC mW |
+|-----------------------------------|--------|------|---------------|--------|---------|------------|
+| A isolation, same segments        |  1633  |   —  |       —       |   0    |    —    |     —      |
+| B pipeline, no llama              |  1716  |   —  |     8 074     |   1    |  1020   |   2401     |
+| C' inert ballast (llama footprint)|  1818  | +102 |    83 830     |   0    |  1020   |   2401     |
+| C'' b llama, NO cuda context      |  1835  | +119 |    80 732     |   0    |  1020   |   2401     |
+| C llama resident idle             |  1846  | +131 |   108 150     |   0    |  1020   |   2401     |
+| C'' a llama, cuda ctx, ngl 0      |  1838  | +123 |   108 794     |   0    |  1020   |   2401     |
+| D full pipeline                   |  1963  | +247 |   166 618     |   3    |  1020   |   2554     |
+
+WHAT THE PIPELINE COSTS: NOTHING, once audio is fixed. Paired per segment,
+pipeline minus isolation is +4 ms (n=32, IQR -114 to +331). The earlier
+"+188 ms of pipeline overhead" was a difference-of-medians artifact over
+differently-sized audio; it does not survive pairing. Yesterday's 1.37x-1.41x
+"contention floor" is therefore RETIRED — see the brief edit below.
+
+MECHANISMS RULED OUT, each by its own counter:
+- Page-cache eviction / storage re-reads: majflt is 0-3 in EVERY condition.
+  llama runs without --mlock (VmLck 0), so its pages were evictable and the
+  hypothesis had a fair chance to show. It did not.
+- CUDA pinned host memory: VmPin is 0.0 MB for llama WITH GPU offload. On
+  unified memory there is no discrete VRAM to stage into, so "offloading to
+  GPU" pins no host pages — an assumption that transfers badly from discrete
+  GPUs, which is this thesis's argument in miniature.
+- The idle GPU context: C'' b holds NO cuda context at all and costs +119 ms,
+  statistically indistinguishable from C's +131 ms WITH a context. C'' a
+  (context, no offloaded weights) costs +123 ms. All four co-resident
+  conditions land within 29 ms of each other.
+- DVFS state: GPU clock is 1020 MHz and VDD_SOC 2401 mW in every condition
+  including B, because jetson_clocks pins them. Our own protocol removes DVFS
+  as a confound. (EMC frequency is not observable without root debugfs on this
+  board; VDD_SOC is its proxy and is flat.)
+- Footprint ORDERING: C'' b has the LARGEST footprint (4542 MB) and is the
+  CHEAPEST co-resident condition; C the smallest (2285 MB) and the dearest.
+  Cost does not track RSS.
+
+THE MECHANISM THAT FITS: minor faults. Condition-level regression of STT
+latency on minor faults per decode, 6 conditions:
+    1.50 us per minor fault, intercept 1697 ms, R^2 = 0.959
+    (turn level, n=192: 3.57 us/fault, R^2 = 0.26 — within-condition decode
+    variance is large, which is why the condition medians are the signal)
+Minor faults rise 10-20x the moment ANY large process is resident (8k -> 81k
+with an inert ballast that does nothing but hold pages). A minor fault means
+the page is still in memory but no longer mapped into the process: the kernel
+reclaimed it from the recognizer's resident set under memory pressure, and the
+next decode re-maps ~100k pages (~400 MB, about whisper-base plus its working
+buffers) at ~1.5 us each. No disk I/O, no CPU spent by the neighbour, no GPU
+involvement — just page-table work forced by a co-resident footprint.
+
+WHY THIS STRENGTHENS THE THESIS. The cost is caused by RESIDENCY ITSELF: a
+process that does nothing but hold 2.3 GB taxes the recognizer as much as a
+live inference server does. That is the unified-memory argument in its purest
+form, and it is a mechanism a server with discrete VRAM does not have.
+
+NOT YET EXPLAINED: why C (llama, 2285 MB) faults ~30% more than C' (ballast,
+2295 MB) at the same footprint, and why C'' b (4542 MB) faults less than C.
+Something about HOW the pages are mapped, not how many. Open for Phase 2.
+
+D's n: 32/32 valid under the process-attribution swap rule. The earlier n=22
+came from the retired system-zram rule; re-adjudication is in
+src/scripts/readjudicate_swap.py (6 turns flipped to valid across all runs).
