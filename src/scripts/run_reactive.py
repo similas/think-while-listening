@@ -22,6 +22,8 @@ import json
 import os
 import subprocess
 import sys
+import threading
+import time
 import tracemalloc
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -45,7 +47,28 @@ REPO = Path(__file__).resolve().parents[2]
 # contended — on 2026-09-15 a finished 64-turn run held the mic for 2h47m that
 # way, and the next run wedged against it. Results are flushed per line, so
 # after this budget the process reports and exits rather than hanging.
-TEARDOWN_TIMEOUT_S = 45.0
+TEARDOWN_TIMEOUT_S = 15.0
+
+
+def arm_hard_exit(seconds: float, run_dir: Path) -> None:
+    """Exit the process unconditionally if teardown has not finished in time.
+
+    A daemon thread with a plain sleep: it depends on neither the event loop
+    nor any lock, so it fires even when every other thread is blocked. Results
+    are already fsynced and terminated with a run_complete record before this
+    is armed, so exiting loses nothing.
+    """
+
+    def guard() -> None:
+        time.sleep(seconds)
+        sys.stderr.write(
+            f"teardown exceeded {seconds:.0f}s (stacks in {run_dir}/teardown_stacks.txt); "
+            "exiting hard\n"
+        )
+        sys.stderr.flush()
+        os._exit(0)
+
+    threading.Thread(target=guard, daemon=True, name="hard-exit").start()
 
 
 def acquire_singleton(lock_path: Path) -> int:
@@ -406,6 +429,12 @@ async def run(args: argparse.Namespace) -> None:
             stacks_path = run_dir / "teardown_stacks.txt"
             stacks_fh = open(stacks_path, "w", encoding="utf-8")  # noqa: SIM115
             faulthandler.dump_traceback_later(10.0, exit=False, file=stacks_fh)
+            # asyncio.wait_for CANNOT bound this: it cancels the coroutine and
+            # then awaits the cancellation, which never completes while a task
+            # is blocked inside a thread the loop cannot interrupt (measured:
+            # pyaudio write, see results/NOTES.md). The only reliable bound is
+            # outside the loop entirely.
+            arm_hard_exit(TEARDOWN_TIMEOUT_S, run_dir)
             try:
                 await asyncio.wait_for(built.task.cancel(), timeout=TEARDOWN_TIMEOUT_S)
                 await asyncio.wait_for(asyncio.shield(runner_task), timeout=TEARDOWN_TIMEOUT_S)

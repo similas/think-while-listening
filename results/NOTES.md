@@ -409,3 +409,41 @@ GUARDS ADDED (Ali, 2026-09-15), all now in CLAUDE.md §6:
 
 STILL OWED: the four-condition STT attribution (its env bug is fixed but it
 has not produced numbers yet) and a bounded soak under the new guards.
+
+## 2026-09-16 — The teardown wedge, diagnosed: a blocking PortAudio write
+
+Four runs were lost and the audio device was held for 2h47m by a hang that
+looked like "the script does not exit". It is a pipeline fault, not an exit
+nuisance, and faulthandler named it (run reactive-20260916-000908-0c8e4f,
+teardown_stacks.txt):
+
+    Thread ...: File ".../pyaudio/__init__.py", line 550 in write
+                File ".../concurrent/futures/thread.py", line 58 in run
+
+The output transport's PortAudio write BLOCKS and never returns. Every audio
+write and the stream close share one single-worker executor (deliberately —
+concurrent writes corrupted PortAudio's ALSA state on 2026-09-15), so a
+blocked write means stop_stream/close can never run, the CancelFrame can
+never traverse the pipeline, and teardown cannot finish. Likely trigger: the
+PipeWire null sink stops draining (node suspends when idle) while the
+pipeline still has buffered audio to push; the write then waits for space
+that never comes.
+
+WHY THE FIRST FIX DID NOT WORK. `asyncio.wait_for(task.cancel(), 45)` cannot
+bound this: wait_for cancels the coroutine and then AWAITS the cancellation,
+and a task blocked inside an executor thread never acknowledges it. The bound
+must live outside the event loop. It is now a daemon thread with a plain
+sleep (`arm_hard_exit`), armed after results are fsynced and terminated with
+a run_complete record, which calls os._exit(0) when teardown overruns
+(15 s). Verified: a 2-turn run now exits in 23 s wall clock.
+
+CONSEQUENCE FOR THE PIPELINE, not just for the harness: playback can block
+indefinitely on a sink that stops consuming. Phase 2 must not treat a stalled
+write as latency — it is a stall, not a slow turn. Worth revisiting whether
+the output transport should write with a timeout or a non-blocking stream;
+recorded here as a known property of the capture/playback path.
+
+DURABILITY. The same run proved the new guarantees: turns.jsonl held all 32
+turn records AND the terminating run_complete record despite the process
+hanging, because the log is fsynced and closed before teardown is attempted.
+A reader can tell a finished log from a truncated one.
