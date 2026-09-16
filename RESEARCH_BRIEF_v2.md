@@ -21,6 +21,25 @@ the speculative reasoner wants. There, thinking while listening degrades the lis
 **Thesis:** when to think is largely solved; how much to think, on a device that pays
 for it, is not. We (1) measure the cost, (2) decide the amount, (3) report the energy.
 
+**Measured on the target device, 2026-09-16** (n=32 per condition, audio held fixed,
+clocks pinned; results/NOTES.md and results/raw/stt_attribution/):
+- The pipeline itself costs the recognizer NOTHING: paired per segment, in-pipeline
+  STT latency minus isolated decode of the same segment is **+4 ms**.
+- MERE RESIDENCY of the LLM costs **+131 ms of STT commit latency (+7.6%)** with the
+  server idle — no CPU (0.0 s per 20 s), no GPU work, no storage reads (majflt 0).
+- That cost is reproduced to within 29 ms by an **inert ballast** holding the same
+  pages and doing nothing, and it is **unchanged when the CUDA context is removed
+  entirely**, so it is neither "what the server does" nor the GPU context.
+- Mechanism: **page reclaim**. Minor faults per decode rise 8k -> 81k-167k the moment
+  any large process is resident; latency tracks them at 1.50 us/fault (R^2 = 0.959
+  over six conditions). The kernel reclaims the recognizer's pages into page cache
+  under co-resident pressure, and every decode re-maps ~400 MB.
+This is the unified-memory argument at its sharpest: the tax is charged for OCCUPYING
+memory, not for using the accelerator — a cost a server with discrete VRAM does not
+pay. An earlier figure of "41% / 1.37x inflation" circulated in the notebook on
+2026-09-15; it was an artifact of comparing 1.6 s raw files against 2.4 s VAD segments
+and is RETIRED. Do not cite it.
+
 ---
 
 ## 1. Competitor deep-dives — what each actually does, on what, and what it assumes
@@ -46,7 +65,11 @@ for it, is not. We (1) measure the cost, (2) decide the amount, (3) report the e
 - **What it assumes that we test.** (a) GPU idle during input; (b) speculation cost is
   "minimal" and "would otherwise go unused"; (c) ASR is orthogonal to LLM/TTS latency.
   On unified memory with ASR in the loop, (a) and (c) are false by construction, and
-  (b) becomes an empirical question — ours.
+  (b) becomes an empirical question — ours. Our 2026-09-16 measurement sharpens (c):
+  the recognizer is taxed **7.6% by the LLM's mere residency**, before a single
+  speculative token is decoded, through page reclaim rather than compute. PredGen's
+  premise of free idle-time computation is therefore not merely optimistic on this
+  hardware — the cost begins when the model is loaded, not when it runs.
 
 ### 1.2 LTS-VoiceAgent (Zou et al., arXiv 2601.19952, Jan 2026) — *the "when" solution*
 - **Mechanism.** Cascaded. *Dynamic Semantic Trigger* detects when a partial
@@ -296,7 +319,11 @@ no prefix preservation; no preemption.
   the audio file (forced alignment or VAD on the clean source), not from the pipeline.
 - **Hypotheses stated up front (falsifiable):**
   - H1 (contention): SPEC-ALWAYS raises median STT commit latency by ≥25 % and ΔWER > 0
-    vs REACTIVE on the same audio.
+    vs REACTIVE on the same audio. (Unchanged, and now testing something rather than
+    restating a confound: the measured baseline is +7.6% from residency alone with the
+    server idle, so H1 asks whether ACTIVE speculation adds materially on top. Audio
+    must be held fixed — the 2026-09-16 attribution shows that comparing different
+    segment lengths manufactures a 37% effect out of nothing.)
   - H2 (paradox): TTFA vs speculation aggressiveness is non-monotone on this device
     (a U-shape): beyond some B, TTFA increases because endpoint detection is delayed.
   - H3 (budget): at equal energy per turn, BUDGET-R achieves lower median TTFA than
