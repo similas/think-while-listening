@@ -30,10 +30,13 @@ clocks pinned; results/NOTES.md and results/raw/stt_attribution/):
 - That cost is reproduced to within 29 ms by an **inert ballast** holding the same
   pages and doing nothing, and it is **unchanged when the CUDA context is removed
   entirely**, so it is neither "what the server does" nor the GPU context.
-- Mechanism: **page reclaim**. Minor faults per decode rise 8k -> 81k-167k the moment
-  any large process is resident; latency tracks them at 1.50 us/fault (R^2 = 0.959
-  over six conditions). The kernel reclaims the recognizer's pages into page cache
-  under co-resident pressure, and every decode re-maps ~400 MB.
+- Mechanism: **transparent-huge-page fallback**, not reclaim. pgsteal/pgscan are
+  exactly 0 in every condition — the kernel never reclaims a page — while
+  AnonHugePages collapses from 196 MB (recognizer alone) to 0-60 MB with any large
+  neighbour resident, thp_fault_fallback rises 0 -> ~250 per decode, and minor faults
+  rise 8k -> 80-160k. A co-resident footprint fragments the unified memory pool, 2 MB
+  pages can no longer be allocated, and the recognizer's working set falls back to
+  4 KB pages. Faults are a marker of this regime, not a calibrated per-fault cost.
 This is the unified-memory argument at its sharpest: the tax is charged for OCCUPYING
 memory, not for using the accelerator — a cost a server with discrete VRAM does not
 pay. An earlier figure of "41% / 1.37x inflation" circulated in the notebook on

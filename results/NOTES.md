@@ -515,3 +515,60 @@ Something about HOW the pages are mapped, not how many. Open for Phase 2.
 D's n: 32/32 valid under the process-attribution swap rule. The earlier n=22
 came from the retired system-zram rule; re-adjudication is in
 src/scripts/readjudicate_swap.py (6 turns flipped to valid across all runs).
+
+## 2026-09-16 — The sub-mechanism: THP fallback, not reclaim
+
+Run stt-attribution-20260916-115211-5d30c2 repeats the seven conditions with
+/proc/vmstat and smaps sampled around every decode. THP policy in force:
+enabled=[always], defrag=[madvise].
+
+| cond          | STT ms | minflt  | AnonHuge MB | pgsteal | pgscan | thp_fallback | thp_alloc |
+|---------------|--------|---------|-------------|---------|--------|--------------|-----------|
+| B alone       |  1723  |   5 706 |     196     |    0    |   0    |       0      |    228    |
+| C' ballast    |  1954  | 157 480 |      46     |    0    |   0    |     285      |     24    |
+| C''b no cuda  |  1918  | 155 084 |       0     |    0    |   0    |     284      |      0    |
+| C llama idle  |  1865  | 113 441 |      20     |    0    |   0    |     210      |     30    |
+| C''a context  |  1884  | 108 762 |      60     |    0    |   0    |     196      |     54    |
+| D full        |  1858  | 136 688 |       4     |    0    |   0    |     249      |      0    |
+
+RECLAIM IS RULED OUT. pgsteal and pgscan are EXACTLY ZERO in every condition,
+and Rss moves by -1 to -31 MB across a decode. The kernel never reclaimed a
+page from the recognizer. Yesterday's "page reclaim" wording was wrong and is
+corrected here.
+
+THP FALLBACK IS CONFIRMED, on all three of its signatures at once:
+  - AnonHugePages collapses: 196 MB when the recognizer is alone, 0-60 MB with
+    ANY large neighbour resident.
+  - thp_fault_fallback goes 0 -> ~200-285 per decode.
+  - thp_fault_alloc moves the other way, 228 -> 0-54.
+Mechanism: a co-resident footprint fragments the unified memory pool; 2 MB
+huge pages can no longer be allocated (defrag=madvise, so the kernel will not
+compact for these allocations); whisper's memory falls back to 4 KB pages; the
+same working set then costs ~20x the minor faults.
+
+ON THE SLOPE, HONESTLY. Within-condition, controlling for audio duration:
++9.01 us per minor fault, 95% CI [8.05, 10.14], n=192. Between six condition
+medians it was 1.50 us/fault. Both are far above the ~0.1-1 us a minor fault
+actually costs, and they disagree with each other by 6x, because in both fits
+the fault count partly proxies "how much work this turn did". CONCLUSION:
+minor faults are a reliable MARKER of the memory regime, not a calibrated cost
+coefficient. The THP counters carry the mechanism; the regression only
+corroborates it. Do not quote us/fault as a cost.
+
+VARIANCE TO RESPECT: absolute fault counts move between runs (C' was 84k
+yesterday, 157k today) and the co-resident conditions are statistically
+indistinguishable from one another (1858-1954 ms here, 1818-1846 yesterday),
+so their ORDERING must not be read. What replicates across both runs is the
+contrast that matters: B alone is 5-8k faults and ~1720 ms; every co-resident
+condition is 80-160k faults and 130-230 ms slower.
+
+WHAT SURVIVES UNCHANGED: the occupancy tax. An inert ballast that holds pages
+and does nothing costs as much as a live inference server; removing the CUDA
+context entirely changes nothing; VmPin is 0. The tax is for OCCUPYING memory,
+not for using the accelerator.
+
+A PRACTICAL LEAD FOR LATER: if the cost is THP fallback, it should be
+avoidable — pre-faulting or huge-page-backing the recognizer's weights before
+the LLM loads, or starting STT first, should keep its 196 MB of AnonHugePages.
+That is a cheap experiment and, if it works, a contribution in its own right.
+Not attempted yet; recorded so it is not lost.
