@@ -120,6 +120,12 @@ def main() -> None:
     p.add_argument(
         "--states", default="cold,adversary", help="comma-separated: cold,adversary,warm"
     )
+    p.add_argument(
+        "--budgets",
+        default="",
+        help="comma-separated subset of the arms (default: all). Lets a grid be completed "
+        "in bounded pieces rather than one block that outruns the 30-minute rule.",
+    )
     p.add_argument("--soak-minutes", type=float, default=15.0)
     add_gate_args(p)
     args = p.parse_args()
