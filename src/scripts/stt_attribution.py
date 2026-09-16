@@ -85,6 +85,27 @@ def idle_cpu_probe(pid: int, seconds: float = 20.0) -> float:
     return round(cpu_seconds(pid) - before, 3)
 
 
+def proc_status_mb(pid: int) -> dict[str, float]:
+    """VmPin / VmLck / VmRSS / VmSwap for a process, in MB.
+
+    VmPin is the instrument that can name the mechanism. CUDA pins host
+    memory for its context and transfer staging; pinned pages are
+    NON-EVICTABLE, so they shrink the kernel's reclaimable pool for every
+    other process on the box without the pinning process spending any CPU.
+    A large VmPin under a context-holding llama-server, and ~0 without one,
+    would turn "something llama does while idle" into a named cost.
+    """
+    out: dict[str, float] = {}
+    try:
+        for line in Path(f"/proc/{pid}/status").read_text().splitlines():
+            for key in ("VmPin:", "VmLck:", "VmRSS:", "VmSwap:"):
+                if line.startswith(key):
+                    out[key.rstrip(":").lower()] = round(int(line.split()[1]) / 1024.0, 1)
+    except OSError:
+        return out
+    return out
+
+
 def smaps(pid: int) -> dict[str, float]:
     """RSS split for a process, in MB."""
     out = {"rss_mb": 0.0, "anon_mb": 0.0}
@@ -179,6 +200,13 @@ def condition_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         stt_ms(r) / float(r["stt_audio_s"]) for r in rows if float(r.get("stt_audio_s", -1)) > 0
     ]
     maj = [int(r.get("stt_majflt", -1)) for r in rows if int(r.get("stt_majflt", -1)) >= 0]
+    minf = [int(r.get("stt_minflt", -1)) for r in rows if int(r.get("stt_minflt", -1)) >= 0]
+    gpu = [float(r.get("gpu_freq_mhz", -1)) for r in rows if float(r.get("gpu_freq_mhz", -1)) > 0]
+    soc = [
+        float(r["power_mw"].get("VDD_SOC", -1))
+        for r in rows
+        if isinstance(r.get("power_mw"), dict) and r["power_mw"].get("VDD_SOC", -1) > 0
+    ]
     cache = [
         float(r.get("page_cache_mb", -1)) for r in rows if float(r.get("page_cache_mb", -1)) > 0
     ]
@@ -191,6 +219,9 @@ def condition_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "ms_per_audio_s": round(median(rates), 0) if rates else None,
         "majflt_median": round(median(maj), 1) if maj else None,
         "majflt_total": sum(maj) if maj else 0,
+        "minflt_median": round(median(minf), 0) if minf else None,
+        "gpu_freq_mhz": round(median(gpu), 0) if gpu else None,
+        "vdd_soc_mw": round(median(soc), 0) if soc else None,
         "page_cache_mb": round(median(cache), 0) if cache else None,
     }
 
@@ -330,6 +361,8 @@ def main() -> None:
             "cpu_mask": mask,
             "idle_cpu_s_per_20s": idle_cpu_probe(pid, 20.0),
             "smaps": smaps(pid),
+            "status_mb": proc_status_mb(pid),
+            "gpu_freq_mhz": gpu_freq_mhz(),
         }
         run_c = run_pipeline(args.wav_dir, "attribution C: stub LLM, llama resident", args.repeat)
         results["C_llama_resident"] = condition_summary(turn_rows(run_c))
@@ -362,6 +395,8 @@ def main() -> None:
             "pid": ballast.pid,
             "idle_cpu_s_per_20s": idle_cpu_probe(ballast.pid, 20.0),
             "smaps": smaps(ballast.pid),
+            "status_mb": proc_status_mb(ballast.pid),
+            "gpu_freq_mhz": gpu_freq_mhz(),
         }
         run_cp = run_pipeline(
             args.wav_dir, "attribution C-prime: stub LLM, inert ballast", args.repeat
@@ -457,8 +492,10 @@ def main() -> None:
         if not c:
             continue
         print(
-            f"{key:>24} {c['n']:>3} {c['median_ms']:>9} {c['audio_s']:>8} "
-            f"{c['ms_per_audio_s']:>11} {c.get('majflt_total', 0):>8} {c['page_cache_mb']:>9}"
+            f"{key:>24} {c['n']:>3} {c['median_ms']:>9} {c['ms_per_audio_s']:>11} "
+            f"{c.get('majflt_total', 0):>7} {c.get('minflt_median')!s:>9} "
+            f"{c.get('gpu_freq_mhz')!s:>8} {c.get('vdd_soc_mw')!s:>8} "
+            f"{c['page_cache_mb']:>9}"
         )
     pm = results["paired_pipeline_minus_isolation_ms"]
     print(
