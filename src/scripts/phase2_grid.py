@@ -125,12 +125,15 @@ def main() -> None:
     args = p.parse_args()
 
     states = [s.strip() for s in args.states.split(",") if s.strip()]
+    budgets = (
+        tuple(int(b) for b in args.budgets.split(",") if b.strip()) if args.budgets else BUDGETS
+    )
     n_wavs = len(sorted(args.wav_dir.glob("*.wav")))
-    cells = len(states) * len(BUDGETS)
+    cells = len(states) * len(budgets)
     gate(
         Plan(
             name="phase2_grid",
-            steps=[f"B={b} x state={s}" for s in states for b in BUDGETS],
+            steps=[f"B={b} x state={s}" for s in states for b in budgets],
             est_minutes=cells * (args.repeat * n_wavs * 8 / 60 + 2)
             + (args.soak_minutes if "warm" in states else 0),
             target_changes=["starts/stops the bandwidth adversary", "soaks the board if warm"],
@@ -152,7 +155,7 @@ def main() -> None:
     subprocess.run([SERVER, "start"], check=True, cwd=REPO)
     try:
         for state in states:
-            for budget in BUDGETS:
+            for budget in budgets:
                 if state in ("cold", "warm"):
                     # Cold cells must START cold; warm cells must start cold
                     # ENOUGH for the soak to run at all (it refuses above 65 C),
