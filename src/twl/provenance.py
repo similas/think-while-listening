@@ -95,6 +95,7 @@ def build_run_meta(
     config_path: Path,
     notes: str = "",
     extra_software: dict[str, str] | None = None,
+    capture_channel: int | None = None,
 ) -> RunMeta:
     """Assemble the provenance header for one run."""
     return RunMeta(
@@ -106,6 +107,6 @@ def build_run_meta(
         nvpmodel=nvpmodel_mode(),
         jetson_clocks=jetson_clocks_show(),
         software=software_versions(extra_software),
-        capture=capture_path_info(),
+        capture=capture_path_info(capture_channel),
         notes=notes,
     )

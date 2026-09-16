@@ -70,7 +70,7 @@ def pipewire_node(substr: str = "reSpeaker") -> str:
     return "not found"
 
 
-def capture_path_info() -> dict[str, str]:
+def capture_path_info(capture_channel: int | None = None) -> dict[str, str]:
     """Everything about the capture front-end, for the run header.
 
     ``mode`` is inferred, not assumed: 2 channels at 16 kHz from a 4-mic array
@@ -89,6 +89,8 @@ def capture_path_info() -> dict[str, str]:
         info["mode"] = f"usb-audio, {channels} channels"
     else:
         info["mode"] = "unknown"
+    if capture_channel is not None:
+        info["capture_channel_used"] = str(capture_channel)
     info["playback_default_sink"] = _run(["pactl", "get-default-sink"])
     cards = Path("/proc/asound/cards")
     if cards.exists():

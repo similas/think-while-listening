@@ -7,6 +7,11 @@ audio:
   sample_rate: 16000
   channels: 1
   input_device_substr: "reSpeaker"
+  # The array delivers 2 DSP-processed channels; pick one EXPLICITLY. Measured
+  # 2026-09-15 (results/raw/capture_channels/): mean WER ch1 0.025, ch0 0.050,
+  # downmix 0.250. Channel 1 is also ~3x the level of channel 0.
+  device_channels: 2
+  capture_channel: 1
   # Playback goes to the PortAudio 'pulse' device; PULSE_SINK picks the node.
   # Headless default twl_null (created by run scripts); set pulse_sink to
   # "alsa_output.usb-Jieli..." to hear replies on the room speaker.

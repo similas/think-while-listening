@@ -225,6 +225,7 @@ async def run(args: argparse.Namespace) -> None:
                 f"{args.notes}"
             ),
             extra_software={"llama-server-cmdline": llama_cmdline},
+            capture_channel=cfg.audio.capture_channel,
         )
 
         built_box: list[object] = []  # filled after build; the gate closes over it
@@ -241,7 +242,11 @@ async def run(args: argparse.Namespace) -> None:
             import pyaudio
 
             source: FileFrameSource | MicFrameSource = MicFrameSource(
-                pyaudio.PyAudio(), cfg.audio.input_device_substr, cfg.audio.channels
+                pyaudio.PyAudio(),
+                cfg.audio.input_device_substr,
+                cfg.audio.channels,
+                device_channels=cfg.audio.device_channels,
+                capture_channel=cfg.audio.capture_channel,
             )
             expected_turns = 0
         else:

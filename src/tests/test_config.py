@@ -64,3 +64,19 @@ def load_swap_threshold_missing(path: Path) -> tuple[float, str]:
     from twl.turns import load_swap_threshold
 
     return load_swap_threshold("desktop", path)
+
+
+def test_capture_channel_is_explicit_and_in_range() -> None:
+    """The array's channel must be chosen, never left to an implicit downmix."""
+    cfg = load_config(REPO / "src/configs/reactive.yaml")
+    assert cfg.audio.device_channels >= 1
+    assert 0 <= cfg.audio.capture_channel < cfg.audio.device_channels
+
+
+def test_mic_source_rejects_out_of_range_channel() -> None:
+    import pytest as _pytest
+
+    from twl.transport import MicFrameSource
+
+    with _pytest.raises(ValueError, match="outside device_channels"):
+        MicFrameSource(None, "x", 1, device_channels=2, capture_channel=2)  # type: ignore[arg-type]

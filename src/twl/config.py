@@ -31,11 +31,22 @@ T = TypeVar(
 
 @dataclass(frozen=True)
 class AudioConfig:
-    """Capture/playback parameters shared by mic and file transports."""
+    """Capture/playback parameters shared by mic and file transports.
+
+    The reSpeaker XVF3800 presents TWO channels over USB audio. Opening it
+    with one channel makes ALSA downmix them, and that mixture decodes far
+    worse than either channel alone (measured 2026-09-15: mean WER 0.250 for
+    the downmix vs 0.025 for channel 1, including one catastrophic error).
+    The channel is therefore chosen explicitly here, never left to the
+    conversion layer: the device is opened at ``device_channels`` and
+    ``capture_channel`` is sliced out.
+    """
 
     sample_rate: int = 16000
     channels: int = 1
     input_device_substr: str = "reSpeaker"
+    device_channels: int = 2
+    capture_channel: int = 1
     # PortAudio exposes PipeWire nodes only through the 'pulse'/'pipewire'
     # plugin devices; a null sink is reached by opening 'pulse' with PULSE_SINK
     # set in the environment (scoped to this process, so system defaults and

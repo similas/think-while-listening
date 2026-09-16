@@ -25,6 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Protocol
 
+import numpy as np
 import pyaudio
 from pipecat.frames.frames import InputAudioRawFrame, OutputAudioRawFrame, StartFrame
 from pipecat.processors.frame_processor import FrameProcessor
@@ -55,11 +56,15 @@ class DeliverFn(Protocol):
     def __call__(self, pcm: bytes, at_ns: int) -> None: ...
 
 
-def find_device_index(py_audio: pyaudio.PyAudio, substr: str, *, output: bool) -> int:
+def find_device_index(
+    py_audio: pyaudio.PyAudio, substr: str, *, output: bool, min_channels: int = 1
+) -> int:
     """Resolve a PyAudio device index by case-insensitive name substring.
 
     Raises:
-        LookupError: no matching device — misconfiguration fails fast.
+        LookupError: no matching device with at least ``min_channels`` —
+            misconfiguration fails fast rather than silently capturing from
+            whatever else answered to the name.
     """
     key = "maxOutputChannels" if output else "maxInputChannels"
     names: list[str] = []
@@ -67,34 +72,67 @@ def find_device_index(py_audio: pyaudio.PyAudio, substr: str, *, output: bool) -
         info = py_audio.get_device_info_by_index(i)
         name = str(info.get("name", ""))
         names.append(name)
-        if substr.lower() in name.lower() and int(str(info.get(key, 0))) > 0:
+        if substr.lower() in name.lower() and int(str(info.get(key, 0))) >= min_channels:
             return i
-    raise LookupError(f"no {'output' if output else 'input'} device matching {substr!r} in {names}")
+    raise LookupError(
+        f"no {'output' if output else 'input'} device matching {substr!r} with "
+        f">= {min_channels} channels in {names}"
+    )
 
 
 class MicFrameSource:
-    """Live microphone via PyAudio, callback-driven (the real-time path)."""
+    """Live microphone via PyAudio, callback-driven (the real-time path).
 
-    def __init__(self, py_audio: pyaudio.PyAudio, device_substr: str, channels: int = 1) -> None:
+    The device is opened at its NATIVE channel count and one channel is
+    sliced out. Asking the conversion layer for a single channel from a
+    multi-channel array yields a downmix, which measured far worse than
+    either channel alone (see AudioConfig).
+    """
+
+    def __init__(
+        self,
+        py_audio: pyaudio.PyAudio,
+        device_substr: str,
+        channels: int = 1,
+        *,
+        device_channels: int = 1,
+        capture_channel: int = 0,
+    ) -> None:
+        if capture_channel >= device_channels:
+            raise ValueError(
+                f"capture_channel {capture_channel} outside device_channels {device_channels}"
+            )
         self._py_audio = py_audio
         self._device_substr = device_substr
         self._channels = channels
+        self._device_channels = device_channels
+        self._capture_channel = capture_channel
         self._stream: pyaudio.Stream | None = None
 
     async def start(self, sample_rate: int, deliver: DeliverFn) -> None:
-        device = find_device_index(self._py_audio, self._device_substr, output=False)
+        device = find_device_index(
+            self._py_audio,
+            self._device_substr,
+            output=False,
+            min_channels=self._device_channels,
+        )
         frames = int(sample_rate * CHUNK_MS / 1000)
+        n_dev = self._device_channels
+        idx = self._capture_channel
 
         def callback(
             in_data: bytes | None, frame_count: int, time_info: object, status: int
         ) -> tuple[None, int]:
             if in_data is not None:
+                if n_dev > 1:
+                    interleaved = np.frombuffer(in_data, dtype=np.int16)
+                    in_data = interleaved[idx::n_dev].tobytes()
                 deliver(in_data, now_ns())
             return (None, pyaudio.paContinue)
 
         self._stream = self._py_audio.open(
             format=self._py_audio.get_format_from_width(2),
-            channels=self._channels,
+            channels=n_dev,
             rate=sample_rate,
             frames_per_buffer=frames,
             stream_callback=callback,
