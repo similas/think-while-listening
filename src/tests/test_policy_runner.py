@@ -116,3 +116,24 @@ def test_the_outcome_of_continue_the_slot_is_recorded() -> None:
     run(r, "what is the capital of")
     assert turns.decisions[0]["outcome"] == "continue-the-slot: decode already in flight"
     assert turns.decisions[0]["decision"]["speculate"] is True
+
+
+def test_a_policy_arm_must_not_be_pre_empted_at_vad_onset() -> None:
+    """The Phase 2 auto-start would occupy the slot before any partial exists.
+
+    Regression for 2026-09-17: once speculate_on had set a non-zero budget, the
+    VAD-onset start_turn saw it and launched a decode on the PLACEHOLDER text,
+    so 19 of 20 policy decisions returned "already in flight" while the tokens
+    came from text the policy never chose.
+    """
+    import inspect
+
+    from twl import observer
+
+    src = inspect.getsource(observer.StageObserver._on_push_frame)
+    start = src.index("_STARTED")
+    guarded = src[start : start + 900]
+    assert "self._runner is None" in guarded, (
+        "the VAD-onset speculation start must be disabled when a policy runner "
+        "is attached, or the policy's decisions are no-ops"
+    )

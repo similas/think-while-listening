@@ -122,14 +122,24 @@ class StageObserver(BaseObserver):
             if self._first_time(frame):
                 self._turns.turn_started(at)
                 self._turns.mark("vad_user_started", at_ns=at)
-                if self._speculation is not None:
-                    # Speculate WHILE the user speaks: that co-activation is
-                    # the independent variable of Phase 2.
+                if self._speculation is not None and self._runner is None:
+                    # PHASE 2 ARMS ONLY. Speculate WHILE the user speaks: that
+                    # co-activation is the independent variable of Phase 2, and
+                    # the budget comes from a fixed flag or the interleaving
+                    # schedule.
                     #
                     # This turn therefore decodes BEFORE any partial exists, so
                     # the quiescent window is empty and the estimate has to be
                     # taken here instead — still ahead of our own load, but
                     # earlier than the definition. The anchor records which.
+                    #
+                    # A PHASE 3 POLICY OWNS ITS OWN TIMING and must not be
+                    # pre-empted here. Starting a decode at VAD onset would use
+                    # the placeholder transcript, occupy the slot before the
+                    # first partial arrives, and turn every policy decision into
+                    # "continue-the-slot: already in flight" — measured
+                    # 2026-09-17: 19 of 20 decisions were no-ops this way, while
+                    # the tokens came from the placeholder text.
                     self._turns.sample_contention("pre_decode")
                     self._speculation.start_turn(turn=self._turns.turn)
             return
