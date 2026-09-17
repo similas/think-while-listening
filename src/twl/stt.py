@@ -255,6 +255,12 @@ class StreamingWhisperSTT(STTService):
             # Did the final decode overlap this one? Only meaningful with two
             # engines; single-engine it is impossible by construction.
             concurrent = two_engine and self._decode_lock.locked()
+            self._turns.note_partial_issued(
+                offset_s=offset,
+                engine=self._cfg.partial_model or self._cfg.model,
+                issued_ns=issued_ns,
+                concurrent_final=concurrent,
+            )
             t0 = now_ns()
             async with lock:
                 text = await asyncio.to_thread(self._decode, prefix, self._partial_model)
@@ -267,17 +273,15 @@ class StreamingWhisperSTT(STTService):
                 # in hand while the user is still speaking.
                 self._turns.mark("stt_partial_frame", at_ns=now_ns())
                 self.partials_emitted += 1
-            # Logged whether emitted or not: the wasted-partial count and the
-            # calibration set have to come from the same record.
-            self._turns.write_partial(
+            # Completes the record opened at issue. A partial cancelled by the
+            # endpoint never reaches here and stays logged as issued-but-unfinished,
+            # which is what it was.
+            self._turns.note_partial_done(
                 offset_s=offset,
-                engine=self._cfg.partial_model or self._cfg.model,
                 text=text,
                 decode_ms=decode_ms,
-                issued_ns=issued_ns,
                 done_ns=done_ns,
                 emitted=emitted,
-                concurrent_final=concurrent,
             )
             if emitted:
                 await self.push_frame(InterimTranscriptionFrame(text, "", time_now_iso8601(), None))

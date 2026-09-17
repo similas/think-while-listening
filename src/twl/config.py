@@ -87,9 +87,12 @@ class SttConfig:
     partial_cpu_threads: int = 1
     # Cores each engine's decode threads are pinned to. CTranslate2 inherits
     # affinity from the thread that BUILDS the model, so this is applied at
-    # load time, not per call.
-    final_cpus: tuple[int, ...] = (3, 4)
-    partial_cpus: tuple[int, ...] = (5,)
+    # load time, not per call. EMPTY MEANS DO NOT REPIN: the engine inherits
+    # the process affinity, which is what single-engine runs have always used.
+    # A non-empty default here would silently narrow the baseline's cores and
+    # make it a different configuration from every run measured before.
+    final_cpus: tuple[int, ...] = ()
+    partial_cpus: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)

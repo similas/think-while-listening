@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
@@ -44,6 +45,25 @@ from twl.telemetry import (
 )
 
 log = logging.getLogger(__name__)
+
+
+@dataclass
+class _PendingPartial:
+    """A partial decode in flight, held until the turn's endpoint is known.
+
+    ``done_ms`` stays negative if the endpoint cancelled the decode before it
+    finished: the cost was still paid, so the record is still written.
+    """
+
+    offset_s: float
+    engine: str
+    issued_ms: float
+    concurrent_final: bool
+    text: str = ""
+    decode_ms: float = -1.0
+    done_ms: float = -1.0
+    emitted: bool = False
+
 
 _THRESHOLD_FILE = Path(__file__).resolve().parents[1] / "configs/swap_thresholds.yaml"
 # Fallback only for a tree without a derivation yet; a real run always loads
@@ -107,6 +127,8 @@ class TurnManager:
         # Median temps over the turn, from the telemetry stream (see records).
         self._temps_fn = temps_fn
         self._warmup_turns = warmup_turns
+        # Partials buffered until the endpoint (their label) is known.
+        self._partials: list[_PendingPartial] = []
         self._contention: dict[str, object] = {}
         # Log handle spans the whole run; closed by close(). The lifetime is
         # the manager's, not a with-block's.
@@ -184,6 +206,7 @@ class TurnManager:
         self._reply_parts = []
         self._reply_tokens = 0
         self._marked_once = set()
+        self._partials = []
         self._turn_opened_ns = at_ns
         self._contention = {}
         if self._detector is not None:
@@ -220,45 +243,68 @@ class TurnManager:
             return
         self._detector.sample_once(anchor)
 
-    def write_partial(
-        self,
-        *,
-        offset_s: float,
-        engine: str,
-        text: str,
-        decode_ms: float,
-        issued_ns: int,
-        done_ns: int,
-        emitted: bool,
-        concurrent_final: bool = False,
+    def note_partial_issued(
+        self, *, offset_s: float, engine: str, issued_ns: int, concurrent_final: bool
     ) -> None:
-        """Record one partial decode, emitted or not.
+        """A partial decode has STARTED. Buffered, not yet written.
 
-        The calibration set and the wasted-partial count both come from here,
-        so a partial that arrived too late to emit must still be written: it
-        cost the same and it says the same thing about completeness.
+        Recorded at issue rather than at completion because the endpoint
+        cancels the partial task while its decode is still running in a worker
+        thread: that decode finishes and costs what it costs, so a record
+        written only on completion loses exactly the partials that matter most
+        to the wasted-partial count.
         """
         if self._clock is None:
             self.orphan_marks += 1
             return
-        write_jsonl(
-            self._fh,
-            PartialRecord(
-                run_id=self._run_id,
-                turn=self._turn,
+        self._partials.append(
+            _PendingPartial(
                 offset_s=round(offset_s, 3),
                 engine=engine,
-                text=text,
-                decode_ms=round(decode_ms, 1),
                 issued_ms=round((issued_ns - self._clock.origin_ns) / 1e6, 1),
-                done_ms=round((done_ns - self._clock.origin_ns) / 1e6, 1),
-                emitted=emitted,
-                # Ground truth for calibration: where the speaker actually
-                # stopped, relative to the same origin.
-                speech_end_ms=self._clock.first("vad_user_stopped") or -1.0,
                 concurrent_final=concurrent_final,
-            ),
+            )
         )
+
+    def note_partial_done(
+        self, *, offset_s: float, text: str, decode_ms: float, done_ns: int, emitted: bool
+    ) -> None:
+        """Fill in the result of a partial that finished before cancellation."""
+        if self._clock is None:
+            return
+        for rec in reversed(self._partials):
+            if rec.offset_s == round(offset_s, 3) and rec.done_ms < 0:
+                rec.text = text
+                rec.decode_ms = round(decode_ms, 1)
+                rec.done_ms = round((done_ns - self._clock.origin_ns) / 1e6, 1)
+                rec.emitted = emitted
+                return
+
+    def _flush_partials(self, speech_end_ms: float) -> None:
+        """Write the turn's partials once the endpoint is known.
+
+        speech_end_ms is the label a completeness score is calibrated against,
+        and it does not exist while the speaker is still speaking — which is
+        exactly when every partial is produced. So the records wait for it.
+        """
+        for rec in self._partials:
+            write_jsonl(
+                self._fh,
+                PartialRecord(
+                    run_id=self._run_id,
+                    turn=self._turn,
+                    offset_s=rec.offset_s,
+                    engine=rec.engine,
+                    text=rec.text,
+                    decode_ms=rec.decode_ms,
+                    issued_ms=rec.issued_ms,
+                    done_ms=rec.done_ms,
+                    emitted=rec.emitted,
+                    speech_end_ms=speech_end_ms,
+                    concurrent_final=rec.concurrent_final,
+                ),
+            )
+        self._partials = []
 
     def set_transcript(self, text: str) -> None:
         self._transcript = text
@@ -345,6 +391,7 @@ class TurnManager:
         """Close the open turn and write its summary record."""
         if self._clock is None:
             return
+        self._flush_partials(self._clock.first("vad_user_stopped") or -1.0)
         clock, self._clock = self._clock, None
 
         # Re-read the rail now the turn's own work is done: did contention

@@ -1135,3 +1135,115 @@ Base fires on 20 of 35 prefixes overall. That marginal rate is what makes the
 fires on 57% of PREFIXES will fire early unless the horizon term restrains it.
 Phase 5 reports PAR properly, with the Pause-and-Repair replication as the
 explicit stress test; this is the first instance and the method for counting it.
+
+## GPU STT feasibility (report-only, 2026-09-17). Verdict: source build required
+
+CURRENT STATE. faster-whisper 1.2.1 on CTranslate2 4.8.1, device="cpu",
+compute_type=int8, cpu_threads=3. Not a configuration choice that could be
+flipped: the installed package answers get_cuda_device_count() = 0 and raises
+"This CTranslate2 package was not compiled with CUDA support". Supported
+compute types are CPU-only (float32, int8_float32, int8).
+
+THE BOARD IS OTHERWISE READY. L4T R36.4.4 (JetPack 6.2), aarch64, Python
+3.10.12, CUDA 12.6, and cuDNN 9.3.0.75 already installed (libcudnn9-cuda-12),
+which is the runtime dependency CTranslate2 4.x needs for CUDA 12. Nothing is
+missing except a CUDA-compiled CTranslate2 itself.
+
+NO PREBUILT WHEEL EXISTS for this platform, checked rather than assumed:
+  - pypi.jetson-ai-lab.io/jp6/cu126 DOES list ctranslate2, but it is a PyPI
+    passthrough, not a Jetson build: its file list contains macosx_11_0_arm64,
+    win_amd64 and manylinux x86_64 wheels, and zero files tagged cu12/cuda/
+    tegra. For contrast, torch on the SAME index shows a short curated list
+    (2.8.0-2.11.0) because it is genuinely built there. The aarch64 wheel on
+    offer is the ordinary CPU one already installed.
+  - pypi.jetson-ai-lab.dev/jp6/cu126 carries no ctranslate2 at all.
+  - dusty-nv/jetson-containers packages/ml/ctranslate2 declares
+    "depends: [cuda, cudastack:standard, cmake]" — a SOURCE BUILD inside a
+    container, which is what its faster-whisper package then consumes.
+
+SIZE. The current CPU wheel is 15 MB downloaded, 58 MB plus 4.3 MB of bundled
+libs on disk. A CUDA build links cuBLAS and cuDNN from the system rather than
+vendoring them, so the wheel itself would stay modest; the cost is not disk.
+
+WHAT IT WOULD MEAN FOR MEMORY, and why that is the real question. Whisper base
+is small on device (~145 MB int8, ~290 MB float16). The cost is the CUDA
+CONTEXT, and Phase 2 already measured what a context costs on this board:
+llama-server resident 1.4 GB CPU-only against 4.3 GB with CUDA. A second
+context in the STT process adds its own context plus cuBLAS/cuDNN workspace,
+taken from the same 8 GB unified pool the occupancy tax is about. GPU STT would
+have to be judged by the same resident-MB-per-unit-benefit standard as T-EPA
+and the second CPU engine.
+
+WHY IT IS SCIENTIFICALLY INTERESTING, recorded for the paper's future work.
+The present setup GRANTS PredGen its central premise: STT runs on the CPU, so
+the GPU really is idle while the user speaks, and the contention this thesis
+measures is memory-bandwidth only. Putting STT on the GPU would remove that
+grant and make "the GPU is idle during input" a testable claim rather than an
+assumption — compute contention as well as bandwidth contention, on one
+accelerator. It would also cut the ~1.4 s fixed per-call decode cost that
+currently caps decision-window coverage at 37.5%.
+
+DECISION (Ali's rule): needs a source build, so it is recorded as FUTURE WORK
+and not pursued now. Nothing installed.
+
+## Two-engine STT, live (B1). Shared cores PASS the T-EPA standard; split FAILS
+
+Six runs, three configurations, alternating order one/split/shared/shared/split/one
+so run order cannot favour an architecture. Offsets [1.0, 2.0, 3.0] throughout.
+llama-server on cores 0-2 (verified); the agent has 3,4,5.
+
+    one     single engine, base, inherits cores 3,4,5 (the historical baseline)
+    split   base pinned 3,4 + tiny pinned 5, disjoint cores, 1 thread for tiny
+    shared  base + tiny both free on 3,4,5, 3 threads each
+
+    cfg      STT commit   vs one            95% CI   coverage   wasted   partial
+    one          2086 ms       +0    [ -243,  +145]   12/32      32/44    1608 ms
+    split        3176 ms    +1089    [+1027, +1424]   12/32      32/44    1566 ms
+    shared       2047 ms      -39    [  -96,    -2]   30/32      28/70     830 ms
+
+SPLIT FAILS, AND THE REASON IS THE SCARCE RESOURCE. Pinning the final engine to
+2 cores costs +1089 ms of commit latency — far more than a second engine can
+ever save. With llama holding 0-2, only three cores remain for the whole agent,
+and dividing them starves the recognizer that still has to produce the answer.
+The offline 1.97x speedup for tiny assumed it could use 3 threads; under the
+split it gets 1 and decodes in 1566 ms, no faster than base.
+
+SHARED WINS ON EVERY AXIS MEASURED:
+  - decision-window coverage 12/32 -> 30/32 (37.5% -> 94%);
+  - partial decode 1608 -> 830 ms, so a usable hypothesis needs only
+    offset + 0.83 s of speech instead of offset + 1.6 s;
+  - wasted partials 73% -> 40%, despite issuing 70 decodes against 44;
+  - STT commit -39 ms [-96, -2]: MORE partial work for slightly LESS latency.
+
+ANTICIPATION LEAD, and a correction worth recording. Pooled over all emitted
+partials the lead looked WORSE under shared (561 vs 897 ms). That was a
+selection artifact: shared covers nine short utterances the single engine never
+reached, and their endpoints are close. On the SIX utterances both cover:
+
+    one-engine   897 ms      shared  1701 ms      paired delta  +808 ms
+
+and the nine newly covered utterances get 465 ms of lead that previously did not
+exist at all. The pooled comparison compared different populations.
+
+AGAINST THE T-EPA STANDARD (resident MB per unit of measured benefit).
+Second engine: +121 MB live (+134 MB measured offline), AnonHugePages unchanged
+at 0, STT minor faults 141k -> 134k, i.e. no occupancy-tax signature. It buys
++56.5 points of coverage, +808 ms of lead where coverage already existed, and
+costs no commit latency. T-EPA was rejected at 1.4 GB (CPU-only) / 4.3 GB
+(CUDA) for a benefit never measured on this board. The second engine is an
+order of magnitude cheaper and its benefit is measured. It PASSES the standard
+that rejected T-EPA, and it passes on the same terms.
+
+RECOMMENDED ARCHITECTURE: two engines, SHARED cores, tiny for partials, base for
+the final. Do not pin them apart.
+
+INSTRUMENTATION DEFECT, recorded rather than quietly dropped. concurrent_final
+read 0/70 in every configuration, so it did NOT test the lock-wait hypothesis it
+was added for: it checks whether the final was ALREADY decoding when a partial
+was issued, but partials are issued during speech and the final only starts at
+the endpoint, so within a turn the answer is always no. What the data does show
+is that 59% more partial decodes cost no extra commit latency, which is the
+decoupling benefit by a different route. The cost did not vanish so much as move
+from lock-wait to CPU contention and net out. Measuring the wait directly needs
+the interval from speech_end to the final decode ACQUIRING its lock; that is the
+metric to add before any further claim about lock-wait.
