@@ -145,7 +145,7 @@ async def test_pipeline_on_synthetic_turn(tmp_path: Path) -> None:
         run_id="itest", config_path=Path("src/configs/reactive.yaml"), notes="integration test"
     )
     turns = TurnManager("itest", turns_log, meta, rss_pids={})
-    stt = MockSTT(SttConfig(partial_interval_ms=0), turns, sample_rate=SAMPLE_RATE)
+    stt = MockSTT(SttConfig(partial_offsets_s=()), turns, sample_rate=SAMPLE_RATE)
     llm = LlamaChatProcessor(LlmConfig(), turns, client=MockLlamaClient("127.0.0.1", 1))
     tts = MockTTS(TtsConfig(), turns)
     tts.load()

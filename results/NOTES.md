@@ -944,6 +944,64 @@ statement. If the per-token cost is not stable across runs of one condition,
 it is not a constant for BUDGET-R to look up — it is a quantity for BUDGET-L
 to learn, and that changes which controller the evidence supports.
 
+## Discrepancy check: RESULT. Not the adversary variant — the baseline arm
+
+18 runs, {none, original, duty1} x B in {0,96} x 3 reps, randomized (seed
+20260916), tj 69-89 C across the run, fan still under nvfancontrol (this run
+predates the pin).
+
+    condition   ms/token   bootstrap 95% CI     pairs   achieved
+    none          +0.227   [-0.138, +0.654]        48   --
+    original      +1.325   [+0.963, +1.745]        48   21.0 GB/s
+    duty1         +2.609   [+2.260, +2.813]        48   21.0 GB/s
+
+BOTH HISTORICAL NUMBERS REPRODUCED, ATTACHED TO THE WRONG CONDITIONS. Phase 2
+ran the ORIGINAL worker and measured +2.683; here original gives +1.325. The
+sweep ran DUTY1 and measured +1.427; here duty1 gives +2.609. The association
+is exactly crossed. Labels were verified rather than trusted: adversary.json
+records duty_loop false for original and true for duty1, at 21002 vs 21066
+MB/s. A causal worker effect would line the numbers up, not invert them, so
+the adversary variant is NOT what produced the original discrepancy.
+
+WHERE THE GAP LIVES, from the raw per-cell medians:
+    original  B=0  2297 ms    B=96  2435 ms
+    duty1     B=0  2191 ms    B=96  2469 ms
+The two SPECULATING arms are 34 ms apart. The two BASELINES are 106 ms apart,
+and over 96 tokens that 106 ms is the whole ~1.1 ms/token gap. The adversary
+runs in BOTH arms of a condition, so a real worker effect would cancel in the
+paired difference. It does not cancel, because the pairing spans two DIFFERENT
+RUNS and is fully exposed to a run-level shift in the baseline.
+
+COVARIATES. Run order explains 23% of the gap (slope +0.096 per position within
+the adversary conditions, R^2 0.138). Mean tj explains NONE (slope +0.006,
+R^2 0.000) across 76-89 C. Temperature was the leading hypothesis and the
+randomization killed it.
+
+WHAT REPLICATED. The none arm gives +0.227 [-0.138, +0.654] against Phase 2's
+uncontended +0.083 [-0.281, +0.426]. Position 1 is a cold-cache outlier: its
+B=0 cell ran 2478 ms against ~2020 for its siblings, which alone produced the
+none rep-1 value of -3.404. The first run of a session is warm-up and should
+be discarded.
+
+CONSEQUENCE 1 (pre-registered by Ali). The same nominal contended condition has
+now produced 2.683, 1.427, 1.325 and 2.609 ms/token. The per-token cost is not
+a stable constant, so it is a quantity for BUDGET-L to LEARN rather than one
+for BUDGET-R to look up. The Phase 2 report carries this as its between-run
+variance statement.
+
+CONSEQUENCE 2, which follows and must not be left implicit. Phase 2's
++-0.4 ms/token CI is not a valid uncertainty statement. It bootstraps 48
+utterance pairs drawn from ONE (B=0 run, B=96 run) couple: it captures
+within-run utterance variance and treats the run-level baseline shift as fixed.
+The between-run component is the dominant term and lies entirely outside it.
+The point estimate stands on balanced partial sets; the interval understates.
+
+THE STRUCTURAL FIX, not yet built and awaiting Ali's call because it changes
+how every Phase 2 number was produced: stop pairing across runs. Interleave the
+budget WITHIN a single run, alternating B per turn, so baseline and speculating
+turns share the run's level. That moves the dominant error term from between-run
+to within-run, which is what the paired design was supposed to buy.
+
 ## Fan is PINNED at PWM 255 for measured runs (decision, 2026-09-16)
 
 nvfancontrol drives the fan from the THERMAL MARGIN to the limit (profile

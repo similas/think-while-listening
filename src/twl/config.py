@@ -74,7 +74,12 @@ class SttConfig:
     language: str = "en"
     cpu_threads: int = 3
     cpu_affinity: tuple[int, ...] = (3, 4, 5)
-    partial_interval_ms: int = 200
+    # Fixed offsets INTO THE AUDIO at which a partial is decoded. Not a
+    # wall-clock cadence: see StreamingWhisperSTT._partial_loop for why the
+    # schedule must be a function of the audio alone. Provisional values —
+    # src/scripts/partial_cadence.py sweeps them for window gained vs STT
+    # calls added, and that sweep sets the benchmark default.
+    partial_offsets_s: tuple[float, ...] = (1.5, 3.0)
 
 
 @dataclass(frozen=True)

@@ -32,10 +32,21 @@ from twl.records import read_jsonl
 
 def turns_of(run_dir: Path) -> list[dict[str, Any]]:
     rows = read_jsonl(str(run_dir / "turns.jsonl"))
-    first_partial: dict[int, float] = {}
+    # ISSUED is the cost (a decode started, and the final may wait on it);
+    # FRAME is the decision window (a hypothesis in hand while still speaking).
+    # They are different questions and are never collapsed into one number.
+    issued: dict[int, float] = {}
+    frame: dict[int, float] = {}
+    n_issued: dict[int, int] = {}
     for r in rows:
-        if r.get("kind") == "stage_event" and r["stage"] == "stt_partial":
-            first_partial.setdefault(r["turn"], r["t_ms"])
+        if r.get("kind") != "stage_event":
+            continue
+        if r["stage"] == "stt_partial":
+            issued.setdefault(r["turn"], r["t_ms"])
+            n_issued[r["turn"]] = n_issued.get(r["turn"], 0) + 1
+        elif r["stage"] == "stt_partial_frame":
+            frame.setdefault(r["turn"], r["t_ms"])
+    first_partial = frame
     out = []
     for r in rows:
         if r.get("kind") != "turn_record" or not r["valid"]:
@@ -53,6 +64,16 @@ def turns_of(run_dir: Path) -> list[dict[str, Any]]:
                 # What the trigger actually gets: lead time from the first
                 # partial to the moment the transcript is settled.
                 "window_ms": (st["stt_final"] - fp) if fp is not None else 0.0,
+                # Lead over the SPEAKER, which is what an anticipatory policy
+                # can actually spend; the window to stt_final also contains the
+                # final decode, which arrives too late to act on.
+                "lead_ms": (
+                    (st["vad_user_stopped"] - fp)
+                    if fp is not None and st.get("vad_user_stopped") is not None
+                    else None
+                ),
+                "issued": n_issued.get(r["turn"], 0),
+                "issued_ms": issued.get(r["turn"]),
                 "anchor": (r.get("contention") or {}).get("anchor"),
             }
         )
@@ -75,8 +96,28 @@ def main() -> None:
     lo, hi = bootstrap_ci([1.0 if r["first_partial_ms"] is not None else 0.0 for r in rows], median)
 
     print(f"runs: {len(args.runs)}   valid turns: {len(rows)}")
+    tot_issued = sum(r["issued"] for r in rows)
+    print(
+        f"\nSTT CALLS ADDED: {tot_issued} partial decodes issued over {len(rows)} turns "
+        f"({tot_issued / len(rows):.2f} per turn)"
+    )
+    late = sum(1 for r in rows if r["issued"] and r["first_partial_ms"] is None)
+    print(
+        f"  of which {late} produced NO usable hypothesis: the decode was still "
+        f"running when the user stopped,\n  so the turn paid for it (the final waits "
+        f"on the same lock) and got nothing."
+    )
     print(f"\nTURNS WITH A NON-EMPTY DECISION WINDOW: {len(withw)}/{len(rows)} = {frac:.1%}")
     print(f"  (bootstrap CI on the per-turn indicator: [{lo:.2f}, {hi:.2f}])")
+
+    leads = [r["lead_ms"] for r in withw if r["lead_ms"] is not None]
+    if leads:
+        llo, lhi = bootstrap_ci(leads, median)
+        print(f"\nANTICIPATION LEAD (first partial frame -> speaker stops), n={len(leads)}:")
+        print(
+            f"  median {median(leads):.0f} ms  95% CI [{llo:.0f}, {lhi:.0f}]  "
+            f"min {min(leads):.0f}  max {max(leads):.0f}"
+        )
 
     if withw:
         print(

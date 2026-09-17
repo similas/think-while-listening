@@ -1,7 +1,7 @@
 """Streaming STT: faster-whisper with partial and final hypotheses.
 
 Responsibility: turn accumulated turn audio into text. During speech it can
-emit PARTIAL hypotheses every ``partial_interval_ms`` (pipecat
+emit PARTIAL hypotheses at fixed offsets INTO THE AUDIO (pipecat
 InterimTranscriptionFrame) — the stream later phases trigger on; at turn end
 it emits the FINAL hypothesis (TranscriptionFrame). Each hypothesis carries
 the ``now_ns`` reading at decode completion via the TurnManager.
@@ -12,8 +12,9 @@ unbounded variant leaked ~225 MB/hour — and (2) recovers the ~0.2 s of speech
 VAD consumes before opening the turn, without which first words are clipped.
 
 Invariants:
-- At most one decode in flight; a partial decode never delays the final
-  (the final waits for the in-flight partial, then decodes everything).
+- At most one decode in flight. A partial decode DOES delay the final: the
+  final waits on the same lock, then decodes everything. That wait is real and
+  is why the partial schedule must not depend on load.
 - Model threads and language are config, recorded per run.
 """
 
@@ -68,6 +69,11 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+# How often the partial loop checks whether the audio has crossed the next
+# offset. This is NOT the cadence: offsets are seconds apart, so the only
+# effect of the poll is to bound how late a crossing is noticed.
+POLL_S = 0.05
+
 
 class StreamingWhisperSTT(STTService):
     """faster-whisper with optional partial hypotheses during speech."""
@@ -99,6 +105,10 @@ class StreamingWhisperSTT(STTService):
         self._preroll_max = int(0.6 * sample_rate)
         self._partial_task: asyncio.Task[None] | None = None
         self._decode_lock = asyncio.Lock()
+        # Issued = decodes started (the cost). Emitted = frames pushed while
+        # the user was still speaking (the decision window). They differ, and
+        # conflating them hides the cost of a partial that arrived too late.
+        self.partials_issued = 0
         self.partials_emitted = 0
         self.finals_emitted = 0
         self.madvise_report: object | None = None
@@ -166,23 +176,60 @@ class StreamingWhisperSTT(STTService):
         ).strip()
 
     async def _partial_loop(self) -> None:
-        """Decode the growing buffer every partial_interval_ms while speaking."""
-        interval = self._cfg.partial_interval_ms / 1000.0
-        while self._speaking:
-            await asyncio.sleep(interval)
-            if not self._speaking:
-                return
+        """Decode at FIXED OFFSETS INTO THE AUDIO, never on a wall-clock tick.
+
+        The previous scheduler slept ``partial_interval_ms``, decoded whatever
+        had accumulated, and skipped the tick if a decode was already running.
+        Every one of those decisions depended on load, so the same utterance
+        produced a different number of partial decodes from run to run — and
+        because the final decode waits on the in-flight partial, that lands
+        directly in the paired STT metric. Measured 2026-09-16: one cell fired
+        partials on 2 of 16 turns where its paired arm fired on 6, and those
+        four turns were exactly the four +700..+1200 ms outliers that made the
+        cell unusable (results/NOTES.md).
+
+        Keying the schedule to audio position removes every one of those
+        branches. For a given utterance the set of offsets that fire is fixed,
+        and each decode is of a fixed PREFIX, so its cost is a function of the
+        offset rather than of when this coroutine happened to wake up. Identical
+        audio yields an identical partial schedule under any load; the paired
+        analyses verify it by reporting partial-set agreement per pair.
+
+        What remains load-dependent, and is deliberately kept so: whether a
+        decode has finished by the time the user stops speaking. The final
+        waits for it either way, and now both arms wait for the same work.
+        """
+        offsets = sorted(self._cfg.partial_offsets_s)
+        if not offsets:
+            return
+        pending = list(offsets)
+        while self._speaking and pending:
+            await asyncio.sleep(POLL_S)
             with self._lock:
-                audio = self._audio.copy()
-            if len(audio) < 0.3 * self.sample_rate:
+                have_s = len(self._audio) / self.sample_rate
+            if have_s < pending[0]:
                 continue
-            if self._decode_lock.locked():
-                continue  # previous decode still running; skip this tick
+            offset = pending.pop(0)
+            n = int(offset * self.sample_rate)
+            with self._lock:
+                prefix = self._audio[:n].copy()
+            # MARKED AT ISSUE, not at completion. _STOPPED cancels this task,
+            # but asyncio.to_thread cannot cancel the decode already running in
+            # the worker: it finishes, holding the lock the final is waiting on.
+            # A mark at completion is therefore lost exactly when the cost is
+            # highest — a short utterance pays for a partial it never records
+            # (measured 2026-09-16: coverage read 9/32 while every one of the
+            # 32 turns had issued a decode). Issue time is also the only
+            # deterministic instant here: it is a function of the audio alone.
+            self._turns.mark("stt_partial", at_ns=now_ns())
+            self.partials_issued += 1
             async with self._decode_lock:
-                text = await asyncio.to_thread(self._decode, audio)
+                text = await asyncio.to_thread(self._decode, prefix)
+            self._turns.mark("stt_partial_done", at_ns=now_ns())
             if text and self._speaking:
-                at = now_ns()
-                self._turns.mark("stt_partial", at_ns=at)
+                # The decision window the trigger actually gets: a hypothesis
+                # in hand while the user is still speaking.
+                self._turns.mark("stt_partial_frame", at_ns=now_ns())
                 self.partials_emitted += 1
                 await self.push_frame(InterimTranscriptionFrame(text, "", time_now_iso8601(), None))
 
@@ -196,7 +243,7 @@ class StreamingWhisperSTT(STTService):
                 else:
                     self._audio = np.zeros(0, dtype=np.float32)
             self._speaking = True
-            if self._cfg.partial_interval_ms > 0 and self._partial_task is None:
+            if self._cfg.partial_offsets_s and self._partial_task is None:
                 self._partial_task = asyncio.get_running_loop().create_task(self._partial_loop())
 
         elif isinstance(frame, _STOPPED):

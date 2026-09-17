@@ -30,7 +30,7 @@ stt:
   language: "en"
   cpu_threads: 3
   cpu_affinity: [3, 4, 5]
-  partial_interval_ms: 200
+  partial_offsets_s: [1.5, 3.0]
 
 llm:
   host: "127.0.0.1"
