@@ -93,6 +93,10 @@ class StreamingWhisperSTT(STTService):
         self._cfg = cfg
         self._turns = turns
         self._model: WhisperModel | None = None
+        # Second engine for partials, when configured. Its own model and its
+        # own lock; see load() and _partial_loop.
+        self._partial_model: WhisperModel | None = None
+        self._partial_lock = asyncio.Lock()
         # threading.Lock guards the audio buffer (touched from the PyAudio
         # callback thread). The DECODE lock below is asyncio.Lock on purpose:
         # a sync acquire on the loop thread, while a cancelled partial task
@@ -130,16 +134,37 @@ class StreamingWhisperSTT(STTService):
             return
         from faster_whisper import WhisperModel
 
-        def load() -> WhisperModel:
+        def load_pinned(name: str, threads: int, cpus: tuple[int, ...]) -> WhisperModel:
+            # CTranslate2 builds its intra-op pool when the model is created and
+            # those threads inherit THIS thread's affinity, so the pinning has
+            # to happen here rather than around each decode.
+            if cpus:
+                os.sched_setaffinity(0, set(cpus))
             return WhisperModel(
-                self._cfg.model,
+                name,
                 device="cpu",
                 compute_type=self._cfg.compute_type,
-                cpu_threads=self._cfg.cpu_threads,
+                cpu_threads=threads,
             )
 
-        self._model = await asyncio.to_thread(load)
-        log.info("stt: faster-whisper %s loaded", self._cfg.model)
+        self._model = await asyncio.to_thread(
+            load_pinned, self._cfg.model, self._cfg.cpu_threads, self._cfg.final_cpus
+        )
+        log.info("stt: faster-whisper %s loaded on cpus %s", self._cfg.model, self._cfg.final_cpus)
+        if self._cfg.partial_model:
+            # A SEPARATE model means a separate decode lock, which is the whole
+            # point: a partial can no longer hold the lock the final waits on.
+            self._partial_model = await asyncio.to_thread(
+                load_pinned,
+                self._cfg.partial_model,
+                self._cfg.partial_cpu_threads,
+                self._cfg.partial_cpus,
+            )
+            log.info(
+                "stt: partial engine %s loaded on cpus %s",
+                self._cfg.partial_model,
+                self._cfg.partial_cpus,
+            )
 
     async def warmup(self, *, request_hugepages_after: bool = False) -> None:
         """One decode of silence: pays first-call graph costs outside any turn.
@@ -160,9 +185,10 @@ class StreamingWhisperSTT(STTService):
                 self.madvise_report.regions_marked,
             )
 
-    def _decode(self, audio: npt.NDArray[np.float32]) -> str:
-        assert self._model is not None
-        segments, _info = self._model.transcribe(
+    def _decode(self, audio: npt.NDArray[np.float32], model: WhisperModel | None = None) -> str:
+        engine = model if model is not None else self._model
+        assert engine is not None
+        segments, _info = engine.transcribe(
             audio,
             language=self._cfg.language,
             beam_size=1,
@@ -221,16 +247,39 @@ class StreamingWhisperSTT(STTService):
             # (measured 2026-09-16: coverage read 9/32 while every one of the
             # 32 turns had issued a decode). Issue time is also the only
             # deterministic instant here: it is a function of the audio alone.
-            self._turns.mark("stt_partial", at_ns=now_ns())
+            issued_ns = now_ns()
+            self._turns.mark("stt_partial", at_ns=issued_ns)
             self.partials_issued += 1
-            async with self._decode_lock:
-                text = await asyncio.to_thread(self._decode, prefix)
-            self._turns.mark("stt_partial_done", at_ns=now_ns())
-            if text and self._speaking:
+            two_engine = self._partial_model is not None
+            lock = self._partial_lock if two_engine else self._decode_lock
+            # Did the final decode overlap this one? Only meaningful with two
+            # engines; single-engine it is impossible by construction.
+            concurrent = two_engine and self._decode_lock.locked()
+            t0 = now_ns()
+            async with lock:
+                text = await asyncio.to_thread(self._decode, prefix, self._partial_model)
+            done_ns = now_ns()
+            decode_ms = (done_ns - t0) / 1e6
+            self._turns.mark("stt_partial_done", at_ns=done_ns)
+            emitted = bool(text) and self._speaking
+            if emitted:
                 # The decision window the trigger actually gets: a hypothesis
                 # in hand while the user is still speaking.
                 self._turns.mark("stt_partial_frame", at_ns=now_ns())
                 self.partials_emitted += 1
+            # Logged whether emitted or not: the wasted-partial count and the
+            # calibration set have to come from the same record.
+            self._turns.write_partial(
+                offset_s=offset,
+                engine=self._cfg.partial_model or self._cfg.model,
+                text=text,
+                decode_ms=decode_ms,
+                issued_ns=issued_ns,
+                done_ns=done_ns,
+                emitted=emitted,
+                concurrent_final=concurrent,
+            )
+            if emitted:
                 await self.push_frame(InterimTranscriptionFrame(text, "", time_now_iso8601(), None))
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:

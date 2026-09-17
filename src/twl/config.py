@@ -80,6 +80,16 @@ class SttConfig:
     # src/scripts/partial_cadence.py sweeps them for window gained vs STT
     # calls added, and that sweep sets the benchmark default.
     partial_offsets_s: tuple[float, ...] = (1.5, 3.0)
+    # Second engine for partials. Empty means single-engine: partials and the
+    # final share one model AND one decode lock, so a partial in flight blocks
+    # the commit. A separate model has its own lock and cannot (twl.stt).
+    partial_model: str = ""
+    partial_cpu_threads: int = 1
+    # Cores each engine's decode threads are pinned to. CTranslate2 inherits
+    # affinity from the thread that BUILDS the model, so this is applied at
+    # load time, not per call.
+    final_cpus: tuple[int, ...] = (3, 4)
+    partial_cpus: tuple[int, ...] = (5,)
 
 
 @dataclass(frozen=True)

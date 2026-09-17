@@ -24,7 +24,14 @@ import yaml
 
 from twl.clock import TurnClock, now_ns, wall_iso
 from twl.contention import ContentionDetector
-from twl.records import RunComplete, RunMeta, StageEvent, TurnRecord, write_jsonl
+from twl.records import (
+    PartialRecord,
+    RunComplete,
+    RunMeta,
+    StageEvent,
+    TurnRecord,
+    write_jsonl,
+)
 from twl.telemetry import (
     find_thermal_zone,
     read_fan,
@@ -212,6 +219,46 @@ class TurnManager:
         if self._detector is None or self._clock is None:
             return
         self._detector.sample_once(anchor)
+
+    def write_partial(
+        self,
+        *,
+        offset_s: float,
+        engine: str,
+        text: str,
+        decode_ms: float,
+        issued_ns: int,
+        done_ns: int,
+        emitted: bool,
+        concurrent_final: bool = False,
+    ) -> None:
+        """Record one partial decode, emitted or not.
+
+        The calibration set and the wasted-partial count both come from here,
+        so a partial that arrived too late to emit must still be written: it
+        cost the same and it says the same thing about completeness.
+        """
+        if self._clock is None:
+            self.orphan_marks += 1
+            return
+        write_jsonl(
+            self._fh,
+            PartialRecord(
+                run_id=self._run_id,
+                turn=self._turn,
+                offset_s=round(offset_s, 3),
+                engine=engine,
+                text=text,
+                decode_ms=round(decode_ms, 1),
+                issued_ms=round((issued_ns - self._clock.origin_ns) / 1e6, 1),
+                done_ms=round((done_ns - self._clock.origin_ns) / 1e6, 1),
+                emitted=emitted,
+                # Ground truth for calibration: where the speaker actually
+                # stopped, relative to the same origin.
+                speech_end_ms=self._clock.first("vad_user_stopped") or -1.0,
+                concurrent_final=concurrent_final,
+            ),
+        )
 
     def set_transcript(self, text: str) -> None:
         self._transcript = text

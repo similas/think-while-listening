@@ -18,7 +18,9 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, TextIO
 
 
-def to_jsonl(record: RunMeta | StageEvent | TurnRecord | TelemetrySample | RunComplete) -> str:
+def to_jsonl(
+    record: RunMeta | StageEvent | TurnRecord | TelemetrySample | RunComplete | PartialRecord,
+) -> str:
     """One record → one JSON line (no trailing newline)."""
     d = asdict(record)
     d["kind"] = record.kind
@@ -26,7 +28,8 @@ def to_jsonl(record: RunMeta | StageEvent | TurnRecord | TelemetrySample | RunCo
 
 
 def write_jsonl(
-    fh: TextIO, record: RunMeta | StageEvent | TurnRecord | TelemetrySample | RunComplete
+    fh: TextIO,
+    record: RunMeta | StageEvent | TurnRecord | TelemetrySample | RunComplete | PartialRecord,
 ) -> None:
     """Append one record to an open text file and flush (crash-safe logs)."""
     fh.write(to_jsonl(record) + "\n")
@@ -129,6 +132,31 @@ class TurnRecord:
     zram_growth_mb: float = 0.0
 
     kind: str = field(default="turn_record", init=False)
+
+
+@dataclass(frozen=True)
+class PartialRecord:
+    """One partial decode: what it cost, what it said, and when it landed.
+
+    Written for EVERY partial decode, emitted or not, so the calibration set
+    and the wasted-partial count come from the same log. ``speech_end_ms`` is
+    the turn's ground truth endpoint, which is what a completeness score has to
+    be calibrated against.
+    """
+
+    run_id: str
+    turn: int
+    offset_s: float
+    engine: str
+    text: str
+    decode_ms: float
+    issued_ms: float
+    done_ms: float
+    emitted: bool
+    speech_end_ms: float = -1.0
+    concurrent_final: bool = False
+
+    kind: str = field(default="partial_record", init=False)
 
 
 @dataclass(frozen=True)
