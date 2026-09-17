@@ -1354,3 +1354,109 @@ MS_PER_TOKEN_UNCONTENDED 0.083, MS_PER_TOKEN_CONTENDED 2.683, ENTRY_FEE_MS 55.
 A3 measures 0.384 and 1.161 on the current architecture. Changing those
 constants changes a research claim the controller acts on, so it waits for
 Ali's decision (CLAUDE.md §1).
+
+## The entry fee is NOT identifiable from A3. Constants not yet updated
+
+The cost model the controller consumes has two terms:
+
+    cost_ms(B) = ENTRY_FEE + per_token * B
+
+A3 measured B in {0, 96} only. The paired delta at B=96 is therefore a single
+equation in two unknowns:
+
+    delta_96 = ENTRY_FEE + per_token * 96
+
+Two budget levels cannot separate an intercept from a slope. The old model's
+ENTRY_FEE of 55 ms came from the Phase 2 GRID, which had B in {0, 32, 64, 96,
+256} and so could fit both. A3 deliberately traded that breadth for within-run
+pairing.
+
+WHAT THIS MEANS FOR THE NUMBERS ALREADY REPORTED. A3's "+0.384" and "+1.161
+ms/token" are delta/96: the AVERAGE cost per token with the entry fee amortized
+across 96 tokens, not the marginal per-token slope. They are correct as reported
+and correctly labelled, but they are not the same quantity as the old
+MS_PER_TOKEN constants, which were slopes with the fee held out separately.
+
+SO THE OBVIOUS UPDATE WOULD BE WRONG. Setting per_token to 1.161 while keeping
+ENTRY_FEE at 55 would count the fee twice: once inside the amortized figure and
+again as the explicit term. At B=96 that predicts 166 ms against a measured 111
+ms, and the error grows as B shrinks, which is exactly the regime a budget
+controller spends most of its time in.
+
+TWO HONEST OPTIONS, neither taken unilaterally (CLAUDE.md §1: a change to a
+research claim the controller acts on waits for Ali):
+  (a) Set ENTRY_FEE = 0 and per_token = 0.384 / 1.161. This matches what was
+      measured AT B=96 exactly and mispredicts at small B, understating the
+      cost of a small speculation.
+  (b) Run an interleaved GRID to recover both terms within-run: B in
+      {0, 32, 64, 96}, which the Latin-square schedule already supports (tested
+      for three budgets in src/tests/test_schedule.py). 4 budgets x 16
+      utterances + 3 warm-up = 67 turns per run, about 9 min; 3 runs per
+      condition is ~27 min for one condition, ~54 min for both.
+Recommendation: (b) for uncontended and contended, accepting it exceeds the
+30-minute rule and so needs an explicit go. (a) is a stopgap that would put a
+known-wrong prior into BUDGET-R.
+
+Old and new side by side, for whichever is chosen:
+
+    term                    old (Phase 2 grid)   A3 (within-run, 2 levels)
+    ENTRY_FEE_MS                          55.0   not identifiable
+    per-token uncontended                0.083   0.384 amortized [0.204, 0.595]
+    per-token contended                  2.683   1.161 amortized [0.752, 1.498]
+
+Reason for the change, recorded with the numbers: the STT architecture changed
+to two-engine in the same step, and the old design's dominant error term
+(between-run baseline shift) was unmodelled, so the old CIs understate.
+
+## Phase 4: the partial-issue gate earns its keep under contention
+
+A3, 96 measured turns per condition, two-engine STT:
+
+    decision-window coverage   uncontended 96/96 (100%)   contended 81/96 (84%)
+    partial decode median              828 ms                    966 ms
+
+Under contention the partial decode slows by 138 ms and some partials stop
+beating the endpoint. The work is still paid for -- an orphaned decode cannot be
+cancelled and competes with the final for CPU -- but it buys nothing.
+
+So "issue a partial or not", gated on predicted remaining speech against partial
+decode time, is worth LEAST when the board is idle (coverage is already 100%)
+and MOST when it is contended, which is precisely when the pipeline can least
+afford wasted CPU. The gate and the budget controller face the same state
+signal, and Phase 4 should treat them as one decision, not two.
+
+## Discriminator: "speculation is free on an idle board" was a FALSE NEGATIVE
+
+Three interleaved SINGLE-engine uncontended runs, to decide whether the
+non-zero uncontended cost A3 found was created by the second STT engine or had
+always been there and was hidden by between-run noise.
+
+    design / architecture                  uncontended cost        95% CI        n
+    across-run, single engine (Phase 2)          +0.083     [-0.281, +0.426]    48
+    across-run, single engine (disc. check)      +0.227     [-0.138, +0.654]    48
+    across-run, single engine (1st interleave)   +0.175     [-0.077, +1.161]    16
+    WITHIN-RUN, single engine (this)             +0.744     [+0.237, +1.129]    48
+    WITHIN-RUN, two engines (A3)                 +0.384     [+0.204, +0.595]    48
+
+READING (a) IS CORRECT: the effect was always there. Without the second engine,
+the within-run design still excludes zero. The two-engine architecture did not
+create the cost; the across-run design could not resolve it.
+
+So the Phase 2 statement that speculation is flat in B on an idle board -- and
+the CI spanning zero that supported it -- was a FALSE NEGATIVE produced by a
+design whose dominant error term was the between-run baseline shift. The
+uncontended cost is small but real. The contention result is unaffected in
+direction and strengthened in meaning: speculation is not free anywhere, and it
+is about 3x more expensive when the memory system is contended.
+
+The two within-run estimates overlap heavily (+0.744 [+0.237, +1.129] single
+vs +0.384 [+0.204, +0.595] two-engine), so this says nothing about which
+architecture is cheaper; it was not designed to.
+
+Worth noting for reproducibility: the single-engine per-run spread was WIDER
+(1.219, 0.824, 0.433; range 0.786) than the two-engine spread (0.352, 0.494,
+0.107; range 0.387), on three runs each. Too few runs to claim a variance
+difference, and stated only so the raw values are on the record.
+
+CARRY-OVER: absent again (+45 ms [-160, +101]). Three independent checks now,
+two architectures, both conditions.
