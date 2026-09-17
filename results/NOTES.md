@@ -1247,3 +1247,47 @@ decoupling benefit by a different route. The cost did not vanish so much as move
 from lock-wait to CPU contention and net out. Measuring the wait directly needs
 the interval from speech_end to the final decode ACQUIRING its lock; that is the
 metric to add before any further claim about lock-wait.
+
+## CORRECTION: the partial-transcript cost is NOT lock-wait. It is an orphaned decode
+
+Measured 2026-09-17 with the new lock-wait metric (speech end -> final decode
+acquires its lock), after verifying the instrument can register non-zero:
+
+    two-engine, shared cores : median 0.0 ms, max 0.0  (n=16 turns)
+    single engine            : median 0.7 ms, max 13.1 (non-zero on 1 of 16)
+
+13 ms is not 550 ms. The lock-wait hypothesis is REFUTED, and with it a
+mechanism this file previously asserted ("a partial in flight when the
+utterance ends makes the final commit wait for it"). That sentence was wrong.
+
+WHAT ACTUALLY HAPPENS. asyncio.to_thread cannot cancel a running worker. When
+the endpoint cancels the partial task, the `async with lock` block unwinds and
+RELEASES the lock immediately — while the decode it was guarding is still
+executing in the thread pool. The final then acquires the lock with no wait and
+runs its own decode CONCURRENTLY with the orphaned one. In the single-engine
+control every one of 16 turns ended with an orphaned partial decode still
+running, and 15 of those 16 showed a lock wait under 1 ms.
+
+So the +550-760 ms that partials add to STT commit is CPU CONTENTION FROM WORK
+THAT CANNOT BE CANCELLED, not serialization. The orphaned decode competes for
+the same cpu_threads as the final and is pure waste: its result is discarded.
+
+CONSEQUENCES:
+1. It explains why two-engine shared did not reduce commit latency much
+   (-39 ms). A second engine removes a lock that was barely being waited on;
+   the contention was always CPU, and both configurations pay it.
+2. The minor-fault inflation on turns with a partial still holds, but for a
+   different reason than recorded: read_faults is process-wide, so an orphaned
+   decode running alongside the final adds its faults to the final's measured
+   delta.
+3. The duty=0.75 diagnosis is unchanged in its conclusion — partial-set
+   imbalance across arms corrupts the paired metric, and arms must be balanced
+   — but the channel is concurrent CPU contention plus shared fault accounting,
+   not lock serialization.
+4. The real lever is not a second lock but NOT ISSUING a partial that cannot
+   finish in time. That is Phase 4's "issue a partial or not" decision, gated
+   on predicted remaining speech against partial decode time, and this makes
+   the case for it quantitative rather than aesthetic.
+
+Recorded as a refuted hypothesis rather than quietly edited away: the metric was
+added to test a claim, it tested it, and the claim lost.

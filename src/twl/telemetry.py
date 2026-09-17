@@ -237,6 +237,40 @@ def find_thermal_zone(kind: str = "tj-thermal") -> Path | None:
     return None
 
 
+def read_runqueue() -> float:
+    """Runnable tasks right now, from /proc/loadavg's fourth field.
+
+    The agent runs 6 recognizer threads (3 per engine) on 3 cores, so
+    oversubscription is possible by construction. This makes it visible rather
+    than inferred: if the run queue climbs under the adversary, the two engines
+    are fighting for cores and not merely for bandwidth.
+    """
+    try:
+        running = Path("/proc/loadavg").read_text().split()[3]
+        return float(running.split("/")[0])
+    except (OSError, ValueError, IndexError):
+        return -1.0
+
+
+def read_ctxt_switches(pid: int) -> tuple[int, int]:
+    """(voluntary, involuntary) context switches for a process.
+
+    Voluntary means the thread blocked and yielded (waiting on a lock or I/O).
+    INvoluntary means the scheduler preempted it, which is the signature of
+    oversubscription: more runnable threads than cores.
+    """
+    vol = invol = -1
+    try:
+        for line in Path(f"/proc/{pid}/status").read_text().splitlines():
+            if line.startswith("voluntary_ctxt_switches:"):
+                vol = int(line.split()[1])
+            elif line.startswith("nonvoluntary_ctxt_switches:"):
+                invol = int(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    return vol, invol
+
+
 def read_fan() -> dict[str, float]:
     """Fan PWM and RPM, and whether anything is controlling them.
 

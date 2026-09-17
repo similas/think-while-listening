@@ -30,7 +30,12 @@ stt:
   language: "en"
   cpu_threads: 3
   cpu_affinity: [3, 4, 5]
-  partial_offsets_s: [1.5, 3.0]
+  # Two-engine STT, decided 2026-09-17 on the live comparison: tiny for
+  # partials, base for the final, SHARED cores 3-5 and no pinning between them.
+  # Splitting the cores cost +1089 ms of commit latency (results/NOTES.md).
+  partial_offsets_s: [1.0, 2.0, 3.0]
+  partial_model: "tiny"
+  partial_cpu_threads: 3
 
 llm:
   host: "127.0.0.1"

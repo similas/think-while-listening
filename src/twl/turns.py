@@ -35,11 +35,13 @@ from twl.records import (
 )
 from twl.telemetry import (
     find_thermal_zone,
+    read_ctxt_switches,
     read_fan,
     read_gpu_freq_mhz,
     read_mem_available_mb,
     read_power_rails_mw,
     read_proc_mem_mb,
+    read_runqueue,
     read_swaps,
     read_tj_c,
 )
@@ -58,7 +60,6 @@ class _PendingPartial:
     offset_s: float
     engine: str
     issued_ms: float
-    concurrent_final: bool
     text: str = ""
     decode_ms: float = -1.0
     done_ms: float = -1.0
@@ -129,6 +130,8 @@ class TurnManager:
         self._warmup_turns = warmup_turns
         # Partials buffered until the endpoint (their label) is known.
         self._partials: list[_PendingPartial] = []
+        self._lock_wait_ms = -1.0
+        self._ctxt_at_start = (0, 0)
         self._contention: dict[str, object] = {}
         # Log handle spans the whole run; closed by close(). The lifetime is
         # the manager's, not a with-block's.
@@ -207,6 +210,8 @@ class TurnManager:
         self._reply_tokens = 0
         self._marked_once = set()
         self._partials = []
+        self._lock_wait_ms = -1.0
+        self._ctxt_at_start = read_ctxt_switches(os.getpid())
         self._turn_opened_ns = at_ns
         self._contention = {}
         if self._detector is not None:
@@ -243,9 +248,7 @@ class TurnManager:
             return
         self._detector.sample_once(anchor)
 
-    def note_partial_issued(
-        self, *, offset_s: float, engine: str, issued_ns: int, concurrent_final: bool
-    ) -> None:
+    def note_partial_issued(self, *, offset_s: float, engine: str, issued_ns: int) -> None:
         """A partial decode has STARTED. Buffered, not yet written.
 
         Recorded at issue rather than at completion because the endpoint
@@ -262,7 +265,6 @@ class TurnManager:
                 offset_s=round(offset_s, 3),
                 engine=engine,
                 issued_ms=round((issued_ns - self._clock.origin_ns) / 1e6, 1),
-                concurrent_final=concurrent_final,
             )
         )
 
@@ -301,10 +303,23 @@ class TurnManager:
                     done_ms=rec.done_ms,
                     emitted=rec.emitted,
                     speech_end_ms=speech_end_ms,
-                    concurrent_final=rec.concurrent_final,
                 ),
             )
         self._partials = []
+
+    def _ctxt_delta(self) -> dict[str, int]:
+        """Context switches over this turn. Involuntary ones mean preemption."""
+        vol, invol = read_ctxt_switches(os.getpid())
+        if vol < 0 or self._ctxt_at_start[0] < 0:
+            return {}
+        return {
+            "voluntary": vol - self._ctxt_at_start[0],
+            "involuntary": invol - self._ctxt_at_start[1],
+        }
+
+    def set_lock_wait_ms(self, ms: float) -> None:
+        """How long the final decode waited for its lock after speech ended."""
+        self._lock_wait_ms = ms
 
     def set_transcript(self, text: str) -> None:
         self._transcript = text
@@ -468,6 +483,9 @@ class TurnManager:
             tj_c=read_tj_c(self._tj_zone),
             temps_c=(self._temps_fn(self._turn_opened_ns) if self._temps_fn is not None else {}),
             fan=read_fan(),
+            stt_lock_wait_ms=round(self._lock_wait_ms, 1),
+            runqueue=read_runqueue(),
+            ctxt_switches=self._ctxt_delta(),
             gpu_freq_mhz=read_gpu_freq_mhz(),
             power_mw=read_power_rails_mw(),
             stt_audio_s=round(self._stt_audio_s, 3),

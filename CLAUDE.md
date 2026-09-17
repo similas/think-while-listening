@@ -47,6 +47,13 @@ wins; if a brief is wrong, say so and propose an edit rather than silently devia
   100% T-SEM agreement between engines; neither engine had fired once, because
   the trigger was dead on punctuated partials. The marginal rate would have
   shown it immediately.)
+- COMMON SUPPORT. When a configuration changes which items it covers, report
+  paired deltas on the COMMON-SUPPORT set and on the newly covered set
+  SEPARATELY. Never pool them: a pooled mean compares different populations and
+  can invert the sign of the effect. (2026-09-17: two-engine STT appeared to
+  reduce anticipation lead 897 -> 561 ms pooled; on the six utterances both
+  configurations covered it RAISED it 897 -> 1701 ms, and the nine newly covered
+  utterances simply had shorter leads.)
 - Do not rename baselines or metrics to obscure comparison with prior work. Use
   the metric names and definitions in `RESEARCH_BRIEF_v2.md` §5.
 - When you are uncertain whether a package, model, or dependency exists or works

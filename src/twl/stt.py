@@ -250,16 +250,11 @@ class StreamingWhisperSTT(STTService):
             issued_ns = now_ns()
             self._turns.mark("stt_partial", at_ns=issued_ns)
             self.partials_issued += 1
-            two_engine = self._partial_model is not None
-            lock = self._partial_lock if two_engine else self._decode_lock
-            # Did the final decode overlap this one? Only meaningful with two
-            # engines; single-engine it is impossible by construction.
-            concurrent = two_engine and self._decode_lock.locked()
+            lock = self._partial_lock if self._partial_model is not None else self._decode_lock
             self._turns.note_partial_issued(
                 offset_s=offset,
                 engine=self._cfg.partial_model or self._cfg.model,
                 issued_ns=issued_ns,
-                concurrent_final=concurrent,
             )
             t0 = now_ns()
             async with lock:
@@ -312,7 +307,13 @@ class StreamingWhisperSTT(STTService):
             faults_before = read_faults(pid)
             vm_before = read_vmstat()
             sm_before = read_smaps_summary(pid)
-            async with self._decode_lock:  # waits out any in-flight partial decode
+            # THE LOCK WAIT. With one engine the final must wait out whatever
+            # partial is still decoding; with two it should be ~0, because the
+            # partial holds a different lock. Measured from the moment the
+            # speaker stopped, which is when the final became possible.
+            wait_from_ns = now_ns()
+            async with self._decode_lock:
+                self._turns.set_lock_wait_ms((now_ns() - wait_from_ns) / 1e6)
                 text = await asyncio.to_thread(self._decode, audio)
             at = now_ns()  # timestamp BEFORE the counters, so probing never inflates it
             faults_after = read_faults(pid)

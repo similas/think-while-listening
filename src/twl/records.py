@@ -94,6 +94,16 @@ class TurnRecord:
     # Fan PWM/RPM at the turn boundary. nvfancontrol drives the fan from the
     # thermal margin, so it moves with temperature and is NOT a fixed setting.
     fan: dict[str, float] = field(default_factory=dict)
+    # How long the FINAL decode waited for the lock after the speaker stopped.
+    # With one engine this is the in-flight partial it had to wait out; with two
+    # engines it should be ~0, since the partial holds a different lock. This
+    # replaces concurrent_final, which was false by construction: it asked
+    # whether the final was already decoding when a partial was issued, but
+    # partials are issued during speech and the final starts at the endpoint.
+    stt_lock_wait_ms: float = -1.0
+    # Scheduler pressure over the turn. 6 recognizer threads share 3 cores.
+    runqueue: float = -1.0
+    ctxt_switches: dict[str, int] = field(default_factory=dict)
     stt_audio_s: float = -1.0
     # Mechanism counters for the STT decode of this turn. majflt rising under a
     # co-resident process is the signature of page-cache eviction: the model's
@@ -154,7 +164,6 @@ class PartialRecord:
     done_ms: float
     emitted: bool
     speech_end_ms: float = -1.0
-    concurrent_final: bool = False
 
     kind: str = field(default="partial_record", init=False)
 
