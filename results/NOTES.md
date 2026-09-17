@@ -1586,3 +1586,26 @@ is gone for the duration. It also needs a sudoers line for
 
 Until then the fan remains a logged per-turn covariate (PWM, and RPM where the
 node exists), which is what it has been for every result so far.
+
+## Fan pinning: ATTEMPTED, REJECTED (decision, 2026-09-17). Methods text
+
+Pinning was attempted and abandoned. For the methods section:
+
+  The fan was left under automatic control and recorded as a per-turn covariate
+  (PWM, and RPM where the node exposes it). Pinning it at maximum was attempted
+  and rejected. Stopping the userspace daemon (nvfancontrol) is not sufficient:
+  the kernel thermal framework owns a pwm-fan cooling device bound to zones
+  running the step_wise governor, and re-asserts control within seconds — a
+  write of PWM 255 verified immediately and read 88 three seconds later. Pinning
+  would therefore require setting those zones to policy=user_space, disabling
+  automatic fan response on a board that reaches 88.8 C under the memory
+  adversary. That risk was not judged worth taking, because temperature has
+  twice been shown not to drive the measured effect: junction temperature
+  explained none of the between-condition difference in the randomized
+  discrepancy check (slope +0.006 ms/token per C, R^2 0.000 over 76-89 C), and
+  in the original state comparison it did not separate the contended arm from
+  the warm arm at all (76 C vs 75 C) while their costs differed sharply.
+
+src/scripts/fan.sh is kept as the refusing check: it verifies that a pin HOLDS
+and restores automatic control if it does not, so no run can record itself as
+pinned when it is not. No thermal-zone policy changes; no new sudoers lines.
