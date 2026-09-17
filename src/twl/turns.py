@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
@@ -26,6 +26,7 @@ import yaml
 from twl.clock import TurnClock, now_ns, wall_iso
 from twl.contention import ContentionDetector
 from twl.records import (
+    DecisionRecord,
     PartialRecord,
     RunComplete,
     RunMeta,
@@ -316,6 +317,38 @@ class TurnManager:
             "voluntary": vol - self._ctxt_at_start[0],
             "involuntary": invol - self._ctxt_at_start[1],
         }
+
+    def note_decision(
+        self,
+        *,
+        partial: str,
+        decision: Mapping[str, object],
+        trigger: Mapping[str, object],
+        outcome: str,
+        decide_ms: float,
+    ) -> None:
+        """Record one policy decision. Written immediately, not buffered.
+
+        Unlike a partial record, a decision needs no label from the future: it
+        is complete the moment it is made, and writing it now means a turn that
+        dies mid-flight still leaves its decisions behind.
+        """
+        if self._clock is None:
+            self.orphan_marks += 1
+            return
+        write_jsonl(
+            self._fh,
+            DecisionRecord(
+                run_id=self._run_id,
+                turn=self._turn,
+                t_ms=self._clock.elapsed_ms(),
+                partial=partial,
+                decision=dict(decision),
+                trigger=dict(trigger),
+                outcome=outcome,
+                decide_ms=round(decide_ms, 1),
+            ),
+        )
 
     def set_lock_wait_ms(self, ms: float) -> None:
         """How long the final decode waited for its lock after speech ended."""

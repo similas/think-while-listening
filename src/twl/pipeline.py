@@ -20,6 +20,7 @@ from pipecat.transports.base_transport import TransportParams
 from twl.config import TwlConfig
 from twl.contention import ContentionDetector
 from twl.observer import StageObserver
+from twl.policy_runner import PolicyRunner
 from twl.records import RunMeta
 from twl.services import LlamaChatProcessor, PiperTTSService, StubLlmProcessor
 from twl.speculation import SpeculationDriver
@@ -59,6 +60,7 @@ def build_pipeline(
     detector: ContentionDetector | None = None,
     temps_fn: Callable[[int], dict[str, float]] | None = None,
     warmup_turns: int = 0,
+    policy_runner: PolicyRunner | None = None,
 ) -> BuiltPipeline:
     """Assemble the REACTIVE pipeline around the given audio source."""
     turns = TurnManager(
@@ -111,7 +113,9 @@ def build_pipeline(
         StubLlmProcessor(turns) if cfg.llm.backend == "stub" else LlamaChatProcessor(cfg.llm, turns)
     )
 
-    observer = StageObserver(turns, tts, vad_stop_secs=cfg.vad.stop_secs, speculation=speculation)
+    observer = StageObserver(
+        turns, tts, vad_stop_secs=cfg.vad.stop_secs, speculation=speculation, runner=policy_runner
+    )
     pipeline = Pipeline([transport.input(), stt, llm, tts, transport.output()])
     task = PipelineTask(
         pipeline,

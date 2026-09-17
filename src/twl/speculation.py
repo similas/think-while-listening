@@ -75,7 +75,10 @@ class SpeculationDriver:
     # Turn -> budget, for the interleaved design (twl.schedule). When set it
     # overrides budget_tokens per turn; when None the budget is fixed.
     schedule: list[int] | None = None
+    # Fallback text for Phase 2-style speculation that starts before any
+    # partial exists. Phase 3 policies pass the LIVE transcript instead.
     partial_text: str = "I have a question about"
+    system_prompt: str = SPEC_SYSTEM
     _task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
     _client: LlamaClient | None = field(default=None, init=False, repr=False)
     stats: SpeculationStats = field(default_factory=SpeculationStats, init=False)
@@ -104,6 +107,31 @@ class SpeculationDriver:
             self._speculate(partial or self.partial_text)
         )
 
+    def speculate_on(self, partial: str, budget_tokens: int) -> str:
+        """CONTINUE THE SLOT: issue a decode only if none is already running.
+
+        Ali, 2026-09-16: Phase 3's default is continue-the-slot, not
+        cancel-and-resend. A new partial arriving mid-decode does NOT restart
+        the speculation. Two reasons, and the second is the measured one:
+
+        - restarting throws away every token produced so far, so a transcript
+          that commits often would speculate constantly and finish nothing;
+        - this llama-server build reuses a slot's KV cache only when the cached
+          tokens are a clean PREFIX of the new prompt (twl.prompting). A resend
+          with a longer partial diverges at the template tail, so the restart
+          would also re-evaluate the whole prompt rather than extend it.
+
+        Returns the reason, for the decision log.
+        """
+        if self._task is not None and not self._task.done():
+            return "continue-the-slot: decode already in flight"
+        self.budget_tokens = budget_tokens
+        if budget_tokens <= 0:
+            return "budget is zero"
+        self.stats.budget_tokens = budget_tokens
+        self._task = asyncio.get_running_loop().create_task(self._speculate(partial))
+        return "issued"
+
     async def _speculate(self, partial: str) -> None:
         client = await self.client()
         t0 = now_ns()
@@ -117,7 +145,7 @@ class SpeculationDriver:
         try:
             self.stats.requests += 1
             await client.stream_completion(
-                incremental_prompt(SPEC_SYSTEM, partial, final=True),
+                incremental_prompt(self.system_prompt, partial, final=True),
                 n_predict=self.budget_tokens,
                 cache_prompt=True,
                 temperature=0.5,

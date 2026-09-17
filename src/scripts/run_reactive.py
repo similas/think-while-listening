@@ -34,15 +34,19 @@ from twl.clocks import ensure_baseline, restore, set_clocks
 from twl.config import load_config
 from twl.contention import ContentionDetector
 from twl.device import device_state
+from twl.llm import LlamaClient
 from twl.metrics import median
 from twl.pipeline import build_pipeline
 from twl.planning import Plan, add_gate_args, gate
+from twl.policies import PolicyKind, build_policy
+from twl.policy_runner import PolicyRunner
 from twl.provenance import build_run_meta, new_run_id
 from twl.records import read_jsonl
 from twl.schedule import build_schedule
 from twl.speculation import SpeculationDriver
 from twl.telemetry import TegrastatsSampler
 from twl.transport import FileFrameSource, MicFrameSource
+from twl.trigger import IsotonicCalibration, SemanticTrigger
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -315,9 +319,35 @@ async def run(args: argparse.Namespace) -> None:
         )
         sampler.start()
 
+        policy = build_policy(
+            args.policy,
+            budget_tokens=args.spec_tokens or 96,
+            theta=args.theta,
+            horizon_s=args.horizon_s,
+        )
+        # A policy that can speculate needs a driver even when --spec-tokens is
+        # 0, because the BUDGET now comes from the policy, not the flag.
         speculation = (
-            SpeculationDriver(cfg.llm, budget_tokens=args.spec_tokens, schedule=schedule)
-            if (args.spec_tokens > 0 or schedule is not None)
+            SpeculationDriver(
+                cfg.llm,
+                budget_tokens=args.spec_tokens,
+                schedule=schedule,
+                system_prompt=policy.system_prompt,
+            )
+            if (args.spec_tokens > 0 or schedule is not None or args.policy != "reactive")
+            else None
+        )
+        detector = ContentionDetector(history_fn=sampler.recent_soc_mw)
+        # T-SEM is built only for the arm that uses it: an unused trigger would
+        # still cost an LLM call per partial and pollute the very slot the
+        # speculation is trying to keep warm.
+        trigger = (
+            SemanticTrigger(
+                client=LlamaClient(cfg.llm.host, cfg.llm.port),
+                system_prompt=policy.system_prompt,
+                calibration=IsotonicCalibration.load(Path(cfg.results_dir) / "calibration.json"),
+            )
+            if args.policy == "spec_trigger"
             else None
         )
         built = build_pipeline(
@@ -331,11 +361,23 @@ async def run(args: argparse.Namespace) -> None:
             ),
             device_state=state,
             segment_dir=run_dir / "segments",
-            detector=ContentionDetector(history_fn=sampler.recent_soc_mw),
+            detector=detector,
             temps_fn=sampler.temps_since,
             warmup_turns=args.warmup_turns if schedule is not None else 0,
             speculation=speculation,
         )
+        # The runner needs the TurnManager build_pipeline just created, so it
+        # is attached after construction rather than passed in.
+        if args.policy != "reactive":
+            built.observer.attach_runner(
+                PolicyRunner(
+                    policy=policy,
+                    turns=built.turns,
+                    speculation=speculation,
+                    trigger=trigger,
+                    detector=detector,
+                )
+            )
         built_box.append(built.turns)
 
         adversary = None
@@ -398,8 +440,6 @@ async def run(args: argparse.Namespace) -> None:
             )
             print("llama-server started AFTER stt warmup (stt-first order)")
         if cfg.llm.backend != "stub" and pid > 0:
-            from twl.llm import LlamaClient
-
             async with LlamaClient(cfg.llm.host, cfg.llm.port) as warm_client:
                 await warm_client.stream_chat(
                     [{"role": "user", "content": "Say ok."}], max_tokens=4, temperature=0.0
@@ -596,6 +636,16 @@ def main() -> None:
         type=int,
         default=0,
         help="Phase 2: concurrent speculative decode of B tokens during speech",
+    )
+    p.add_argument(
+        "--policy",
+        default="reactive",
+        choices=[k.value for k in PolicyKind],
+        help="which arm to run: reactive | spec_always (PredGen-Greedy) | spec_trigger (T-SEM)",
+    )
+    p.add_argument("--theta", type=float, default=0.5, help="spec_trigger: p_done threshold")
+    p.add_argument(
+        "--horizon-s", type=float, default=1.0, help="spec_trigger: anticipation horizon"
     )
     p.add_argument(
         "--interleave",

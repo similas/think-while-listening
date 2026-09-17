@@ -33,6 +33,7 @@ from pipecat.frames.frames import (
 from pipecat.observers.base_observer import BaseObserver, FramePushed
 
 from twl.clock import now_ns
+from twl.policy_runner import PolicyRunner
 from twl.services import PiperTTSService
 from twl.speculation import SpeculationDriver
 from twl.turns import TurnManager
@@ -64,11 +65,16 @@ class StageObserver(BaseObserver):
         *,
         vad_stop_secs: float,
         speculation: SpeculationDriver | None = None,
+        runner: PolicyRunner | None = None,
     ) -> None:
         super().__init__()
         self._turns = turns
         self._tts = tts
         self._speculation = speculation
+        self._runner = runner
+        # Held so the tasks are not garbage-collected mid-flight; discarded on
+        # completion so the set cannot grow without bound over a long run.
+        self._decision_tasks: set[asyncio.Task[None]] = set()
         self._vad_stop_secs = vad_stop_secs
         self._seen: OrderedDict[int, bool] = OrderedDict()
         self._last_audio_out_ns = 0
@@ -87,6 +93,15 @@ class StageObserver(BaseObserver):
         if len(self._seen) > 4096:
             self._seen.popitem(last=False)
         return True
+
+    def attach_runner(self, runner: PolicyRunner) -> None:
+        """Give the observer its policy runner after the pipeline is built.
+
+        The runner needs the TurnManager that build_pipeline creates, so the
+        two cannot both be constructor arguments without duplicating that
+        construction here.
+        """
+        self._runner = runner
 
     async def on_push_frame(self, data: FramePushed) -> None:
         # An exception here kills pipecat's observer task and every later frame
@@ -137,6 +152,14 @@ class StageObserver(BaseObserver):
             # — the previous reply still playing, telemetry — is environment
             # the recognizer pays for, so it is deliberately counted.
             self._turns.sample_contention("first_partial")
+            # The policy decides here, on the live transcript, as its own task:
+            # scoring the trigger calls the LLM and must never sit on the audio
+            # path. A partial the policy is still thinking about is simply a
+            # partial it has not acted on yet.
+            if self._runner is not None and self._first_time(frame):
+                task = asyncio.create_task(self._runner.on_partial(frame.text))
+                self._decision_tasks.add(task)
+                task.add_done_callback(self._decision_tasks.discard)
             return
 
         if isinstance(frame, TranscriptionFrame):

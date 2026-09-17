@@ -19,7 +19,13 @@ from typing import Any, TextIO
 
 
 def to_jsonl(
-    record: RunMeta | StageEvent | TurnRecord | TelemetrySample | RunComplete | PartialRecord,
+    record: RunMeta
+    | StageEvent
+    | TurnRecord
+    | TelemetrySample
+    | RunComplete
+    | PartialRecord
+    | DecisionRecord,
 ) -> str:
     """One record → one JSON line (no trailing newline)."""
     d = asdict(record)
@@ -29,7 +35,13 @@ def to_jsonl(
 
 def write_jsonl(
     fh: TextIO,
-    record: RunMeta | StageEvent | TurnRecord | TelemetrySample | RunComplete | PartialRecord,
+    record: RunMeta
+    | StageEvent
+    | TurnRecord
+    | TelemetrySample
+    | RunComplete
+    | PartialRecord
+    | DecisionRecord,
 ) -> None:
     """Append one record to an open text file and flush (crash-safe logs)."""
     fh.write(to_jsonl(record) + "\n")
@@ -166,6 +178,28 @@ class PartialRecord:
     speech_end_ms: float = -1.0
 
     kind: str = field(default="partial_record", init=False)
+
+
+@dataclass(frozen=True)
+class DecisionRecord:
+    """One policy decision at one partial commit: the controller's audit trail.
+
+    Written for EVERY emitted partial, including decisions not to speculate and
+    partials whose trigger call failed. A log containing only firings cannot
+    measure a firing rate, and the firing rate is what makes an agreement or
+    accuracy number meaningful (CLAUDE.md §2).
+    """
+
+    run_id: str
+    turn: int
+    t_ms: float
+    partial: str
+    decision: dict[str, Any]
+    trigger: dict[str, Any]
+    outcome: str
+    decide_ms: float
+
+    kind: str = field(default="decision_record", init=False)
 
 
 @dataclass(frozen=True)
