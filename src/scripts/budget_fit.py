@@ -80,6 +80,27 @@ def flatten(cs: list[dict[int, float]]) -> list[tuple[float, float]]:
     return [(float(b), v) for c in cs for b, v in c.items()]
 
 
+def robust_fit(cs: list[dict[int, float]]) -> tuple[float, float]:
+    """Median of PER-UTTERANCE fits — the estimator this data needs.
+
+    Pooled least squares is not usable here: the per-utterance deltas are
+    heavy-tailed, and on the contended grid the pooled fit returned a NEGATIVE
+    slope (-0.667 ms/token) and a +70 ms fee while the per-budget medians rose
+    monotonically 22.8 -> 56.5 -> 90.2 ms. A few extreme utterances dominated
+    the squared error and inverted the sign of the effect.
+
+    Fitting each utterance's own three points and taking the median across
+    utterances keeps the within-run pairing, weights every utterance equally,
+    and cannot be steered by a handful of outliers. Pooled LS is still reported
+    alongside so the choice of estimator is visible rather than silent.
+    """
+    fits = [fit([(float(b), v) for b, v in c.items()]) for c in cs if len(c) >= 2]
+    fits = [(e, s) for e, s in fits if e == e and s == s]
+    if not fits:
+        return float("nan"), float("nan")
+    return median([e for e, _ in fits]), median([s for _, s in fits])
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("runs", type=Path, nargs="+")
@@ -103,12 +124,13 @@ def main() -> None:
         vals = [c[b] for c in cs if b in c]
         print(f"{b:>5} {median(vals):>16.1f} {len(vals):>4} {median(vals) / b:>20.3f}")
 
-    entry, slope = fit(flatten(cs))
+    entry, slope = robust_fit(cs)
+    pooled_entry, pooled_slope = fit(flatten(cs))
     rng = random.Random(0)
     es, ss = [], []
     for _ in range(BOOTSTRAP):
         sample = [cs[rng.randrange(len(cs))] for _ in range(len(cs))]
-        e, s = fit(flatten(sample))
+        e, s = robust_fit(sample)
         if e == e and s == s:
             es.append(e)
             ss.append(s)
@@ -118,6 +140,11 @@ def main() -> None:
     print(f"\nWITHIN-RUN FIT over B in {budgets} (B=0 excluded: delta is 0 there by construction)")
     print(f"  ENTRY_FEE : {entry:+8.1f} ms      95% CI [{es[lo]:+.1f}, {es[hi]:+.1f}]")
     print(f"  slope     : {slope:+8.4f} ms/token 95% CI [{ss[lo]:+.4f}, {ss[hi]:+.4f}]")
+    print(
+        f"  (median of per-utterance fits; pooled least squares would give "
+        f"fee {pooled_entry:+.1f} ms, slope {pooled_slope:+.4f} — reported for "
+        f"visibility, not used: see robust_fit)"
+    )
 
     # Which term dominates, stated as a fraction of the cost at each budget.
     print(f"\n{'B':>5} {'fee':>8} {'slope*B':>9} {'fee share':>10}")

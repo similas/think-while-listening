@@ -77,11 +77,30 @@ def test_first_sentence_is_what_predgen_pre_synthesizes() -> None:
     assert first_sentence("Hi. there") == ""  # too short to be a sentence
 
 
-def test_contention_cost_matches_the_phase2_fit() -> None:
-    """B=0 is free; contended tokens cost ~32x what uncontended ones do."""
+def test_contention_cost_matches_the_within_run_grid() -> None:
+    """The measured shape: no entry fee, cost proportional to the budget.
+
+    Pinned against the within-run interleaved grid of 2026-09-17, which
+    replaced the Phase 2 across-run fit. The old expectations encoded here
+    (cold 55-70 ms, hot 300-320 ms at B=96) came from a model with a 55 ms
+    entry fee that the within-run design could not reproduce.
+    """
     assert contention_cost_ms(0, True) == 0.0
     cold = contention_cost_ms(96, False)
     hot = contention_cost_ms(96, True)
-    assert 55 < cold < 70, cold
-    assert 300 < hot < 320, hot
+    assert 10 < cold < 20, cold  # measured delta at B=96 uncontended: ~20 ms
+    assert 130 < hot < 160, hot  # measured delta at B=96 contended: ~108 ms
     assert hot > 4 * cold
+
+
+def test_cost_is_proportional_to_the_budget_with_no_fee() -> None:
+    """Halving the budget must halve the cost: there is no fixed term left.
+
+    This is the controller-relevant consequence of losing the entry fee. Under
+    the old model a small speculation still paid 55 ms, so the decision was
+    mostly binary; now it is genuinely about how much.
+    """
+    for contended in (False, True):
+        assert contention_cost_ms(64, contended) == pytest.approx(
+            2 * contention_cost_ms(32, contended)
+        )

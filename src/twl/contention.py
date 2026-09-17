@@ -278,19 +278,43 @@ class ContentionDetector:
         return out
 
 
-# Phase 2's fitted cost, in the form the controller consumes. Entry fee is the
-# flat cost of speculating at all (cold: +57/+54/+64/+52 ms at B=32/64/96/256,
-# every CI excluding zero); the per-token term applies only when contended.
-ENTRY_FEE_MS = 55.0
-MS_PER_TOKEN_UNCONTENDED = 0.083
-MS_PER_TOKEN_CONTENDED = 2.683
+# The cost model BUDGET-R uses as its prior. BUDGET-L learns online and is not
+# bound by these; they are a starting point, not a claim about every board.
+#
+# Fitted 2026-09-17 on the within-run interleaved grid (B in {0,32,64,96}, three
+# runs per condition, 48 utterance-curves each, two-engine STT), by the median
+# of per-utterance fits. B=0 is the baseline, not a point on the line.
+#
+#     term                 old (Phase 2 grid)        new (within-run grid)
+#     ENTRY_FEE_MS                       55.0        -5.4 uncontended [-37.9, +29.5]
+#                                                    -5.4 contended   [-59.8, +34.4]
+#     per-token uncontended             0.083        0.135  [+0.010, +0.403]
+#     per-token contended               2.683        1.514  [+1.131, +1.866]
+#
+# THE ENTRY FEE IS GONE, and that is the substantive change. Phase 2 reported
+# +57/+54/+64/+52 ms at B=32/64/96/256 with every CI excluding zero. Within-run
+# it is not detectable in either condition, and the CIs are tight enough that
+# 55 ms would have been seen. The likely origin: a constant baseline offset
+# between the B=0 RUN and the B>0 RUNS adds the same amount to every budget
+# regardless of size — which is exactly the signature of an intercept. The fee
+# was the across-run design's error term wearing a physical name.
+#
+# It is set to 0.0 rather than to the fitted -5.4: a negative cost for starting
+# to speculate is not a thing, and both CIs contain zero.
+ENTRY_FEE_MS = 0.0
+MS_PER_TOKEN_UNCONTENDED = 0.135
+MS_PER_TOKEN_CONTENDED = 1.514
 
 
 def contention_cost_ms(budget_tokens: int, contended: bool) -> float:
-    """Contention(B, s) as Phase 2 measured it.
+    """Contention(B, s) as the within-run grid measured it.
 
-    Not a model fitted to a curve someone hoped for: a flat entry fee plus a
-    per-token term that is ~zero unless the memory system is contended.
+    The shape changed with the measurement. The old model was dominated by a
+    flat fee, which implied the controller's decision was mostly "speculate at
+    all, or not". With no detectable fee, the decision is HOW MUCH: the cost is
+    proportional to the budget, and a small budget is close to free even when
+    the memory system is contended (at B=32 contended the measured delta is
+    -2.3 ms, CI [-27.8, +41.1] — indistinguishable from zero).
     """
     if budget_tokens <= 0:
         return 0.0

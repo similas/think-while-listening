@@ -1460,3 +1460,67 @@ difference, and stated only so the raw values are on the record.
 
 CARRY-OVER: absent again (+45 ms [-160, +101]). Three independent checks now,
 two architectures, both conditions.
+
+## Budget grid, within-run: THE ENTRY FEE IS GONE. Cost scales with B
+
+Interleaved grid B in {0, 32, 64, 96}, Latin square (4 passes x 16 utterances,
+each pass balanced 4 per budget), 3 warm-up turns excluded by flag, 3 runs per
+condition, 48 utterance-curves each, two-engine STT. B=0 is the baseline every
+delta is measured against and is NOT a point on the fitted line: the entry fee
+is a discontinuity at B>0, not the value of a line at zero.
+
+    condition      ENTRY_FEE_MS            slope ms/token          delta/96
+    uncontended    -5.4 [-37.9, +29.5]     +0.135 [+0.010, +0.403]   +0.205
+    contended      -5.4 [-59.8, +34.4]     +1.514 [+1.131, +1.866]   +1.131
+
+    (delta/96 is the A3-comparable AMORTIZED per-token figure, not the slope.)
+
+1. NO DETECTABLE ENTRY FEE, in either condition. Phase 2 reported +57/+54/+64/
+   +52 ms at B=32/64/96/256 with every CI excluding zero. Within-run the fee is
+   -5.4 ms and the CI is tight enough (+-30 to +-50 ms) that 55 ms would have
+   been seen. Set to 0.0 in the model, not to -5.4: a negative cost for starting
+   to speculate is not a thing and both CIs contain zero.
+
+   LIKELY ORIGIN: a constant baseline offset between the B=0 RUN and the B>0
+   RUNS adds the same amount to every budget regardless of size — precisely the
+   signature of an intercept. The fee was the across-run design's error term
+   wearing a physical name. The same design produced a false NEGATIVE on the
+   uncontended slope, so it erred in both directions at once.
+
+2. THE COST IS IN THE PER-TOKEN TERM, and it is what separates the conditions:
+   +0.135 uncontended against +1.514 contended, CIs far apart. Per-budget
+   medians, pooled with CIs:
+
+       B     uncontended            contended
+       32     6.8 [-21.2, +36.0]     -2.3 [-27.8, +41.1]
+       64     8.0 [-11.0, +25.4]     76.9 [+48.2, +110.3]
+       96    19.7 [-24.5, +46.8]    108.5 [+38.4, +131.5]
+
+   AT B=32 CONTENDED THE COST IS INDISTINGUISHABLE FROM ZERO. The cost appears
+   between 32 and 64 tokens. A small speculation is close to free even under
+   memory pressure.
+
+3. SO THE CONTROLLER'S LESSON IS THE OPPOSITE OF THE OLD MODEL'S. A dominant
+   entry fee would have meant the decision is mostly "speculate at all or not",
+   with B a secondary detail. With no fee and a cost proportional to B, the
+   decision is genuinely HOW MUCH — which is the question this thesis is about,
+   and the old model would have argued it away.
+
+ESTIMATOR, changed during the analysis and reported rather than hidden: pooled
+least squares is unusable on these heavy-tailed per-utterance deltas. On the
+contended grid it returned a NEGATIVE slope (-0.667 ms/token) and a +70 ms fee
+while the per-budget medians rose 22.8 -> 56.5 -> 90.2 ms; a few extreme
+utterances dominated the squared error and inverted the sign. The fit is now the
+MEDIAN OF PER-UTTERANCE FITS, which keeps the within-run pairing, weights every
+utterance equally, and cannot be steered by outliers. Pooled LS is still printed
+beside every result so the choice is visible.
+
+BETWEEN-REP SPREAD, stated because three runs cannot hide it. Per-rep contended
+slopes: +0.623, +1.748, +1.534. Per-rep uncontended: +0.137, +0.046, +0.185.
+The contended/uncontended separation holds in every rep; the contended slope
+itself is not pinned to better than about a factor of two at n=3.
+
+PROVENANCE CAVEAT: these runs, and A3 and the discriminator, ran with the fan
+under nvfancontrol. Ali's decision to pin it at PWM 255 for measured runs was
+implemented in src/scripts/fan.sh but never wired into run_reactive, so it did
+not take effect. Recorded here so the affected results are identifiable.
