@@ -83,6 +83,7 @@ class TurnManager:
         pressure_pids: Callable[[], dict[str, int]] | None = None,
         detector: ContentionDetector | None = None,
         temps_fn: Callable[[int], dict[str, float]] | None = None,
+        warmup_turns: int = 0,
     ):
         self._run_id = run_id
         self.swap_threshold_mb, self.swap_threshold_source = load_swap_threshold(device_state)
@@ -98,6 +99,7 @@ class TurnManager:
         self._detector = detector
         # Median temps over the turn, from the telemetry stream (see records).
         self._temps_fn = temps_fn
+        self._warmup_turns = warmup_turns
         self._contention: dict[str, object] = {}
         # Log handle spans the whole run; closed by close(). The lifetime is
         # the manager's, not a with-block's.
@@ -368,6 +370,7 @@ class TurnManager:
             valid=not invalid_reason,
             invalid_reason=invalid_reason,
             close_reason=close_reason,
+            warmup=self._turn <= self._warmup_turns,
             tj_c=read_tj_c(self._tj_zone),
             temps_c=(self._temps_fn(self._turn_opened_ns) if self._temps_fn is not None else {}),
             fan=read_fan(),

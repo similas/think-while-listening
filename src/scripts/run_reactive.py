@@ -39,6 +39,7 @@ from twl.pipeline import build_pipeline
 from twl.planning import Plan, add_gate_args, gate
 from twl.provenance import build_run_meta, new_run_id
 from twl.records import read_jsonl
+from twl.schedule import build_schedule
 from twl.speculation import SpeculationDriver
 from twl.telemetry import TegrastatsSampler
 from twl.transport import FileFrameSource, MicFrameSource
@@ -222,6 +223,20 @@ async def run(args: argparse.Namespace) -> None:
     cfg = load_config(args.config)
     if args.llm_backend is not None:
         cfg = replace(cfg, llm=replace(cfg.llm, backend=args.llm_backend))
+    budgets = tuple(int(b) for b in args.interleave.split(",") if b.strip())
+    schedule: list[int] | None = None
+    if budgets:
+        n_utt = len(sorted(Path(args.wav_dir).glob("*.wav")))
+        if args.live or not n_utt:
+            raise SystemExit("--interleave needs a wav set: pairing is per utterance")
+        schedule = build_schedule(
+            n_utt, budgets, seed=args.interleave_seed, warmup=args.warmup_turns
+        )
+    interleave_note = (
+        f"interleave={args.interleave} seed={args.interleave_seed} warmup={args.warmup_turns}; "
+        if schedule
+        else ""
+    )
     os.sched_setaffinity(0, set(cfg.stt.cpu_affinity))
     os.environ["PULSE_SINK"] = cfg.audio.pulse_sink
 
@@ -251,6 +266,7 @@ async def run(args: argparse.Namespace) -> None:
                 f"agent affinity={sorted(cfg.stt.cpu_affinity)}; "
                 f"clocks={'set' if args.clocks else 'as-found'}; "
                 f"thermal={thermal}; state={state}; spec_tokens={args.spec_tokens}; "
+                f"{interleave_note}"
                 f"adversary={list(adv_cpus) or 'none'}"
                 f"{'/no-duty-loop' if args.adversary_no_duty_loop else ''}; "
                 f"{args.notes}"
@@ -281,9 +297,16 @@ async def run(args: argparse.Namespace) -> None:
             )
             expected_turns = 0
         else:
-            wavs = sorted(Path(args.wav_dir).glob("*.wav")) * args.repeat
-            if not wavs:
+            base_wavs = sorted(Path(args.wav_dir).glob("*.wav"))
+            if not base_wavs:
                 raise SystemExit(f"no wavs in {args.wav_dir}")
+            if schedule is not None:
+                # One pass per budget, so every utterance is measured at every
+                # budget INSIDE this run; the warm-up turns are extra wavs at
+                # the front and are excluded from analysis (twl.schedule).
+                wavs = base_wavs[: args.warmup_turns] + base_wavs * len(budgets)
+            else:
+                wavs = base_wavs * args.repeat
             source = FileFrameSource(wavs, gap_ms=args.gap_ms, turn_gate=turn_gate)
             expected_turns = len(wavs)
 
@@ -293,8 +316,8 @@ async def run(args: argparse.Namespace) -> None:
         sampler.start()
 
         speculation = (
-            SpeculationDriver(cfg.llm, budget_tokens=args.spec_tokens)
-            if args.spec_tokens > 0
+            SpeculationDriver(cfg.llm, budget_tokens=args.spec_tokens, schedule=schedule)
+            if (args.spec_tokens > 0 or schedule is not None)
             else None
         )
         built = build_pipeline(
@@ -310,6 +333,7 @@ async def run(args: argparse.Namespace) -> None:
             segment_dir=run_dir / "segments",
             detector=ContentionDetector(history_fn=sampler.recent_soc_mw),
             temps_fn=sampler.temps_since,
+            warmup_turns=args.warmup_turns if schedule is not None else 0,
             speculation=speculation,
         )
         built_box.append(built.turns)
@@ -572,6 +596,19 @@ def main() -> None:
         type=int,
         default=0,
         help="Phase 2: concurrent speculative decode of B tokens during speech",
+    )
+    p.add_argument(
+        "--interleave",
+        default="",
+        help="comma-separated budgets to interleave WITHIN this run (e.g. 0,96); "
+        "each utterance is measured at each budget, so pairing is within-run",
+    )
+    p.add_argument("--interleave-seed", type=int, default=20260916)
+    p.add_argument(
+        "--warmup-turns",
+        type=int,
+        default=3,
+        help="leading turns excluded from analysis and marked warmup=true",
     )
     p.add_argument(
         "--adversary-no-duty-loop",

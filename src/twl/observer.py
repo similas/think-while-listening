@@ -116,7 +116,7 @@ class StageObserver(BaseObserver):
                     # taken here instead — still ahead of our own load, but
                     # earlier than the definition. The anchor records which.
                     self._turns.sample_contention("pre_decode")
-                    self._speculation.start_turn()
+                    self._speculation.start_turn(turn=self._turns.turn)
             return
 
         if isinstance(frame, _STOPPED):

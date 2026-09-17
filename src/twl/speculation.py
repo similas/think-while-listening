@@ -72,6 +72,9 @@ class SpeculationDriver:
 
     cfg: LlmConfig
     budget_tokens: int
+    # Turn -> budget, for the interleaved design (twl.schedule). When set it
+    # overrides budget_tokens per turn; when None the budget is fixed.
+    schedule: list[int] | None = None
     partial_text: str = "I have a question about"
     _task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
     _client: LlamaClient | None = field(default=None, init=False, repr=False)
@@ -82,8 +85,16 @@ class SpeculationDriver:
             self._client = LlamaClient(self.cfg.host, self.cfg.port)
         return self._client
 
-    def start_turn(self, partial: str | None = None) -> None:
+    def budget_for(self, turn: int) -> int:
+        """This turn's budget: the schedule's if there is one, else the fixed."""
+        if self.schedule is None:
+            return self.budget_tokens
+        i = turn - 1
+        return self.schedule[i] if 0 <= i < len(self.schedule) else 0
+
+    def start_turn(self, partial: str | None = None, *, turn: int = 0) -> None:
         """Begin speculating for a turn that has just started."""
+        self.budget_tokens = self.budget_for(turn) if turn else self.budget_tokens
         self.stats = SpeculationStats(budget_tokens=self.budget_tokens)
         if self.budget_tokens <= 0:
             return

@@ -80,6 +80,9 @@ class TurnRecord:
     valid: bool
     invalid_reason: str = ""
     close_reason: str = "bot_stopped"
+    # Excluded from analysis: the opening turns of a run, kept so the exclusion
+    # is visible in the log rather than applied silently downstream.
+    warmup: bool = False
     tj_c: float = -1.0
     # Median temperature per zone over this turn, from the 10 Hz stream:
     # cpu, gpu, soc0, soc1, soc2, tj. A covariate, not a validity gate —
