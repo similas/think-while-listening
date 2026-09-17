@@ -40,6 +40,13 @@ wins; if a brief is wrong, say so and propose an edit rather than silently devia
   independent runs (different seeds and shuffled item order). State n everywhere.
 - Prefer a smaller honest claim over a larger unsupported one. If an experiment
   fails or a hypothesis is refuted, that is a result — record and report it.
+- Never report an agreement, accuracy, or firing statistic without its MARGINAL
+  RATES: fires/total per arm, positives/total, or the equivalent base rate. A
+  statistic computed over a constant is degenerate and must be flagged as such,
+  never reported as a result. (2026-09-16: the two-engine evaluation reported
+  100% T-SEM agreement between engines; neither engine had fired once, because
+  the trigger was dead on punctuated partials. The marginal rate would have
+  shown it immediately.)
 - Do not rename baselines or metrics to obscure comparison with prior work. Use
   the metric names and definitions in `RESEARCH_BRIEF_v2.md` §5.
 - When you are uncertain whether a package, model, or dependency exists or works

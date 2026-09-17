@@ -1110,3 +1110,28 @@ PREVIEW OF PAR. base fires on 20/35 prefixes including short ones: "What do you
 see?" reads complete at a 1.0 s offset when the utterance is "What do you see
 right now?". That is premature anticipation, and Phase 5 must report it as a
 number rather than as a hazard.
+
+## PAR instance #1: the first Pause-and-Repair-type firing, as a number
+
+Recorded 2026-09-16, from the two-engine prefix evaluation (n=35 prefixes).
+
+    utterance   "What do you see right now?"
+    prefix @1.0s decoded as "What do you see?"
+    T-SEM       p_done 0.928 at theta=0.50 -> FIRES
+    truth       the speaker continues for a further ~1.3 s
+
+This is the cost we said would appear as a number rather than as a hazard: a
+semantic-only trigger firing on text that is complete but whose speaker has not
+finished. It is the same failure mode as the canonical "...capital of France -
+and Germany" case, found here without being constructed.
+
+Two related firings in the same set, both at a 1.0-2.0 s offset on utterances
+that continue:
+    "What is the brand of the marker that I'm holding?"  (prefix read complete)
+    "The marker is not in the living room, right?"       (tiny engine, fires)
+
+Base fires on 20 of 35 prefixes overall. That marginal rate is what makes the
+91.4% engine agreement meaningful, and it is also the warning: a trigger that
+fires on 57% of PREFIXES will fire early unless the horizon term restrains it.
+Phase 5 reports PAR properly, with the Pause-and-Repair replication as the
+explicit stress test; this is the first instance and the method for counting it.
