@@ -1291,3 +1291,66 @@ CONSEQUENCES:
 
 Recorded as a refuted hypothesis rather than quietly edited away: the metric was
 added to test a claim, it tested it, and the claim lost.
+
+## A3: the Phase 2 headline, re-measured within-run on the decided architecture
+
+Six runs (3 per condition), interleaved B in {0, 96} per turn, --repeat 2, 3
+warm-up turns excluded by flag, alternating condition order, two-engine STT
+(tiny partials + base final, shared cores 3-5).
+
+    condition     within-run paired cost      95% CI        pairs   per-run
+    uncontended           +0.384 ms/token   [+0.204, +0.595]   48   .352 .494 .107
+    contended             +1.161 ms/token   [+0.752, +1.498]   48   1.197 1.315 .931
+
+The CIs do not overlap, so the central Phase 2 finding survives the redesign:
+speculation costs about 3x more per token when the memory system is contended.
+That is the claim the thesis rests on, and it is now measured with pairing that
+shares a run level rather than spanning two runs.
+
+CARRY-OVER: absent in both conditions. B=0 turns after a speculating turn vs
+after another B=0 turn: +70 ms [-55, +158] uncontended, +69 ms [-25, +183]
+contended. Per-turn interleaving stands; no washout blocks needed.
+
+DID THE REDESIGN ACTUALLY REDUCE BETWEEN-RUN VARIANCE? Partly.
+    across-run, contended (4 sessions): 2.683, 1.427, 1.325, 2.609  max/min 2.02x
+    within-run,  contended (3 runs)   : 1.197, 1.315, 0.931         max/min 1.41x
+Real improvement, not elimination. Three runs is too few to put a CI on a
+ratio of ranges, and that is stated rather than dressed up.
+
+TWO NUMBERS MOVED, AND NEITHER SHOULD BE READ AS A LIKE-FOR-LIKE REVISION.
+The STT architecture changed in the same step as the design, so +1.161 is the
+cost on the CURRENT pipeline and is not directly comparable to the old +2.683,
+which came from a design whose dominant error term was the between-run baseline
+shift (see the discrepancy check).
+
+More interesting: the UNCONTENDED cost now EXCLUDES ZERO (+0.384 [+0.204,
++0.595]) where it spanned zero in all three earlier measurements (+0.083, +0.227,
++0.175). Two readings are open and this measurement cannot separate them:
+  (a) the effect was always there and between-run noise hid it; or
+  (b) two-engine STT created it, by keeping the recognizer busy enough that
+      speculation's cost becomes detectable.
+The discriminating experiment is cheap: three interleaved SINGLE-engine runs,
+uncontended, ~15 min. Not run yet.
+
+TWO-ENGINE STT UNDER THE ADVERSARY (96 measured turns per condition):
+    metric                  uncontended    contended
+    lock wait (median/max)   0.0 / 0.0     0.0 / 0.1 ms
+    decision-window coverage   96/96        81/96  (100% -> 84%)
+    partial decode median      828 ms       966 ms
+    run queue (median/max)     1.0 / 3      2.0 / 4
+    involuntary ctxt/turn        67           95   (+42%)
+    tj median                 78.0 C       80.4 C
+
+The decoupling holds under contention: lock wait stays at zero when the memory
+system is under pressure, which is the condition most likely to break it.
+Oversubscription DOES bite — 6 recognizer threads on 3 cores, involuntary
+preemptions up 42% and the run queue doubling — but it costs coverage (100% ->
+84%) rather than commit latency, because the partial decode slows by 138 ms and
+some partials no longer beat the endpoint.
+
+FOLLOW-THROUGH REQUIRED, not applied unilaterally: twl/contention.py still
+encodes the OLD cost model that the controller consumes —
+MS_PER_TOKEN_UNCONTENDED 0.083, MS_PER_TOKEN_CONTENDED 2.683, ENTRY_FEE_MS 55.
+A3 measures 0.384 and 1.161 on the current architecture. Changing those
+constants changes a research claim the controller acts on, so it waits for
+Ali's decision (CLAUDE.md §1).
