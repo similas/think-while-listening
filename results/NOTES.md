@@ -1034,3 +1034,79 @@ every manifest alongside nvpmodel and jetson_clocks, and per turn as well.
 Median temperature per zone over each turn — cpu, gpu, soc0, soc1, soc2, tj —
 taken from the 10 Hz stream that already runs, plus fan PWM at the boundary.
 Randomizing cell order does not isolate warming; this puts it in the model.
+
+## T-SEM was silently dead on live partials (found 2026-09-16, fixed)
+
+The trigger scores the probability that the NEXT token closes the utterance. If
+the recognizer has already emitted the closing token there is nothing left to
+predict, and the mass collapses to zero. faster-whisper punctuates its partials,
+so in the live pipeline T-SEM would have returned a valid-looking probability on
+every turn and never once exceeded any threshold.
+
+    "What is the capital of France"    raw 0.997
+    "What is the capital of France?"   raw 0.000
+    "Can you hear me"                  raw 0.925
+    "Can you hear me?"                 raw 0.000
+    "What is the"        (incomplete)  raw 0.000
+    "Can you tell me what"(incomplete) raw 0.000
+
+The signal itself is sharp: it separates complete from incomplete cleanly. Only
+the punctuation killed it. SemanticTrigger.score now strips trailing terminal
+punctuation before scoring (twl.trigger.strip_terminal, pinned by tests).
+
+Whisper's own punctuation is deliberately NOT taken as evidence of completeness:
+it punctuates mid-utterance partials aggressively, and trusting it would
+manufacture exactly the premature firings PAR is meant to measure.
+
+HOW IT WAS CAUGHT, worth recording as method: the two-engine evaluation reported
+100% T-SEM agreement between engines, which looked like a clean result. It was
+degenerate — p_done maxed at 0.006 across all 35 prefixes and neither engine ever
+fired, so they agreed vacuously. Checking whether an agreement statistic is
+non-degenerate before reporting it is the only reason this was found.
+
+## Two-engine STT: tiny for partials, base for the final (B2)
+
+Offline over 35 saved VAD segment prefixes, so both engines decode byte-identical
+audio and the comparison is immune to run-level variance.
+
+DECODE COST IS PER CALL, NOT PER SECOND OF AUDIO. Fitted ms = fixed + per-second:
+
+    engine   fixed ms   ms per s of audio    R^2   median ms
+    base         1384                  74   0.41        1496
+    tiny          847                 -21   0.01         759
+
+Whisper's encoder runs on a 30 s PADDED window, so a 3 s prefix costs base only
+~10% more than a 1 s prefix. This is the mechanism behind the 37.5% coverage
+ceiling, and it predicts the observed threshold exactly: a partial is usable only
+if the utterance outlives offset + decode, i.e. 1.0 + 1.46 = 2.4 s for base --
+and 2.4 s is precisely where the measured coverage cut fell.
+
+The same arithmetic for tiny gives 1.0 + 0.76 = 1.8 s. On this 16-utterance set
+(1.62-3.84 s) that would lift coverage from 6/16 toward most of the set.
+
+AGREEMENT. Text identical on 29/35 prefixes (mean WER 0.049, max 0.667).
+T-SEM DECISION agreement, after the punctuation fix: 32/35 = 91.4% at theta=0.5,
+stable at 0.3 and 0.7, 31/35 at 0.9. base fires on 20/35 prefixes, so the
+statistic is non-degenerate. All three disagreements are genuine transcription
+differences on ambiguous prefixes:
+    "What do you see?"            vs "What do you see right?"
+    "...marker that I'm holding?" vs "...marker that I'm hoping?"
+    "...living room right..."     vs "...living room, right?"
+
+MEMORY. Process RSS 39 -> 288 MB loading base, -> 422 MB with tiny also
+resident: the SECOND MODEL COSTS +134 MB. That is the same resident-memory
+budget the paper uses to rule out T-EPA (1.4 GB CPU-only / 4.3 GB CUDA), and the
+two must be judged by one standard.
+
+THE LARGER ARGUMENT FOR TWO ENGINES, not yet measured live: a separate model
+instance needs no shared decode lock, so a partial no longer BLOCKS the final.
+The +550-760 ms commit cost measured in the cadence sweep is lock-wait, and a
+decoupled partial engine should remove most of it rather than merely halve it.
+The two decodes would still compete for the same 3 CPU threads, so the final
+slows somewhat — but it no longer serializes behind a full partial decode. This
+is the claim a live two-engine run has to test.
+
+PREVIEW OF PAR. base fires on 20/35 prefixes including short ones: "What do you
+see?" reads complete at a 1.0 s offset when the utterance is "What do you see
+right now?". That is premature anticipation, and Phase 5 must report it as a
+number rather than as a hazard.

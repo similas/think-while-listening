@@ -56,3 +56,27 @@ def test_horizon_probability_stays_a_probability() -> None:
     for p in (0.01, 0.5, 0.99):
         for h in (0.1, 1.0, 10.0):
             assert 0.0 <= horizon_probability(p, h) <= 1.0
+
+
+def test_strip_terminal_removes_what_the_recognizer_already_closed() -> None:
+    """The score asks what comes NEXT; an emitted terminal leaves nothing."""
+    from twl.trigger import strip_terminal
+
+    assert strip_terminal("What is the capital of France?") == "What is the capital of France"
+    assert strip_terminal("Stop.") == "Stop"
+    assert strip_terminal("Really!") == "Really"
+    assert strip_terminal("Wait... ") == "Wait"
+
+
+def test_strip_terminal_leaves_incomplete_text_alone() -> None:
+    from twl.trigger import strip_terminal
+
+    for s in ("What is the", "Can you tell me what", "I have a question about"):
+        assert strip_terminal(s) == s
+
+
+def test_strip_terminal_does_not_eat_the_whole_string() -> None:
+    from twl.trigger import strip_terminal
+
+    assert strip_terminal("?") == ""
+    assert strip_terminal("") == ""

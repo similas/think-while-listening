@@ -53,6 +53,33 @@ TURN_END = "<end_of_turn>"
 TERMINAL = ("?", ".", "!", TURN_END)
 
 
+def strip_terminal(partial: str) -> str:
+    """Remove trailing terminal punctuation before scoring. NOT cosmetic.
+
+    The score is the probability the NEXT token closes the utterance. If the
+    recognizer has already emitted the closing token, there is nothing left for
+    the model to predict and the mass collapses to zero — measured on this
+    model, 2026-09-16:
+
+        "What is the capital of France"   raw 0.997
+        "What is the capital of France?"  raw 0.000
+        "Can you hear me"                 raw 0.925
+        "Can you hear me?"                raw 0.000
+
+    faster-whisper punctuates its partials, so without this the trigger is
+    silently dead on every live turn while looking perfectly healthy: it
+    returns a valid probability, it just never exceeds any threshold. The
+    two-engine evaluation reported 100% agreement between engines for exactly
+    this reason — neither ever fired.
+
+    Whisper's own punctuation is deliberately NOT taken as evidence of
+    completeness. It punctuates mid-utterance partials aggressively, so trusting
+    it would manufacture precisely the premature firings that T-SEM's PAR is
+    meant to measure. The model is asked for its own opinion instead.
+    """
+    return partial.rstrip().rstrip("?.!").rstrip()
+
+
 def completeness_mass(probs: dict[str, float]) -> float:
     """Probability that the next token closes the utterance.
 
@@ -142,7 +169,7 @@ class SemanticTrigger:
         """Score one partial transcript. Never raises."""
         from twl.clock import now_ns
 
-        prompt = f"{prompt_head(self.system_prompt)}{partial}"
+        prompt = f"{prompt_head(self.system_prompt)}{strip_terminal(partial)}"
         t0 = now_ns()
         try:
             probs, prompt_n, cache_n = await self.client.next_token_probs(
