@@ -1524,3 +1524,65 @@ PROVENANCE CAVEAT: these runs, and A3 and the discriminator, ran with the fan
 under nvfancontrol. Ali's decision to pin it at PWM 255 for measured runs was
 implemented in src/scripts/fan.sh but never wired into run_reactive, so it did
 not take effect. Recorded here so the affected results are identifiable.
+
+## Decisions recorded 2026-09-17 (Ali), and the fan pin does not work
+
+COST MODEL ACCEPTED: ENTRY_FEE_MS 0.0, per-token 0.135 uncontended / 1.514
+contended. The contended slope is a PRIOR FOR BUDGET-L TO REFINE, not a constant
+to trust: per-rep values were +0.623, +1.748, +1.534, so it is pinned to about a
+factor of two at n=3. BUDGET-R uses it as its starting point; BUDGET-L learns
+online and is expected to move it.
+
+THE COST-MODEL GRID PREDATES THE FAN PIN, and the methods section says so. Two
+prior results carry the argument that temperature does not drive the effect:
+  - the discrepancy check, where mean tj explained NONE of the between-condition
+    difference (slope +0.006 ms/token per C, R^2 0.000, across 76-89 C);
+  - Phase 2's original state comparison, where tj did not separate the adversary
+    from the warm state at all (76 C vs 75 C) while the cost differed sharply.
+Temperature is not the axis; memory bandwidth is.
+
+PHASE 4, the arm set: cost is NOT linear across the arms in practice. B=32 is
+indistinguishable from free in BOTH conditions (uncontended 6.8 ms [-21.2,
++36.0]; contended -2.3 ms [-27.8, +41.1]), and the price appears between 32 and
+64. Consider adding B=48 to locate the knee once the controller runs.
+
+THE MOTIVATING RESULT, for the paper. The old two-term model (a 55 ms entry fee
+plus a per-token term) would have implied that the decision is essentially
+binary — pay the fee or do not — and made "how much" a detail of tuning. The
+within-run measurement removes the fee entirely and puts the whole cost in the
+per-token term. That is what makes a BUDGET controller the right object of
+study rather than a trigger with a switch: there is no fixed price of admission,
+so the question is only ever how much to spend.
+
+## The fan CANNOT be pinned by writing pwm1. Recorded as a blocker
+
+fan.sh pin stops nvfancontrol and writes PWM 255. The write lands and verifies
+immediately — and then decays: measured 2026-09-17, 255 verified as 255, and the
+node read 88 three seconds later.
+
+CAUSE: nvfancontrol is not the only thing driving the fan. The kernel thermal
+framework owns a cooling device of its own —
+
+    /sys/class/thermal/cooling_device2  type=pwm-fan  cur_state=1  max_state=3
+
+bound to thermal zones running the step_wise governor (cpu-thermal, gpu-thermal,
+soc*-thermal, all policy=step_wise mode=enabled). Stopping the userspace daemon
+leaves the kernel governor in charge, and it re-applies its own state on its next
+poll.
+
+fan.sh now RE-READS the node after 3 s and refuses the pin if it did not hold,
+restoring nvfancontrol and exiting non-zero. A pin that silently decays is worse
+than no pin, because the run would record itself as pinned.
+
+TO ACTUALLY PIN IT, a decision for Ali because it changes thermal management and
+needs privileges the current sudoers does not grant:
+    set policy=user_space on every zone bound to cooling_device2, then write
+    cooling_device2/cur_state=3
+That stops the kernel from ramping the fan automatically. The hardware trip
+points (95 C throttle, 104.5 C shutdown) still protect the SoC, and the
+independent thermal watchdog still guards the run, but automatic fan response
+is gone for the duration. It also needs a sudoers line for
+/sys/class/thermal/thermal_zone*/policy and /sys/class/thermal/cooling_device*/cur_state.
+
+Until then the fan remains a logged per-turn covariate (PWM, and RPM where the
+node exists), which is what it has been for every result so far.

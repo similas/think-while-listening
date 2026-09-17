@@ -54,7 +54,23 @@ pin() {
     restore
     return 1
   fi
-  echo "fan pinned: pwm=$got on $h (nvfancontrol stopped)"
+  # VERIFY IT HOLDS, not merely that the write landed. Stopping nvfancontrol is
+  # not enough: the kernel thermal framework has its own pwm-fan cooling device
+  # (/sys/class/thermal/cooling_device* type=pwm-fan) bound to zones running the
+  # step_wise governor, and it re-applies its own state within a couple of
+  # seconds. Measured 2026-09-17: a write of 255 verified as 255 immediately and
+  # read 88 two seconds later. A pin that decays is worse than no pin, because
+  # the run records it as pinned.
+  sleep 3
+  got=$(cat "$h/pwm1")
+  if [ "$got" != "$PINNED_PWM" ]; then
+    echo "fan: pin DID NOT HOLD — wrote $PINNED_PWM, reads $got after 3 s." >&2
+    echo "     The kernel thermal governor is still driving this node; pinning" >&2
+    echo "     needs the bound zones set to policy=user_space. Restoring." >&2
+    restore
+    return 1
+  fi
+  echo "fan pinned and holding: pwm=$got on $h (nvfancontrol stopped)"
 }
 
 restore() {
