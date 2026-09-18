@@ -52,6 +52,11 @@ class SpeculationStats:
     # behind it. This is the abort cost that Phase 2 pays on every turn and
     # that Phase 3 avoids whenever a speculation is accepted.
     cancel_to_slot_free_ms: float = -1.0
+    # Prefix reuse on the SPECULATIVE request itself: how much of this prompt
+    # the server found already in the slot. Without it, continue-the-slot
+    # cannot be shown to do anything.
+    spec_prompt_n: int = -1
+    spec_cache_n: int = -1
 
     def as_dict(self) -> dict[str, float]:
         return {
@@ -63,6 +68,8 @@ class SpeculationStats:
             "cancelled": self.cancelled,
             "errors": self.errors,
             "cancel_to_slot_free_ms": round(self.cancel_to_slot_free_ms, 1),
+            "spec_prompt_n": self.spec_prompt_n,
+            "spec_cache_n": self.spec_cache_n,
         }
 
 
@@ -144,6 +151,21 @@ class SpeculationDriver:
         self._task = asyncio.get_running_loop().create_task(self._speculate(partial))
         return "issued"
 
+    def prompt_for(self, partial: str) -> str:
+        """The speculative prompt: BARE, with no chat-template tail.
+
+        The Phase 1 rule, applied where it is actually sent rather than only in
+        twl.prompting: grow the prompt bare (head + transcript) and append the
+        template tail only at COMMIT. A tail on every speculative step diverges
+        mid-cache and forces a full re-evaluation — 9 tokens re-evaluated per
+        step against 59 with the tail, measured 2026-09-15.
+
+        Keeping it bare is what makes each step a strict prefix of the next and
+        of the commit prompt's head, so the slot's KV cache extends rather than
+        being rebuilt.
+        """
+        return incremental_prompt(self.system_prompt, partial, final=False)
+
     async def _speculate(self, partial: str) -> None:
         client = await self.client()
         t0 = now_ns()
@@ -156,8 +178,9 @@ class SpeculationDriver:
 
         try:
             self.stats.requests += 1
+            timings: dict[str, int] = {}
             await client.stream_completion(
-                incremental_prompt(self.system_prompt, partial, final=True),
+                self.prompt_for(partial),
                 n_predict=self.budget_tokens,
                 cache_prompt=True,
                 temperature=0.5,
@@ -166,7 +189,10 @@ class SpeculationDriver:
                 # whatever load the prompt happened to elicit.
                 ignore_eos=True,
                 on_token=count,
+                timings_out=timings,
             )
+            self.stats.spec_prompt_n = timings.get("prompt_n", -1)
+            self.stats.spec_cache_n = timings.get("cache_n", -1)
             self.stats.decode_ms += (now_ns() - t0) / 1e6
         except asyncio.CancelledError:
             # The turn ended first: every token this decode produced is waste,

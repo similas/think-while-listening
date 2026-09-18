@@ -195,6 +195,7 @@ class LlamaClient:
         temperature: float = 0.5,
         ignore_eos: bool = True,
         on_token: Callable[[str], None] | None = None,
+        timings_out: dict[str, int] | None = None,
     ) -> int:
         """Stream a raw completion, returning how many tokens actually arrived.
 
@@ -226,6 +227,13 @@ class LlamaClient:
                     if on_token is not None:
                         on_token(text)
                 if chunk.get("stop"):
+                    # The final chunk carries prompt_n/cache_n. Without them the
+                    # speculative path cannot report its own prefix reuse, which
+                    # is the whole question continue-the-slot is meant to answer.
+                    if timings_out is not None:
+                        timings = chunk.get("timings") or {}
+                        timings_out["prompt_n"] = int(timings.get("prompt_n", -1))
+                        timings_out["cache_n"] = int(timings.get("cache_n", -1))
                     break
         return produced
 
