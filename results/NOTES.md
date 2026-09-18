@@ -1736,3 +1736,32 @@ and it is the one that moved.
    must be measured as such — as a difference between our controller and the
    baseline, never retrofitted into SPEC-ALWAYS. Retrofitting it would improve
    the baseline's numbers and erase the very advantage being claimed.
+
+## Commit audit: two commits landed on a red check (2026-09-18)
+
+Cause: the pattern `make check 2>&1 | tail -2 && git commit` was used for most
+of this session. A pipeline's exit status is the LAST command's, so `tail`
+succeeding masked `make` failing and the `&&` guarded nothing. Now `set -o
+pipefail` / an explicit status check.
+
+Audited by re-running `make check` at every session commit that touches src/,
+in a detached worktree (src/scripts is not involved; the audit re-derives the
+result from the code rather than from what was noticed at the time):
+
+    35 PASS, 2 FAIL, 10 skipped (no src/ changes)
+
+    RED                                                  FIXED BY
+    ebd54b8 prefill bare, generate tailed                 99fa34c teach the
+      pytest: "a non-firing decision is still a decision"   speculation double
+      (the test double had no prefill method)              about prefill
+                                                           (next commit)
+
+    f541e08 verify speculative candidates and log them    4d1f650 test the
+      ruff RUF059: unpacked variable `keep` never used     greedy verifier's
+                                                          accounting
+                                                          (next commit)
+
+Both were fixed by the immediately following commit, so no red state survived
+longer than one commit, and HEAD is green. Neither red commit was used to
+produce a measurement: ebd54b8's failure was in a test double, f541e08's was a
+lint error, and the runs reported in this file were made from green trees.
