@@ -2124,3 +2124,68 @@ same-arm washout, >= 3 reps per state, paired on utterance within run. Reported
 as ms of TTFA per speculative token with CIs per state, and the entry-fee
 question re-asked on this metric — the A3 grid found no fee on STT inflation,
 and whether one exists on TTFA is a separate question with a separate answer.
+
+## TTFA cost model: contention does NOT scale the per-token cost (2026-09-18)
+
+Blocked grid, B in {0,32,64,96} x {uncontended, contended}, same-arm washout,
+3 reps per state, 48 utterance-curves each, paired on utterance within run.
+
+    state          ENTRY_FEE (ms)              slope (ms/token)        delta/96
+    uncontended    -76.9 [-122.7, -33.4]       +1.382 [+0.761, +1.794]   +0.364
+    contended      +20.2 [ -94.9,  +99.9]      +1.350 [+0.486, +2.380]   +1.340
+
+    per-budget median delta TTFA (ms)
+      B        32       64       96
+      uncont -18.9     -3.9    +34.9
+      cont   +29.5    +68.6   +128.7
+
+1. THE PER-TOKEN COST IS INVARIANT TO CONTENTION. 1.382 against 1.350, CIs
+   overlapping almost entirely. Contrast the SAME budgets measured on STT
+   inflation (A3): 0.135 uncontended against 1.514 contended, an 11x ratio.
+
+   The two metrics have different mechanisms and therefore different
+   sensitivities. Memory contention slows the RECOGNIZER, so STT inflation
+   scales with it. TTFA is delayed by the decode OCCUPYING THE SLOT, and a slot
+   is occupied for the same duration whether or not memory is contended.
+
+   This matters for the controller more than any other line in this section: the
+   quiescent VDD_SOC detector — the whole apparatus of Phase 3's state signal —
+   does NOT modulate the per-token TTFA cost. It modulates the ENTRY FEE.
+
+2. A NEGATIVE ENTRY FEE, UNCONTENDED: -76.9 ms [-122.7, -33.4], CI excluding
+   zero. A small speculation makes TTFA FASTER: at B=32 the median delta is
+   -18.9 ms. The fee question, re-asked on this metric as planned, answers
+   differently from A3 — which found no fee on STT inflation — and in a
+   direction nobody predicted. Mechanism not established; the speculative decode
+   plausibly leaves the server in a state the answer benefits from, but this
+   file has already asserted one unmeasured mechanism and will not assert
+   another.
+
+3. THEREFORE AN INTERIOR OPTIMUM EXISTS, UNCONTENDED. cost(B) = -76.9 + 1.382 B
+   crosses zero at B = 56. Below ~56 tokens speculation is net BENEFICIAL on
+   TTFA; above it, harmful. That is precisely the shape a budget controller is
+   for, and neither fixed arm (B=0 or B=96) finds it.
+
+4. CONTENDED, SPECULATION ALWAYS COSTS. The fee spans zero and the slope is
+   positive, so every budget has positive cost: +63 ms at B=32 rising to +150 ms
+   at B=96. The controller's contended answer is B=0.
+
+5. THE PRE-REGISTERED PREDICTION (5ab29ec) IS FALSIFIED ON POINTS 1 AND 2.
+   "BUDGET-R will not beat REACTIVE on TTFA" and "B=0 on more than 80% of turns"
+   are both wrong: uncontended, a small budget beats B=0 by a margin whose CI
+   excludes zero. The prediction reasoned from p_usable — a draft usable 2% of
+   the time cannot pay — and that reasoning was sound for the mechanism it
+   considered. It missed that speculation has an effect on TTFA that does not
+   run through the draft being usable at all.
+
+RECONCILING THIS WITH THE ARM COMPARISON, which measured +100 to +114 ms for the
+speculative arms. The model predicts +30 ms at B=77 uncontended. The gap is the
+PREFILL: the policy arms issue one bare prefill per turn (median 104 ms), the
+budget grid issues none (0 prefills, no PolicyRunner). Measured, not inferred.
+
+That has a consequence. The prefill was adopted as a scheduling win — 72% fewer
+tokens re-read by the speculative decode — and it is unconditional, issued on
+every partial whether or not the policy speculates. At 104 ms per turn, buying
+cheaper decoding for a draft that is usable 2% of the time, it is close to pure
+cost in the current configuration. It should be gated on the decision to
+speculate, not issued regardless.
