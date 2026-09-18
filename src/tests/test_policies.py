@@ -123,7 +123,7 @@ def test_greedy_verifier_accepts_everything_when_the_guess_holds() -> None:
 
     v = GreedyVerifier()
     v.verify("It is four.")
-    accepted, keep, dropped = v.verify("It is four.")
+    accepted, _keep, dropped = v.verify("It is four.")
     assert accepted == "It is four."
     assert dropped == 0
 
