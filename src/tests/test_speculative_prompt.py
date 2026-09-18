@@ -78,3 +78,24 @@ def test_a_rewritten_partial_breaks_the_prefix_and_that_is_expected() -> None:
             break
         common += 1
     assert common > len(d.prompt_for(""))  # the head plus the shared words
+
+
+def test_the_prefill_is_bare_and_the_generation_closes_the_template() -> None:
+    """Both halves of the rule, in the right places.
+
+    grow bare      -> prefill sends head + transcript, no tail
+    tail at commit -> the generation closes the template, so it answers rather
+                      than continuing the user's sentence
+
+    Measured 2026-09-17: a bare prompt completed "...showing with my" as
+    " phone?" (a continuation), while the tailed prompt produced an answer.
+    Prefilling bare first cut the answer's re-evaluated tokens from 75 to 22.
+    """
+    d = driver()
+    partial = "what is the capital of"
+    assert GEMMA_TURN_TAIL not in d.prompt_for(partial)
+    generated = incremental_prompt(d.system_prompt, partial, final=True)
+    assert generated.startswith(d.prompt_for(partial)), (
+        "the generation must EXTEND what the prefill cached, or the prefill is wasted"
+    )
+    assert generated.endswith(GEMMA_TURN_TAIL)

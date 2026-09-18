@@ -57,6 +57,10 @@ class SpeculationStats:
     # cannot be shown to do anything.
     spec_prompt_n: int = -1
     spec_cache_n: int = -1
+    # The bare prefills that warm the slot ahead of the tailed generation.
+    prefills: int = 0
+    prefill_ms: float = 0.0
+    prefill_skipped_busy: int = 0
 
     def as_dict(self) -> dict[str, float]:
         return {
@@ -68,6 +72,9 @@ class SpeculationStats:
             "cancelled": self.cancelled,
             "errors": self.errors,
             "cancel_to_slot_free_ms": round(self.cancel_to_slot_free_ms, 1),
+            "prefills": self.prefills,
+            "prefill_ms": round(self.prefill_ms, 1),
+            "prefill_skipped_busy": self.prefill_skipped_busy,
             "spec_prompt_n": self.spec_prompt_n,
             "spec_cache_n": self.spec_cache_n,
         }
@@ -151,6 +158,43 @@ class SpeculationDriver:
         self._task = asyncio.get_running_loop().create_task(self._speculate(partial))
         return "issued"
 
+    async def prefill(self, partial: str) -> None:
+        """Warm the slot with the BARE prompt, so the answer need not re-read it.
+
+        The two halves of the Phase 1 rule, applied in order:
+
+            grow bare      -> this, on every partial: head + transcript, no tail
+            tail at commit -> _speculate, when the policy fires: + the template
+
+        head+partial is a clean prefix of head+partial+tail, so the tailed
+        generation reuses everything this prefill cached. Measured 2026-09-17 on
+        a 58-token transcript: the answer re-evaluated 75 tokens without a
+        prefill and 22 with one, while still producing an answer rather than a
+        continuation of the user's sentence.
+
+        Skipped while a decode is in flight: the prefill would queue behind it
+        on the shared slot and arrive too late to help.
+        """
+        if self._task is not None and not self._task.done():
+            self.stats.prefill_skipped_busy += 1
+            return
+        client = await self.client()
+        t0 = now_ns()
+        try:
+            await client.stream_completion(
+                self.prompt_for(partial),
+                n_predict=1,
+                cache_prompt=True,
+                temperature=0.0,
+                ignore_eos=False,
+            )
+            self.stats.prefills += 1
+        except Exception:
+            self.stats.errors += 1
+            log.debug("prefill failed", exc_info=True)
+        finally:
+            self.stats.prefill_ms += (now_ns() - t0) / 1e6
+
     def prompt_for(self, partial: str) -> str:
         """The speculative prompt: BARE, with no chat-template tail.
 
@@ -180,7 +224,7 @@ class SpeculationDriver:
             self.stats.requests += 1
             timings: dict[str, int] = {}
             await client.stream_completion(
-                self.prompt_for(partial),
+                incremental_prompt(self.system_prompt, partial, final=True),
                 n_predict=self.budget_tokens,
                 cache_prompt=True,
                 temperature=0.5,

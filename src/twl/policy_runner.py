@@ -63,6 +63,12 @@ class PolicyRunner:
         contended = self.detector.current().contended if self.detector is not None else False
         decision = self.policy.decide(text, reading.p_done, contended)
 
+        # Warm the slot on EVERY partial, whether or not the policy fires: the
+        # prefill is what makes a later generation cheap, and a policy that
+        # fires on a late partial still benefits from the earlier ones.
+        if self.speculation is not None:
+            await self.speculation.prefill(text)
+
         outcome = "not issued"
         if decision.speculate and self.speculation is not None:
             outcome = self.speculation.speculate_on(text, decision.budget_tokens)
