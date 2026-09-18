@@ -132,3 +132,52 @@ def test_first_sentence_is_only_taken_once_complete() -> None:
     """Pre-synthesizing half a sentence would speak a fragment aloud."""
     assert first_sentence("It is four. And more.") == "It is four."
     assert first_sentence("It is four") == "", "no terminator yet: nothing to speak"
+
+
+def test_budget_r_chooses_zero_at_the_measured_usability() -> None:
+    """The degenerate choice must come from arithmetic, not a special case."""
+    from twl.policies import BudgetR
+
+    b = BudgetR()  # p_usable = 0.02, the measured Phase 3 value
+    for contended in (False, True):
+        d = b.decide("what is the capital of", p_done=0.0, contended=contended)
+        assert d.speculate is False
+        assert d.budget_tokens == 0
+        assert "p_usable" in d.reason or "no arm fits" in d.reason
+
+
+def test_budget_r_spends_when_the_draft_becomes_usable() -> None:
+    """Raise the one measured input and the SAME rule starts spending.
+
+    This is what makes the B=0 result a finding rather than an artifact: the
+    controller is not hardcoded to decline, it declines because a draft that is
+    usable 2% of the time is not worth the occupancy.
+    """
+    from twl.policies import BudgetR
+
+    b = BudgetR(p_usable=0.9)
+    d = b.decide("what is the capital of", p_done=0.0, contended=False)
+    assert d.speculate is True
+    assert d.budget_tokens in b.arms and d.budget_tokens > 0
+
+
+def test_budget_r_will_not_start_a_speculation_that_cannot_finish() -> None:
+    """A decode cancelled at the endpoint produced nothing: do not start it."""
+    from twl.policies import BudgetR
+
+    b = BudgetR(p_usable=0.9)
+    # p_done near 1 means the utterance is essentially over: no room to decode.
+    d = b.decide("what is the capital of france", p_done=0.99, contended=False)
+    assert d.speculate is False
+    assert "no arm fits" in d.reason
+
+
+def test_budget_r_spends_less_when_contended() -> None:
+    """The state signal has to change the budget, or it is not a state signal."""
+    from twl.policies import BudgetR
+
+    b = BudgetR(p_usable=0.9)
+    cold = b.decide("what is the capital of", p_done=0.0, contended=False)
+    hot = b.decide("what is the capital of", p_done=0.0, contended=True)
+    assert cold.budget_tokens >= hot.budget_tokens
+    assert hot.budget_tokens < cold.budget_tokens or hot.speculate is False

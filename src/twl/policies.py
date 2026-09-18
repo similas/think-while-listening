@@ -32,6 +32,8 @@ import logging
 from dataclasses import dataclass, field
 from enum import Enum
 
+from twl.contention import contention_cost_ms
+
 log = logging.getLogger(__name__)
 
 # PredGen Table 3's device: the model is told the instruction may be truncated,
@@ -235,6 +237,120 @@ def build_policy(
         return SpecAlwaysPG(budget_tokens=budget_tokens)
     if kind == PolicyKind.SPEC_CONTINUE:
         return SpecContinue(budget_tokens=budget_tokens)
+    if kind == PolicyKind.BUDGET_R:
+        return BudgetR()
     if kind == PolicyKind.SPEC_TRIGGER:
         return SpecTrigger(budget_tokens=budget_tokens, theta=theta, horizon_s=horizon_s)
     raise ValueError(f"unknown policy {kind!r}; known: {[k.value for k in PolicyKind]}")
+
+
+# Wall-clock rate at which the speculative decode produces tokens on this
+# device, measured 2026-09-18 over 144 turns: ~2.6 s of slot occupancy for 77
+# tokens. This is the DECODE rate — how fast the budget is spent — and is a
+# different quantity from contention_cost_ms, which is the cost that decode
+# imposes on the recognizer.
+SPEC_DECODE_MS_PER_TOKEN = 34.0
+
+# What a speculation is worth WHEN IT IS USED. The window pre-synthesis could
+# fill is stt_final -> tts_first_audio, measured 610 ms [567, 645].
+SPEC_SAVING_MS = 610.0
+
+# Probability that a speculative draft is actually usable, from Phase 3's
+# faithful PredGen loop: the first sentence matched the eventual answer 0 times
+# in 15, and successive candidates shared 2.4% of their tokens. Stated as a
+# configurable PRIOR rather than a constant, because it is the one input that a
+# different speculative consumer would change (results/SECOND_CONSUMER_DESIGN.md)
+# and the one BUDGET-L is meant to learn.
+P_DRAFT_USABLE_PRIOR = 0.02
+
+
+@dataclass
+class BudgetR(Policy):
+    """Rule-based budget controller: spend the least slot time that can pay off.
+
+    THE OBJECTIVE, as Phase 3 identified it empirically rather than by
+    assumption: minimize slot occupancy subject to producing a usable answer.
+    Occupancy is what speculation costs on this device (43.8 s of decode against
+    393 ms of cancellation over a 16-turn run), and B sets it directly.
+
+    THE RULE, in the order the constraints bind:
+
+    1. FIT. A speculation cancelled at the endpoint produced nothing usable, so
+       a budget is only worth issuing if it can FINISH before the user stops
+       speaking. The remaining speech is estimated from the trigger's p_done,
+       and B_fit = remaining_ms / SPEC_DECODE_MS_PER_TOKEN.
+    2. VALUE. Speculating is worth it only if the expected saving exceeds the
+       cost it imposes on the recognizer:
+           p_usable * SPEC_SAVING_MS  >  contention_cost_ms(B, contended)
+       Both sides are measured quantities, and the cost side is the Phase 2/A3
+       contention model the controller consumes.
+    3. ARM. The largest configured arm satisfying both, else 0.
+
+    WHY THIS DEGENERATES TO B=0 HERE, AND WHY THAT IS NOT HARDCODED. With
+    p_usable at the measured 0.02, the expected saving is 12 ms, which no budget
+    can justify once contended (B=32 costs 48 ms). The controller therefore
+    chooses 0 — by arithmetic on measured inputs, not by a special case. Raise
+    p_usable (a consumer that uses the draft instead of matching it token-wise)
+    and the same rule starts spending. That is the property that makes the
+    negative result a result rather than an artifact of the policy.
+    """
+
+    kind: PolicyKind = PolicyKind.BUDGET_R
+    system_prompt: str = PREDGEN_SYSTEM
+    arms: tuple[int, ...] = (0, 32, 64, 96)
+    p_usable: float = P_DRAFT_USABLE_PRIOR
+    saving_ms: float = SPEC_SAVING_MS
+    decode_ms_per_token: float = SPEC_DECODE_MS_PER_TOKEN
+    # Typical utterance length, for turning p_done into remaining speech.
+    utterance_ms: float = 2400.0
+    min_chars: int = 8
+
+    def remaining_speech_ms(self, p_done: float) -> float:
+        """Speech left, estimated from the trigger's completeness score.
+
+        p_done is the probability the utterance is ALREADY complete, so
+        (1 - p_done) scales the expected remainder. Crude, and deliberately so:
+        a better predictor is a research question of its own, and the rule must
+        degrade gracefully when the trigger is uncalibrated (p_done = 0 then
+        yields the full utterance, i.e. the most optimistic budget, which the
+        value test still has to justify).
+        """
+        return max(0.0, (1.0 - max(0.0, min(1.0, p_done))) * self.utterance_ms)
+
+    def decide(self, partial: str, p_done: float, contended: bool) -> Decision:
+        if len(partial.strip()) < self.min_chars:
+            return Decision(False, 0, "too little text to guess from", p_done, contended)
+
+        remaining = self.remaining_speech_ms(p_done)
+        b_fit = int(remaining / self.decode_ms_per_token)
+        expected_saving = self.p_usable * self.saving_ms
+
+        affordable = [
+            b
+            for b in self.arms
+            if b > 0 and b <= b_fit and contention_cost_ms(b, contended) < expected_saving
+        ]
+        if not affordable:
+            # Say WHY in the record: whether nothing fit, or nothing was worth it.
+            biggest = max((b for b in self.arms if b > 0), default=0)
+            smallest = min((b for b in self.arms if b > 0), default=0)
+            if smallest and smallest > b_fit:
+                why = f"no arm fits {remaining:.0f} ms of speech (B_fit={b_fit})"
+            else:
+                why = (
+                    f"expected saving {expected_saving:.0f} ms < cost "
+                    f"{contention_cost_ms(smallest, contended):.0f} ms at B={smallest}"
+                    f" (p_usable={self.p_usable:.3f})"
+                )
+            return Decision(False, 0, f"budget-r: {why}; biggest arm {biggest}", p_done, contended)
+
+        b = max(affordable)
+        return Decision(
+            True,
+            b,
+            f"budget-r: B={b} fits {remaining:.0f} ms (B_fit={b_fit}), "
+            f"cost {contention_cost_ms(b, contended):.0f} ms < saving {expected_saving:.0f} ms",
+            p_done,
+            contended,
+            resend=False,
+        )

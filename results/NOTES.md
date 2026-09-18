@@ -2083,3 +2083,44 @@ time in this project that judging a point estimate without its interval has
 produced a wrong conclusion — the 55 ms entry fee, the "flat in B" false
 negative, the 100% agreement at 0% firing, and now the checker built to prevent
 exactly that. The recurrence is the argument for the discipline, not against it.
+
+## Re-deriving the cost model on TTFA (recorded 2026-09-18, BEFORE the grid runs)
+
+WHY, and whose decision it was. The A3 grid measured STT COMMIT INFLATION per
+speculative token — how much speculation slows the recognizer. That was the
+right quantity for Phase 2, whose question was the contention paradox. Phase 3
+then identified the controller's objective empirically as TTFA / SLOT OCCUPANCY:
+speculation's dominant cost is the decode holding the single llama-server slot
+the answer needs, not the recognizer slowdown.
+
+Those are different quantities and the difference is about tenfold:
+
+    cost of ~77 speculative tokens, uncontended
+      A3 grid (STT inflation) predicts                    10 ms
+      blocked arm comparison measured (TTFA)      +100 to +114 ms
+
+A controller optimizing STT inflation while its objective is TTFA will
+systematically overspend, which is exactly what BUDGET-R did on first build:
+it chose B=64 uncontended, because A3 prices 64 tokens at 8.6 ms while even a 2%
+usable draft is worth 12 ms.
+
+THE ORIGINAL SPECIFICATION WAS ALI'S, AND THE RE-DERIVATION IS NOT A RESPONSE TO
+THE CONTROLLER'S OUTPUT. The A3 model was specified for BUDGET-R before the
+controller existed; the mismatch surfaced when the controller's arithmetic was
+first inspected. The model is being re-derived because the OBJECTIVE changed
+between phases, not because the controller produced an unwelcome answer.
+
+THE PRE-REGISTRATION AT 5ab29ec STANDS UNAMENDED. If prediction 2 ("B=0 on more
+than 80% of turns") falsifies on the corrected model, it is reported falsified.
+
+A COINCIDENCE, FLAGGED SO IT IS NEVER REUSED AS A RESULT. The measured
+uncontended TTFA cost per token (1.30-1.48) is close to A3's CONTENDED STT slope
+(1.514). These are different quantities measured on different metrics under
+different conditions; their proximity is a numerical accident. Neither may be
+substituted for the other.
+
+THE GRID: B in {0, 32, 64, 96} x {uncontended, contended}, blocked design with
+same-arm washout, >= 3 reps per state, paired on utterance within run. Reported
+as ms of TTFA per speculative token with CIs per state, and the entry-fee
+question re-asked on this metric — the A3 grid found no fee on STT inflation,
+and whether one exists on TTFA is a separate question with a separate answer.
