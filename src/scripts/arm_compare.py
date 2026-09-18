@@ -160,12 +160,27 @@ def main() -> None:
         delta = median(firsts) - median(rest)
         d = [x - median(rest) for x in firsts]
         lo, hi = bootstrap_ci(d, median)
-        ok = abs(delta) <= 50.0
+        # A three-way verdict, because judging a point estimate without its
+        # interval is the error this project keeps catching. PASS means the
+        # interval RULES OUT an effect above the threshold; FAIL means it rules
+        # one IN; an interval wider than the threshold is unresolved, and
+        # calling that a failure is as wrong as calling it a pass.
+        if lo > 50.0:
+            verdict = "FAIL -> carry-over survives one washout; use two"
+        elif hi < -50.0:
+            verdict = "FAIL (first turn FASTER by >50 ms; investigate)"
+        elif lo >= -50.0 and hi <= 50.0:
+            verdict = "PASS (>50 ms effect ruled out)"
+        else:
+            verdict = (
+                f"INCONCLUSIVE (CI +-{max(abs(lo), abs(hi)):.0f} ms is wider "
+                f"than the 50 ms threshold: underpowered, not failed)"
+            )
         print(
             f"  {a:>16}: first {median(firsts):>7.0f} ms vs rest {median(rest):>7.0f} ms  "
-            f"delta {delta:+6.0f} [{lo:+.0f}, {hi:+.0f}]  n={len(firsts)}/{len(rest)}  "
-            f"{'PASS' if ok else 'FAIL -> use two washout turns'}"
+            f"delta {delta:+6.0f} [{lo:+.0f}, {hi:+.0f}]  n={len(firsts)}/{len(rest)}"
         )
+        print(f"  {'':>16}  {verdict}")
     print("  Threshold 50 ms, pre-specified. A wide CI is not a pass: it means")
     print("  the check is underpowered and needs more blocks, not that it passed.")
 

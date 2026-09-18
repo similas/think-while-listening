@@ -2036,3 +2036,50 @@ produce a BETTER answer, not only a faster one. A task where speculative output
 is usable (a reasoning model, or a design that consumes the draft rather than
 verifying it token-by-token) could invert the result. That is a different
 experiment, and the negative result is scoped to this one.
+
+## Blocked design: arms re-measured, washout inconclusive (2026-09-18)
+
+144 turns over 3 runs, 48 measured per arm, warm-up and washout turns excluded
+by their recorded role.
+
+    arm               n   TTFA      vs REACTIVE            occupancy/turn  tokens
+    reactive         48   4459 ms   --                              0 ms       0
+    spec_always_pg   48   4591 ms   +114 [+61, +161] WORSE       2596 ms      77
+    spec_continue    48   4617 ms   +100 [+52, +149] WORSE       2606 ms      77
+
+Both speculative arms are worse than REACTIVE with CIs excluding zero, under a
+design that neutralizes the carry-over. Each buys ~2.6 s of slot occupancy per
+turn and pays ~110 ms of TTFA for it. That is the baseline BUDGET-R must beat,
+and occupancy is the quantity it optimizes.
+
+WASHOUT VALIDATION: INCONCLUSIVE, and recorded as a limitation rather than
+certified. First measured turn of a block against the rest of its blocks:
+
+    reactive        -135 ms [-1095, +1160]  n=8/40
+    spec_always_pg  -165 ms [ -980,  +996]  n=9/39
+    spec_continue    +36 ms [  -38, +1294]  n=10/38
+
+At n=8-10 the intervals are ~±1000 ms against a 50 ms threshold: the check can
+neither rule a >50 ms residual in nor out. Further blocks were not run (Ali's
+call) because the arm comparison is already well powered and the washout check
+would need many more runs to certify.
+
+THE DIRECTIONAL ARGUMENT, which does not depend on power: residual carry-over
+would make the first measured turn of a block SLOWER than the rest. Two of three
+arms show it FASTER (-135, -165 ms) and the third is +36 ms. The sign is wrong
+for contamination. Weak evidence, but evidence against the failure mode rather
+than for it.
+
+The carry-over test itself is now uninformative BY CONSTRUCTION: blocking
+removes nearly all reactive-after-speculative transitions (n=3 and n=5). That is
+the design working, not a result.
+
+METHODS NOTE, worth one line in the report. The washout check was written to
+enforce interval-based judgment and was itself comparing a POINT ESTIMATE to the
+50 ms threshold, printing "FAIL" for deltas whose intervals spanned ±1000 ms. It
+now returns a three-way verdict: PASS only when the interval rules OUT a >50 ms
+effect, FAIL when it rules one IN, INCONCLUSIVE otherwise. This is the fourth
+time in this project that judging a point estimate without its interval has
+produced a wrong conclusion — the 55 ms entry fee, the "flat in B" false
+negative, the 100% agreement at 0% firing, and now the checker built to prevent
+exactly that. The recurrence is the argument for the discipline, not against it.
