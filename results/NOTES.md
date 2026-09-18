@@ -1609,3 +1609,52 @@ Pinning was attempted and abandoned. For the methods section:
 src/scripts/fan.sh is kept as the refusing check: it verifies that a pin HOLDS
 and restores automatic control if it does not, so no run can record itself as
 pinned when it is not. No thermal-zone policy changes; no new sudoers lines.
+
+## Phase 3 arms are wired. Two acceptance criteria MET, one NOT
+
+Three 16-turn smoke runs, one per arm, two-engine STT, offsets [1.0,2.0,3.0].
+
+    arm            decisions  firing rate  issued  continue-slot  decide_ms  tok/turn  TTFA
+    reactive               0          --        0             0         --         0  4472
+    spec_always           21   21/21 100%      15             6        0.1        76  4517
+    spec_trigger          10    3/10  30%       3             0      104.3         0  4640
+
+MET: every partial yields a decision record whether or not it fires, so a firing
+rate exists; budgets are respected (no turn exceeds budget x requests in any
+arm); speculation runs on the LIVE transcript ("What do you see right?", "Hold
+out now.") rather than the placeholder; REACTIVE records no decisions at all,
+which is the control behaving.
+
+TRIGGER LATENCY IS A FUNCTION OF WHAT SPECULATION IS DOING. decide_ms fell from
+a median of 1931 ms to 89-104 ms once the slot was no longer occupied from VAD
+onset, with a max of 2229 ms when a decode is in flight. T-SEM and the
+speculative decode share ONE llama-server slot, so the trigger queues behind the
+thing it is supposed to be gating. Usable at ~100 ms median; not independent.
+
+NOT MET: cache_n does NOT rise with speculation.
+
+    arm           real_prompt_n  real_cache_n
+    reactive                  5            30
+    spec_always               5            33
+    spec_trigger              5            31
+
+REACTIVE — which never speculates — shows the same reuse. The ~30 cached tokens
+are the system-prompt head, present in every arm. Speculation leaves nothing
+reusable for the real request, and the reason is structural: the speculative
+prompt is head + PARTIAL + tail (+ generated tokens) while the real request is
+head + FINAL + tail. They diverge wherever the partial and the final differ, and
+this build reuses a slot's cache only on a clean prefix (twl.prompting). So
+continue-the-slot keeps the slot, but not a useful prefix. The criterion as
+written is not satisfied and should not be reported as satisfied.
+
+CANCELLATION IS EXPENSIVE. cancel_to_slot_free_ms: 725 ms median (max 894) for
+spec_always, 908 ms median for spec_trigger. That is the time between cancelling
+the speculative decode and the server reporting its slot idle — time the REAL
+request spends waiting. It is the mechanism behind TTFA being no better with
+speculation than without (4472 / 4517 / 4640 ms).
+
+52-60% OF SPECULATIVE TOKENS ARE DISCARDED (617 of 1193; 144 of 240). Nothing
+consumes the speculation yet: GreedyVerifier exists in twl/policies.py but is
+not wired, so SPEC-ALWAYS is currently PredGen's LOAD without PredGen's BENEFIT.
+Until it is wired, no TTFA comparison between arms means anything, and none is
+claimed here.
