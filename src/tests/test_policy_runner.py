@@ -23,7 +23,11 @@ class FakeTurns:
 @dataclass
 class FakeSpec:
     calls: list[tuple[str, int]] = field(default_factory=list)
+    prefills: list[str] = field(default_factory=list)
     reply: str = "issued"
+
+    async def prefill(self, partial: str) -> None:
+        self.prefills.append(partial)
 
     def speculate_on(self, partial: str, budget_tokens: int) -> str:
         self.calls.append((partial, budget_tokens))
@@ -154,3 +158,17 @@ def test_speculation_stats_reset_every_turn_even_without_an_onset_decode() -> No
     d.reset_turn(turn=2)
     assert d.stats.tokens_produced == 0
     assert d.stats.budget_tokens == 96
+
+
+def test_every_partial_warms_the_slot_even_when_the_policy_declines() -> None:
+    """The prefill is unconditional: a later firing reuses the earlier ones."""
+    turns, spec = FakeTurns(), FakeSpec()
+    r = PolicyRunner(
+        policy=SpecTrigger(theta=0.9),
+        turns=turns,  # type: ignore[arg-type]
+        speculation=spec,  # type: ignore[arg-type]
+        trigger=FakeTrigger(p=0.1),  # type: ignore[arg-type]
+    )
+    run(r, "what is", "what is the")
+    assert spec.calls == [], "the policy declined, so nothing should be generated"
+    assert spec.prefills == ["what is", "what is the"], "but the slot is still warmed"
