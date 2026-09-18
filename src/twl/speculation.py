@@ -95,10 +95,22 @@ class SpeculationDriver:
         i = turn - 1
         return self.schedule[i] if 0 <= i < len(self.schedule) else 0
 
-    def start_turn(self, partial: str | None = None, *, turn: int = 0) -> None:
-        """Begin speculating for a turn that has just started."""
+    def reset_turn(self, *, turn: int = 0) -> None:
+        """Clear the per-turn stats. Called for EVERY arm, at turn start.
+
+        Separated from start_turn because a Phase 3 policy does not start a
+        decode at turn onset — but its stats must still be per-turn. When the
+        two were one method, disabling the onset decode for policy arms also
+        disabled the reset, and SpeculationStats accumulated across the whole
+        run (measured 2026-09-17: 550 tokens reported for a turn whose budget
+        was 96).
+        """
         self.budget_tokens = self.budget_for(turn) if turn else self.budget_tokens
         self.stats = SpeculationStats(budget_tokens=self.budget_tokens)
+
+    def start_turn(self, partial: str | None = None, *, turn: int = 0) -> None:
+        """Begin speculating for a turn that has just started."""
+        self.reset_turn(turn=turn)
         if self.budget_tokens <= 0:
             return
         if self._task is not None and not self._task.done():

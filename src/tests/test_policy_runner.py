@@ -137,3 +137,20 @@ def test_a_policy_arm_must_not_be_pre_empted_at_vad_onset() -> None:
         "the VAD-onset speculation start must be disabled when a policy runner "
         "is attached, or the policy's decisions are no-ops"
     )
+
+
+def test_speculation_stats_reset_every_turn_even_without_an_onset_decode() -> None:
+    """Regression: per-turn stats must not depend on the onset decode.
+
+    2026-09-17: disabling the VAD-onset start for policy arms also disabled the
+    stats reset that lived inside it, so a turn with a 96-token budget reported
+    550 tokens produced — the run's running total.
+    """
+    from twl.config import LlmConfig
+    from twl.speculation import SpeculationDriver
+
+    d = SpeculationDriver(LlmConfig(), budget_tokens=96)
+    d.stats.tokens_produced = 431
+    d.reset_turn(turn=2)
+    assert d.stats.tokens_produced == 0
+    assert d.stats.budget_tokens == 96

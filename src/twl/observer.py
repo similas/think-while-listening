@@ -122,6 +122,10 @@ class StageObserver(BaseObserver):
             if self._first_time(frame):
                 self._turns.turn_started(at)
                 self._turns.mark("vad_user_started", at_ns=at)
+                if self._speculation is not None:
+                    # Per-turn stats belong to every arm, including the ones
+                    # that do not decode at onset.
+                    self._speculation.reset_turn(turn=self._turns.turn)
                 if self._speculation is not None and self._runner is None:
                     # PHASE 2 ARMS ONLY. Speculate WHILE the user speaks: that
                     # co-activation is the independent variable of Phase 2, and
