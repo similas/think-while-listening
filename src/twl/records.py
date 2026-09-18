@@ -98,6 +98,13 @@ class TurnRecord:
     # Excluded from analysis: the opening turns of a run, kept so the exclusion
     # is visible in the log rather than applied silently downstream.
     warmup: bool = False
+    # Excluded for a different reason than warm-up: a washout turn absorbs the
+    # previous block's carry-over so the measured turns need not. Kept distinct
+    # in the log because conflating two exclusions hides which one applied.
+    washout: bool = False
+    # Which utterance this turn played, recorded rather than recomputed so the
+    # analysis cannot drift from the schedule that produced it.
+    utterance: int = -1
     tj_c: float = -1.0
     # Median temperature per zone over this turn, from the 10 Hz stream:
     # cpu, gpu, soc0, soc1, soc2, tj. A covariate, not a validity gate —

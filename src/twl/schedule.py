@@ -32,6 +32,7 @@ INVARIANTS the tests pin:
 from __future__ import annotations
 
 import random
+from dataclasses import dataclass
 
 
 def build_schedule(
@@ -72,3 +73,60 @@ def utterance_of(turn: int, n_utterances: int, warmup: int) -> int:
     """Which utterance a 1-based turn played; -1 for a warm-up turn."""
     i = turn - 1 - warmup
     return -1 if i < 0 else i % n_utterances
+
+
+@dataclass(frozen=True)
+class PlannedTurn:
+    """One turn's place in a blocked run."""
+
+    level: int
+    utterance: int
+    role: str  # "warmup" | "washout" | "measured"
+
+
+def build_block_schedule(
+    n_utterances: int,
+    n_levels: int,
+    *,
+    block_size: int = 4,
+    seed: int,
+    warmup: int = 3,
+) -> list[PlannedTurn]:
+    """Randomized blocks with a SAME-ARM washout turn before each block.
+
+    Per-turn randomization was measured invalid on 2026-09-18: a REACTIVE turn
+    following a speculative one was +169 ms [+65, +1204] slower, so the arm that
+    ran previously changes the turn being measured. Blocking does not remove the
+    carry-over — it makes it fall on turns that are not measured.
+
+    Each block is preceded by one turn of THAT BLOCK'S OWN arm, excluded from
+    analysis. So every measured turn is preceded by a turn of the same arm, and
+    whatever the previous block left behind is absorbed by the washout instead
+    of by the first measurement. A washout of the NEXT arm would simply move the
+    contamination onto the first measured turn, which is what it exists to
+    prevent.
+
+    Every level still sees every utterance exactly once, so the comparison stays
+    paired on utterance within the run.
+    """
+    if n_levels < 1 or n_utterances < 1:
+        raise ValueError("a blocked schedule needs at least one level and one utterance")
+    if block_size < 1:
+        raise ValueError("block_size must be at least 1")
+    rng = random.Random(seed)
+
+    plan = [PlannedTurn(i % n_levels, i % n_utterances, "warmup") for i in range(warmup)]
+
+    blocks: list[tuple[int, list[int]]] = []
+    for level in range(n_levels):
+        utts = list(range(n_utterances))
+        rng.shuffle(utts)
+        for start in range(0, n_utterances, block_size):
+            blocks.append((level, utts[start : start + block_size]))
+    rng.shuffle(blocks)
+
+    for level, utts in blocks:
+        # Same-arm washout: absorbs the previous block's carry-over.
+        plan.append(PlannedTurn(level, utts[0], "washout"))
+        plan.extend(PlannedTurn(level, u, "measured") for u in utts)
+    return plan

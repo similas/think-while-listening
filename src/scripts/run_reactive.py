@@ -42,7 +42,7 @@ from twl.policies import PolicyKind, build_policy
 from twl.policy_runner import PolicyRunner
 from twl.provenance import build_run_meta, new_run_id
 from twl.records import read_jsonl
-from twl.schedule import build_schedule
+from twl.schedule import PlannedTurn, build_block_schedule, build_schedule
 from twl.speculation import SpeculationDriver
 from twl.telemetry import TegrastatsSampler
 from twl.transport import FileFrameSource, MicFrameSource
@@ -231,16 +231,22 @@ async def run(args: argparse.Namespace) -> None:
     budgets = tuple(int(b) for b in args.interleave.split(",") if b.strip())
     schedule: list[int] | None = None
     policy_schedule: list[int] | None = None
+    turn_plan: list[PlannedTurn] | None = None
     if arms:
         n_utt = len(sorted(Path(args.wav_dir).glob("*.wav")))
         if args.live or not n_utt:
             raise SystemExit("--interleave-policies needs a wav set: pairing is per utterance")
-        # The same Latin square used for budgets, over arm indices: every
-        # utterance is measured under every arm, and no arm is systematically
-        # early or late in the run.
-        policy_schedule = build_schedule(
-            n_utt, tuple(range(len(arms))), seed=args.interleave_seed, warmup=args.warmup_turns
+        # Randomized BLOCKS with a same-arm washout. Per-turn randomization was
+        # measured invalid: the preceding arm changes the turn being measured
+        # (results/NOTES.md, 2026-09-18).
+        turn_plan = build_block_schedule(
+            n_utt,
+            len(arms),
+            block_size=args.block_size,
+            seed=args.interleave_seed,
+            warmup=args.warmup_turns,
         )
+        policy_schedule = [pt.level for pt in turn_plan]
     if budgets:
         n_utt = len(sorted(Path(args.wav_dir).glob("*.wav")))
         if args.live or not n_utt:
@@ -321,8 +327,12 @@ async def run(args: argparse.Namespace) -> None:
                 # every utterance is measured under every level INSIDE this run.
                 # The warm-up turns are extra wavs at the front and are excluded
                 # from analysis by their recorded flag (twl.schedule).
-                passes = len(budgets) if schedule is not None else len(arms)
-                wavs = base_wavs[: args.warmup_turns] + base_wavs * passes
+                if turn_plan is not None:
+                    # The plan names the utterance for every turn, washouts
+                    # included, so the audio follows the schedule exactly.
+                    wavs = [base_wavs[pt.utterance % len(base_wavs)] for pt in turn_plan]
+                else:
+                    wavs = base_wavs[: args.warmup_turns] + base_wavs * len(budgets)
             else:
                 wavs = base_wavs * args.repeat
             source = FileFrameSource(wavs, gap_ms=args.gap_ms, turn_gate=turn_gate)
@@ -393,6 +403,7 @@ async def run(args: argparse.Namespace) -> None:
             warmup_turns=(
                 args.warmup_turns if (schedule is not None or policy_schedule is not None) else 0
             ),
+            plan=turn_plan,
             speculation=speculation,
         )
         # The runner needs the TurnManager build_pipeline just created, so it
@@ -699,6 +710,13 @@ def main() -> None:
     )
     p.add_argument("--interleave-seed", type=int, default=20260916)
     p.add_argument(
+        "--block-size",
+        type=int,
+        default=4,
+        help="turns per arm block when interleaving policies; each block is "
+        "preceded by one same-arm washout turn, excluded from analysis",
+    )
+    p.add_argument(
         "--warmup-turns",
         type=int,
         default=3,
@@ -729,8 +747,15 @@ def main() -> None:
     # must count those turns or the gate understates what it is approving.
     n_budgets = len([b for b in a.interleave.split(",") if b.strip()])
     n_arms = len([x for x in a.interleave_policies.split(",") if x.strip()])
-    passes = n_budgets or n_arms
-    turns = (n_wavs * passes + a.warmup_turns) if passes else n_wavs * a.repeat
+    if n_arms:
+        # Blocked design: warm-up, plus one same-arm washout per block, plus
+        # every utterance measured once per arm.
+        blocks = n_arms * max(1, -(-n_wavs // a.block_size))
+        turns = a.warmup_turns + blocks + n_wavs * n_arms
+    elif n_budgets:
+        turns = n_wavs * n_budgets + a.warmup_turns
+    else:
+        turns = n_wavs * a.repeat
     steps = [
         f"{'live mic for ' + str(a.live_seconds) + 's' if a.live else str(turns) + ' turns'}"
         f", clocks={'pinned' if a.clocks else 'as-found'}, llm={a.llm_backend or 'config'}"

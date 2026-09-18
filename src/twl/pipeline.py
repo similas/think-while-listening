@@ -22,6 +22,7 @@ from twl.contention import ContentionDetector
 from twl.observer import StageObserver
 from twl.policy_runner import PolicyRunner
 from twl.records import RunMeta
+from twl.schedule import PlannedTurn
 from twl.services import LlamaChatProcessor, PiperTTSService, StubLlmProcessor
 from twl.speculation import SpeculationDriver
 from twl.stt import StreamingWhisperSTT
@@ -60,6 +61,7 @@ def build_pipeline(
     detector: ContentionDetector | None = None,
     temps_fn: Callable[[int], dict[str, float]] | None = None,
     warmup_turns: int = 0,
+    plan: list[PlannedTurn] | None = None,
     policy_runner: PolicyRunner | None = None,
 ) -> BuiltPipeline:
     """Assemble the REACTIVE pipeline around the given audio source."""
@@ -73,6 +75,7 @@ def build_pipeline(
         detector=detector,
         temps_fn=temps_fn,
         warmup_turns=warmup_turns,
+        plan=plan,
     )
     if f"state={device_state}" not in meta.notes and "state=" in meta.notes:
         raise ValueError(

@@ -34,6 +34,7 @@ from twl.records import (
     TurnRecord,
     write_jsonl,
 )
+from twl.schedule import PlannedTurn
 from twl.telemetry import (
     find_thermal_zone,
     read_ctxt_switches,
@@ -113,6 +114,7 @@ class TurnManager:
         detector: ContentionDetector | None = None,
         temps_fn: Callable[[int], dict[str, float]] | None = None,
         warmup_turns: int = 0,
+        plan: list[PlannedTurn] | None = None,
     ):
         self._run_id = run_id
         self.swap_threshold_mb, self.swap_threshold_source = load_swap_threshold(device_state)
@@ -129,6 +131,7 @@ class TurnManager:
         # Median temps over the turn, from the telemetry stream (see records).
         self._temps_fn = temps_fn
         self._warmup_turns = warmup_turns
+        self._plan = plan
         # Partials buffered until the endpoint (their label) is known.
         self._partials: list[_PendingPartial] = []
         self._lock_wait_ms = -1.0
@@ -307,6 +310,19 @@ class TurnManager:
                 ),
             )
         self._partials = []
+
+    def _planned(self, role: str) -> bool:
+        """Was this turn planned as ``role``? Falls back to the warm-up count."""
+        if self._plan is None:
+            return role == "warmup" and self._turn <= self._warmup_turns
+        i = self._turn - 1
+        return 0 <= i < len(self._plan) and self._plan[i].role == role
+
+    def _planned_utterance(self) -> int:
+        if self._plan is None:
+            return -1
+        i = self._turn - 1
+        return self._plan[i].utterance if 0 <= i < len(self._plan) else -1
 
     def _ctxt_delta(self) -> dict[str, int]:
         """Context switches over this turn. Involuntary ones mean preemption."""
@@ -516,7 +532,9 @@ class TurnManager:
             valid=not invalid_reason,
             invalid_reason=invalid_reason,
             close_reason=close_reason,
-            warmup=self._turn <= self._warmup_turns,
+            warmup=self._planned("warmup"),
+            washout=self._planned("washout"),
+            utterance=self._planned_utterance(),
             tj_c=read_tj_c(self._tj_zone),
             temps_c=(self._temps_fn(self._turn_opened_ns) if self._temps_fn is not None else {}),
             fan=read_fan(),

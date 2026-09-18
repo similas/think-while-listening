@@ -39,7 +39,13 @@ def turns_with_arms(run_dirs: list[Path], warmup: int) -> list[dict[str, Any]]:
             if r.get("kind") == "decision_record" and r.get("arm"):
                 arm_of.setdefault(r["turn"], r["arm"])
         for t in rows:
-            if t.get("kind") != "turn_record" or not t["valid"] or t.get("warmup"):
+            # Warm-up and washout turns are excluded by their RECORDED role,
+            # never by position: a washout exists precisely to absorb the
+            # previous block's carry-over, and counting it would put the
+            # contamination back into the measurement.
+            if t.get("kind") != "turn_record" or not t["valid"]:
+                continue
+            if t.get("warmup") or t.get("washout"):
                 continue
             st = t["stages_ms"]
             if "tts_first_audio" not in st or "stt_final" not in st:
@@ -52,7 +58,12 @@ def turns_with_arms(run_dirs: list[Path], warmup: int) -> list[dict[str, Any]]:
                     # A REACTIVE turn emits no decision record, so an untagged
                     # turn is reactive by construction, not by assumption.
                     "arm": arm_of.get(t["turn"], "reactive"),
-                    "utt": (t["turn"] - 1 - warmup) % N_UTT,
+                    # Recorded by the scheduler; the positional fallback is
+                    # only for runs that predate it.
+                    "utt": t.get("utterance", -1)
+                    if t.get("utterance", -1) >= 0
+                    else (t["turn"] - 1 - warmup) % N_UTT,
+                    "washout_next": False,
                     "ttfa": st["tts_first_audio"],
                     "stt_ms": st["stt_final"] - st.get("vad_user_stopped", 0.0),
                     "occupancy_ms": float(spec.get("decode_ms", 0.0) or 0.0),
@@ -129,6 +140,34 @@ def main() -> None:
     print("\n  A delta whose CI excludes zero means the preceding arm changed this")
     print("  turn: per-turn interleaving is then invalid and the design must use")
     print("  randomized blocks with a washout turn.")
+
+    # WASHOUT VALIDATION (Ali, threshold pre-specified at 50 ms): if the first
+    # measured turn of a block still differs from the rest of its block, one
+    # washout turn did not absorb the carry-over and a second is needed.
+    print("\nWASHOUT VALIDATION (first measured turn of a block vs the rest):")
+    for a in arms:
+        firsts, rest = [], []
+        for seq in by_run.values():
+            block_first = True
+            for r in seq:
+                if r["arm"] != a:
+                    block_first = True
+                    continue
+                (firsts if block_first else rest).append(r["ttfa"])
+                block_first = False
+        if not firsts or not rest:
+            continue
+        delta = median(firsts) - median(rest)
+        d = [x - median(rest) for x in firsts]
+        lo, hi = bootstrap_ci(d, median)
+        ok = abs(delta) <= 50.0
+        print(
+            f"  {a:>16}: first {median(firsts):>7.0f} ms vs rest {median(rest):>7.0f} ms  "
+            f"delta {delta:+6.0f} [{lo:+.0f}, {hi:+.0f}]  n={len(firsts)}/{len(rest)}  "
+            f"{'PASS' if ok else 'FAIL -> use two washout turns'}"
+        )
+    print("  Threshold 50 ms, pre-specified. A wide CI is not a pass: it means")
+    print("  the check is underpowered and needs more blocks, not that it passed.")
 
 
 if __name__ == "__main__":
