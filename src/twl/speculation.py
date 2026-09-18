@@ -361,16 +361,32 @@ class SpeculationDriver:
     async def end_turn(self) -> SpeculationStats:
         """Cancel any in-flight decode and return what this turn spent."""
         if self._task is not None and not self._task.done():
-            cancel_ns = now_ns()
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            self.stats.cancel_to_slot_free_ms = await self._wait_for_slot(cancel_ns)
+            # NOT measured here. The real request is issued at the same instant
+            # (both hang off stt_final), so a global-idleness probe would time
+            # the answer, not the cancellation. The clean measurement is the
+            # per-commit one taken mid-turn; see _wait_for_slot.
+            self.stats.cancel_to_slot_free_ms = -1.0
         self._task = None
         return self.stats
 
     async def _wait_for_slot(self, cancel_ns: int, timeout_s: float = 2.0) -> float:
-        """Milliseconds from cancelling until the server reports its slot idle."""
+        """Milliseconds from cancelling until the server reports its slot idle.
+
+        ONLY MEANINGFUL WHEN NOTHING ELSE OF OURS IS RUNNING. The probe waits
+        for GLOBAL idleness — no slot processing anything — so if the real
+        answer has already been issued, this waits out the answer's entire
+        generation and reports it as cancellation cost.
+
+        That is exactly what happened before 2026-09-18. Called from end_turn,
+        where stt_final issues the cancel AND the real request together, it
+        returned 725-908 ms; called per commit mid-turn, where only the
+        speculation is running, the same code returns 67 ms [51, 79] in the
+        same run. The end-of-turn figure was the answer's decode time wearing
+        the name of a cancellation cost, and it is not reported any more.
+        """
         client = await self.client()
         deadline = now_ns() + int(timeout_s * 1e9)
         while now_ns() < deadline:

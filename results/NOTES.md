@@ -1849,3 +1849,66 @@ REPORTED PER COMMIT, not per turn (the per-turn aggregate would hide the
 mechanism): commits per turn, cancel_to_slot_free per commit, decode ms per
 commit, tokens per commit, and the fraction of the speculation window spent
 waiting versus decoding.
+
+## SPEC-ALWAYS-PG vs SPEC-CONTINUE: the prediction scored (2026-09-18)
+
+Prediction pre-registered at commit d3a4c5c, before the arm was written.
+
+    arm              turns  commits  /turn  cancels  wait ms  decode ms  wait frac  TTFA
+    REACTIVE            16        0   0.00        0        0          0        n/a  4472
+    SPEC-ALWAYS-PG      16       21   1.31        6      393      43840       0.01  4541
+    SPEC-CONTINUE       16       15   0.94        0        0      40307       0.00  4735
+
+PREDICTION 1 (waiting > decoding; waiting fraction > 0.5): FALSIFIED, by ~50x.
+The PG arm spent 393 ms waiting on cancellations against 43.8 s decoding — a
+waiting fraction of 0.01.
+
+PREDICTION 2 (TTFA no better than REACTIVE, possibly worse): CONFIRMED, paired
+per utterance:
+    SPEC-ALWAYS-PG  +116 ms  95% CI [+59, +192]   n=16   (worse, CI excludes 0)
+    SPEC-CONTINUE   +127 ms  95% CI [-11, +262]   n=16   (worse, CI spans 0)
+
+PREDICTION 3 (PredGen device-penalized BECAUSE cancellation is expensive):
+FALSIFIED AS TO MECHANISM. Speculation does hurt TTFA here, but not through
+cancellation. Cancellation is cheap: 67 ms per commit [51, 79]. What costs is
+OCCUPANCY — 43.8 s of speculative decoding across 16 turns (2.7 s per turn) on
+a single llama-server slot that the answer also needs. The penalty is the decode
+holding the slot, not the cancel releasing it.
+
+WHY I PREDICTED IT WRONG, and it was not the device. The 725-908 ms
+cancel_to_slot_free figures the prediction rested on were a MEASUREMENT BUG of
+mine. _wait_for_slot polls for GLOBAL idleness; called from end_turn, where
+stt_final issues the cancel and the real request together, it waits out the
+answer's entire generation and reports it as cancellation cost. Same code, same
+run: 748 ms end-of-turn against 67 ms per commit. Claims withdrawn: that
+725-908 ms was "time the real request spends waiting", and that it was the
+mechanism behind TTFA not improving. end_turn no longer reports the figure.
+
+DOES CANCELLATION COST SCALE WITH ELAPSED DECODE? UNANSWERED. All six cancels
+landed at 988-1067 ms elapsed — an 80 ms spread, because commits cluster at the
+same partial offsets. r = +0.124 over that range is uninformative. Testing it
+needs offsets chosen so commits land at genuinely different points in a decode.
+
+THE VERIFIER NOW HAS SOMETHING TO VERIFY, and it says the guesses do not hold:
+    SPEC-ALWAYS-PG: accepted 2 tokens, discarded 81; non-empty prefix on 1/16
+    SPEC-CONTINUE:  accepted 0, discarded 0 (one decode per turn: nothing to
+                    compare, which is the design, not a fault)
+2.4% of speculated tokens survived from one candidate to the next.
+
+FIRST-SENTENCE HIT RATE, from the FINAL candidate of the faithful loop:
+EXACT 0/15 (denominator: turns where a first sentence existed; 16 turns total).
+The failure mode is identity recitation — asked "What am I holding right now?",
+"How are you right now?" and "What is the color of my shirt?", the speculation
+answered "I am a large language model, trained by Google." Two guesses were
+confident and wrong in a way that matters for pre-synthesis: "The brand of the
+Mark is Mercedes-Benz." (real: "Please provide an image") and "No, the marker is
+not in the living room." (real: "I understand").
+
+READ FOR THE PAPER, now that the loop is faithful: PredGen-Greedy's mechanism
+does not transfer to this model. It was published on Qwen2.5-7B on a 24 GB
+discrete GPU; on a q4_0 ~4B model a first sentence generated from a truncated
+prompt matched the eventual answer 0 times in 15, and successive candidates
+shared 2.4% of their tokens. This is a result about the BASELINE at this model
+scale, not about the implementation — the loop, the truncated-instruction
+prompt and the verifier are all PredGen's own. Pre-synthesizing any of these
+would have spoken a wrong answer aloud.
