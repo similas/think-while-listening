@@ -1912,3 +1912,50 @@ shared 2.4% of their tokens. This is a result about the BASELINE at this model
 scale, not about the implementation — the loop, the truncated-instruction
 prompt and the verifier are all PredGen's own. Pre-synthesizing any of these
 would have spoken a wrong answer aloud.
+
+## Policy carry-over is REAL: speculation costs the turn that FOLLOWS it
+
+Phase 4 gate, 2026-09-18. Arms interleaved per turn (Latin square over
+reactive / spec_always_pg / spec_continue), 3 runs, warm-up turns excluded by
+flag. REACTIVE turns split by the arm that preceded them:
+
+    preceding arm        n   median TTFA   delta vs after-reactive
+    reactive            14        4388 ms   --
+    spec_always_pg       5        5161 ms   +773  [-937, +1252]
+    spec_continue       12        4557 ms   +169  [ +65, +1204]   CI excludes 0
+
+PER-TURN POLICY RANDOMIZATION IS THEREFORE INVALID, and the design falls back to
+randomized BLOCKS with a washout turn (Ali's rule: per-turn only if provably
+clean). The choice was forced by the data, not chosen for convenience.
+
+WHY IT WAS NEARLY MISSED. The first run alone gave +1226 ms [-736, +1380] after
+spec_continue — n=4, CI spanning zero, and the script printed "no carry-over
+detected". Reading that as clean would have repeated the "flat in B" false
+negative: an interval ±1000 ms wide cannot detect a carry-over of almost any
+size. Two more runs took the groups to n=5-14 and the effect resolved.
+
+THE MECHANISM, and it is a result rather than a nuisance. Process state IS reset
+per turn — stats, verifier, candidate, and the slot is freed at turn end. What
+is not reset is llama-server's KV CACHE, which is shared across turns. A
+speculative turn leaves the slot holding a speculative prefix for an utterance
+that is now over; the NEXT turn's answer finds that instead of a useful prefix
+and pays for it.
+
+So speculation's cost is not confined to the turn that spends it. Per-turn
+accounting — which is how the speculation literature reports cost — cannot see
+this at all. On a device with one slot, speculating on turn N taxes turn N+1.
+That belongs in the paper alongside the occupancy result.
+
+ARM COMPARISON under the (now superseded) per-turn design, n=32 per arm,
+paired on (run, utterance), for the record:
+
+    arm               TTFA        vs REACTIVE         occupancy   tokens
+    reactive        4473 ms       --                        0 ms       0
+    spec_always_pg  4571 ms       +104 [+54, +191] WORSE  2601 ms      78
+    spec_continue   4581 ms       +30  [+13, +154] WORSE  2570 ms      76
+
+Both speculative arms are WORSE than REACTIVE on TTFA with CIs excluding zero.
+These numbers are contaminated by the carry-over above and are superseded by the
+blocked design; they are recorded because they are what the gate actually
+measured, and because the direction matches what the blocked design must now
+test properly.
