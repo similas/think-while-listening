@@ -1765,3 +1765,87 @@ Both were fixed by the immediately following commit, so no red state survived
 longer than one commit, and HEAD is green. Neither red commit was used to
 produce a measurement: ebd54b8's failure was in a test double, f541e08's was a
 lint error, and the runs reported in this file were made from green trees.
+
+## PRE-REGISTERED PREDICTION for the SPEC-ALWAYS-PG arm (2026-09-18, before the run)
+
+Written before the arm was implemented and before any data was collected, so
+that being wrong is visible rather than retrofitted.
+
+INPUTS, all previously measured on this device:
+  - cancel_to_slot_free: 725 ms median (max 894) for spec_always, 908 ms median
+    for spec_trigger — the interval between cancelling a speculative decode and
+    llama-server reporting its slot idle;
+  - partials emitted per turn: ~1.4 (22 decodes issued over 16 turns at offsets
+    [1.0, 2.0, 3.0], of which the emitted subset drives commits);
+  - one llama-server slot, shared by the trigger, the speculation and the answer;
+  - stt_final -> tts_first_audio in REACTIVE: 610 ms [567, 645].
+
+PREDICTION:
+  1. The PG arm will spend MORE wall-clock waiting for its own cancellations
+     than decoding. At ~800 ms of slot-free time per commit and ~1.4 commits per
+     turn, cancellation costs ~1.1 s per turn against a speculation window
+     bounded by the utterance (median audio 2.4 s), so the waiting fraction
+     should exceed 0.5.
+  2. TTFA will be NO BETTER than REACTIVE, and plausibly worse, because the
+     final answer's request queues behind a slot that is still draining the last
+     cancelled speculation.
+  3. Therefore PredGen's mechanism is device-penalized here: it assumes
+     cancellation is cheap, which holds on a 24 GB discrete GPU with slots to
+     spare and does not hold on one slot of a q4_0 4B model on unified memory.
+
+WHAT WOULD FALSIFY IT:
+  - waiting fraction below 0.5, or
+  - PG TTFA at or below REACTIVE's, or
+  - cancel_to_slot_free per commit materially below the 725-908 ms already
+    measured (e.g. if cancelling a SHORT decode is cheaper than cancelling a
+    long one, which the per-turn aggregates could not have shown).
+The third is the most likely way this is wrong: every cancel_to_slot_free figure
+so far came from cancelling a decode at the END of a turn, after it had been
+running for the whole utterance. A decode cancelled 200 ms after it started may
+free its slot far faster, and the per-commit measurement is what will show it.
+
+REPORTED PER COMMIT, not per turn (the per-turn aggregate would hide the
+mechanism): commits per turn, cancel_to_slot_free per commit, decode ms per
+commit, tokens per commit, and the fraction of the speculation window spent
+waiting versus decoding.
+
+## PRE-REGISTERED PREDICTION for the SPEC-ALWAYS-PG arm (2026-09-18, before the run)
+
+Written before the arm was implemented and before any data was collected, so
+that being wrong is visible rather than retrofitted.
+
+INPUTS, all previously measured on this device:
+  - cancel_to_slot_free: 725 ms median (max 894) for spec_always, 908 ms median
+    for spec_trigger — the interval between cancelling a speculative decode and
+    llama-server reporting its slot idle;
+  - partials emitted per turn: ~1.4;
+  - one llama-server slot, shared by the trigger, the speculation and the answer;
+  - stt_final -> tts_first_audio in REACTIVE: 610 ms [567, 645].
+
+PREDICTION:
+  1. The PG arm will spend MORE wall-clock waiting for its own cancellations
+     than decoding. At ~800 ms of slot-free time per commit and ~1.4 commits per
+     turn, cancellation costs ~1.1 s per turn against a speculation window
+     bounded by the utterance (median audio 2.4 s), so the waiting fraction
+     should exceed 0.5.
+  2. TTFA will be NO BETTER than REACTIVE, and plausibly worse, because the
+     final answer's request queues behind a slot still draining the last
+     cancelled speculation.
+  3. Therefore PredGen's mechanism is device-penalized here: it assumes
+     cancellation is cheap, which holds on a 24 GB discrete GPU with slots to
+     spare and does not hold on one slot of a q4_0 4B model on unified memory.
+
+WHAT WOULD FALSIFY IT:
+  - waiting fraction below 0.5, or
+  - PG TTFA at or below REACTIVE's, or
+  - cancel_to_slot_free per commit materially below the 725-908 ms already
+    measured.
+The third is the most likely way this is wrong: every cancel_to_slot_free figure
+so far came from cancelling a decode at the END of a turn, after it had run for
+the whole utterance. A decode cancelled 200 ms after it started may free its
+slot far faster, and only the per-commit measurement can show that.
+
+REPORTED PER COMMIT, not per turn (the per-turn aggregate would hide the
+mechanism): commits per turn, cancel_to_slot_free per commit, decode ms per
+commit, tokens per commit, and the fraction of the speculation window spent
+waiting versus decoding.
