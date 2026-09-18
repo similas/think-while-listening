@@ -251,9 +251,23 @@ async def run(args: argparse.Namespace) -> None:
         n_utt = len(sorted(Path(args.wav_dir).glob("*.wav")))
         if args.live or not n_utt:
             raise SystemExit("--interleave needs a wav set: pairing is per utterance")
-        schedule = build_schedule(
-            n_utt, budgets, seed=args.interleave_seed, warmup=args.warmup_turns
-        )
+        if args.blocked:
+            # Same blocked design the policy arms use. Budget carry-over tested
+            # clean per-turn earlier (+70 ms [-55, +158]), but that check was
+            # far better powered than the policy one that later failed, and the
+            # TTFA re-derivation is the measurement the controller depends on.
+            turn_plan = build_block_schedule(
+                n_utt,
+                len(budgets),
+                block_size=args.block_size,
+                seed=args.interleave_seed,
+                warmup=args.warmup_turns,
+            )
+            schedule = [budgets[pt.level] for pt in turn_plan]
+        else:
+            schedule = build_schedule(
+                n_utt, budgets, seed=args.interleave_seed, warmup=args.warmup_turns
+            )
     interleave_note = (
         f"interleave={args.interleave} seed={args.interleave_seed} warmup={args.warmup_turns}; "
         if schedule
@@ -327,7 +341,7 @@ async def run(args: argparse.Namespace) -> None:
                 # every utterance is measured under every level INSIDE this run.
                 # The warm-up turns are extra wavs at the front and are excluded
                 # from analysis by their recorded flag (twl.schedule).
-                if turn_plan is not None:
+                if turn_plan is not None:  # blocked: the plan names every turn
                     # The plan names the utterance for every turn, washouts
                     # included, so the audio follows the schedule exactly.
                     wavs = [base_wavs[pt.utterance % len(base_wavs)] for pt in turn_plan]
@@ -710,6 +724,12 @@ def main() -> None:
     )
     p.add_argument("--interleave-seed", type=int, default=20260916)
     p.add_argument(
+        "--blocked",
+        action="store_true",
+        help="use randomized blocks with a same-arm washout for --interleave "
+        "(policy interleaving is always blocked)",
+    )
+    p.add_argument(
         "--block-size",
         type=int,
         default=4,
@@ -761,7 +781,19 @@ def main() -> None:
             )
         )
     elif n_budgets:
-        turns = n_wavs * n_budgets + a.warmup_turns
+        turns = (
+            len(
+                build_block_schedule(
+                    n_wavs,
+                    n_budgets,
+                    block_size=a.block_size,
+                    seed=a.interleave_seed,
+                    warmup=a.warmup_turns,
+                )
+            )
+            if a.blocked
+            else n_wavs * n_budgets + a.warmup_turns
+        )
     else:
         turns = n_wavs * a.repeat
     steps = [
