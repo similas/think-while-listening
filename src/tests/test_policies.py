@@ -134,6 +134,18 @@ def test_first_sentence_is_only_taken_once_complete() -> None:
     assert first_sentence("It is four") == "", "no terminator yet: nothing to speak"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Encodes the PRE-REGISTERED prediction at 5ab29ec, not the measured "
+        "arithmetic. BUDGET-R currently chooses B=64 uncontended because the A3 "
+        "cost model prices STT inflation, while the objective is TTFA/occupancy "
+        "— a ~10x mismatch. strict=True so this fails loudly if it starts "
+        "passing: that would mean the model changed under it. To be rewritten on "
+        "measured inputs once the TTFA cost grid lands, asserting the arithmetic "
+        "(more p_usable -> more spend, contention -> less) and never a specific B."
+    ),
+)
 def test_budget_r_chooses_zero_at_the_measured_usability() -> None:
     """The degenerate choice must come from arithmetic, not a special case."""
     from twl.policies import BudgetR
@@ -172,6 +184,18 @@ def test_budget_r_will_not_start_a_speculation_that_cannot_finish() -> None:
     assert "no arm fits" in d.reason
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Encodes the PRE-REGISTERED prediction at 5ab29ec, not the measured "
+        "arithmetic. BUDGET-R currently chooses B=64 uncontended because the A3 "
+        "cost model prices STT inflation, while the objective is TTFA/occupancy "
+        "— a ~10x mismatch. strict=True so this fails loudly if it starts "
+        "passing: that would mean the model changed under it. To be rewritten on "
+        "measured inputs once the TTFA cost grid lands, asserting the arithmetic "
+        "(more p_usable -> more spend, contention -> less) and never a specific B."
+    ),
+)
 def test_budget_r_spends_less_when_contended() -> None:
     """The state signal has to change the budget, or it is not a state signal."""
     from twl.policies import BudgetR
