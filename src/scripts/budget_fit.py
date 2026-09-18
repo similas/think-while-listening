@@ -22,6 +22,15 @@ share a baseline and are not independent.
 
 Reported alongside, clearly labelled and never conflated: delta/96, the
 A3-comparable amortized-per-token figure.
+
+THE ENTRY FEE IS A DIFFERENT QUESTION ON THIS METRIC. A3 found no fee on STT
+inflation, and there was no obvious mechanism for one: a speculative token costs
+the recognizer bandwidth in proportion to how many there are. TTFA has a
+plausible FIXED component that STT inflation does not — the answer waits for the
+slot to become available at all, and that wait does not scale with the token
+count. So a fee appearing here, where none existed on STT, would be evidence
+about the mechanism rather than an inconsistency. It is reported either way,
+with the contrast to A3 stated.
 """
 
 from __future__ import annotations
@@ -39,22 +48,37 @@ from twl.schedule import utterance_of
 BOOTSTRAP = 10_000
 
 
-def curves(run_dirs: list[Path], n_utt: int, warmup: int) -> list[dict[int, float]]:
+def curves(
+    run_dirs: list[Path], n_utt: int, warmup: int, metric: str = "stt"
+) -> list[dict[int, float]]:
     """One dict per (run, utterance): budget -> paired delta against its own B=0."""
     out = []
     for d in run_dirs:
         by_utt: dict[int, dict[int, float]] = collections.defaultdict(dict)
         for r in read_jsonl(str(d / "turns.jsonl")):
-            if r.get("kind") != "turn_record" or not r["valid"] or r.get("warmup"):
+            if r.get("kind") != "turn_record" or not r["valid"]:
+                continue
+            # Warm-up AND washout turns are excluded by recorded role: a washout
+            # exists to absorb the previous block's carry-over, and counting it
+            # would put that contamination back into the measurement.
+            if r.get("warmup") or r.get("washout"):
                 continue
             st = r["stages_ms"]
-            if "stt_final" not in st or "vad_user_stopped" not in st:
-                continue
-            u = utterance_of(r["turn"], n_utt, warmup)
+            if metric == "ttfa":
+                if "tts_first_audio" not in st:
+                    continue
+                value = st["tts_first_audio"]
+            else:
+                if "stt_final" not in st or "vad_user_stopped" not in st:
+                    continue
+                value = st["stt_final"] - st["vad_user_stopped"]
+            u = r.get("utterance", -1)
+            if u < 0:
+                u = utterance_of(r["turn"], n_utt, warmup)
             if u < 0:
                 continue
             b = int((r.get("spec") or {}).get("budget_tokens", 0))
-            by_utt[u][b] = st["stt_final"] - st["vad_user_stopped"]
+            by_utt[u][b] = value
         for _u, arms in by_utt.items():
             if 0 not in arms:
                 continue
@@ -107,15 +131,23 @@ def main() -> None:
     p.add_argument("--utterances", type=int, default=16)
     p.add_argument("--warmup", type=int, default=3)
     p.add_argument("--label", default="")
+    p.add_argument(
+        "--metric",
+        default="stt",
+        choices=("stt", "ttfa"),
+        help="stt: STT commit inflation (the A3 quantity). ttfa: time to first "
+        "audio, which is what the controller actually optimizes.",
+    )
     p.add_argument("--out", type=Path, default=None)
     args = p.parse_args()
 
-    cs = curves(args.runs, args.utterances, args.warmup)
+    cs = curves(args.runs, args.utterances, args.warmup, args.metric)
     if not cs:
         raise SystemExit("no complete budget curves found")
     budgets = sorted({b for c in cs for b in c})
     print(
-        f"{args.label or 'fit'}: {len(cs)} utterance-curves over {len(args.runs)} run(s), "
+        f"{args.label or 'fit'} [metric={args.metric}]: {len(cs)} utterance-curves "
+        f"over {len(args.runs)} run(s), "
         f"budgets {budgets}"
     )
 
