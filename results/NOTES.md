@@ -1934,17 +1934,39 @@ detected". Reading that as clean would have repeated the "flat in B" false
 negative: an interval ±1000 ms wide cannot detect a carry-over of almost any
 size. Two more runs took the groups to n=5-14 and the effect resolved.
 
-THE MECHANISM, and it is a result rather than a nuisance. Process state IS reset
-per turn — stats, verifier, candidate, and the slot is freed at turn end. What
-is not reset is llama-server's KV CACHE, which is shared across turns. A
-speculative turn leaves the slot holding a speculative prefix for an utterance
-that is now over; the NEXT turn's answer finds that instead of a useful prefix
-and pays for it.
+THE MECHANISM I ASSERTED HERE WAS WRONG, AND IS RETRACTED. This section
+previously stated, as a finding, that the carry-over was llama-server's KV cache
+being left holding a stale speculative prefix that the next turn's answer then
+paid for. That was a hypothesis written as a result. Tested directly on Ali's
+instruction (2026-09-18), it is refuted:
 
-So speculation's cost is not confined to the turn that spends it. Per-turn
-accounting — which is how the speculation literature reports cost — cannot see
-this at all. On a device with one slot, speculating on turn N taxes turn N+1.
-That belongs in the paper alongside the occupancy result.
+    condition                              answer prompt_n  cache_n  latency
+    A  no speculation                                    5       29    622 ms
+    B  speculation COMPLETED, then answer                5       29    625 ms
+    C  speculation CANCELLED mid-decode, then answer     5       30    669 ms
+
+prompt_n is IDENTICAL at 5 in all three. The answer re-evaluates exactly the
+same number of tokens whether or not a speculation preceded it, so the cache is
+not poisoned and cache state is not the channel.
+
+THE PROPOSED MITIGATION IS THEREFORE MOOT. Reconditioning the slot (leaving it
+holding the prefix the next answer needs, at 117 ms off the critical path)
+changed nothing: prompt_n 15, cache_n 20 and ~658 ms with and without it. A fix
+for a mechanism that does not exist. Note also that this server cannot erase a
+slot at all — POST /slots/0?action=erase returns 501, because it was started
+without --slot-save-path — so cache clearing was never available anyway.
+
+WHAT IS ACTUALLY KNOWN. The carry-over itself is real and measured (+169 ms
+[+65, +1204] on REACTIVE turns following spec_continue). Of it, about 47 ms is
+reproducible in isolation and appears only after a CANCELLED speculation (C
+above, 669 ms against 622 ms) — consistent with the server still draining the
+cancelled decode rather than with any cache effect. The remaining majority is
+UNEXPLAINED. Candidate channels not yet tested: thermal state, memory-bandwidth
+residue, and audio/TTS scheduling, none of which the KV cache can account for.
+
+So the honest claim is narrower than the one this file made: speculation's cost
+is not confined to the turn that spends it, per-turn accounting cannot see that,
+and the channel is not the KV cache. Naming the channel needs further work.
 
 ARM COMPARISON under the (now superseded) per-turn design, n=32 per arm,
 paired on (run, utterance), for the record:
