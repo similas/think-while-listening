@@ -1981,3 +1981,58 @@ These numbers are contaminated by the carry-over above and are superseded by the
 blocked design; they are recorded because they are what the gate actually
 measured, and because the direction matches what the blocked design must now
 test properly.
+
+## PRE-REGISTERED PREDICTION for BUDGET-R (2026-09-18, before the controller exists)
+
+Committed before a line of the controller is written, with falsification
+conditions fixed in advance.
+
+THE OBJECTIVE, as Phase 3 identified it empirically: minimize slot occupancy
+subject to producing a usable answer. Occupancy, not cancellation, is what
+speculation costs here (43.8 s of decode against 393 ms of cancellation over a
+16-turn run), and B sets occupancy directly.
+
+INPUTS: cost model from the A3 within-run grid (no entry fee; 0.135 ms/token
+uncontended, 1.514 contended); state from the quiescent VDD_SOC detector
+(binary, threshold 2950 mW); arms B in {0, 32, 64, 96}, with B=48 available if
+the knee between 32 and 64 needs locating; the partial-issue gate decided on the
+same state signal.
+
+PREDICTION — and it is mostly a negative one:
+
+  1. BUDGET-R WILL NOT BEAT REACTIVE ON TTFA. It should MATCH it, by choosing
+     B=0 on most turns. The reason is not the controller but what speculation
+     currently produces: the first sentence matched the eventual answer 0 times
+     in 15, and successive candidates shared 2.4% of their tokens. A budget
+     controller allocating a resource whose output is unusable has one correct
+     answer, and it is zero.
+  2. B=0 ON MORE THAN 80% OF TURNS.
+  3. Slot occupancy BELOW 20% of SPEC-ALWAYS-PG's, since that is what choosing
+     B=0 buys.
+  4. Against the speculative arms it should WIN, by not paying the +98 to +104
+     ms those arms pay — i.e. its value here is in declining to spend, not in
+     spending well.
+
+FALSIFICATION:
+  - BUDGET-R beats REACTIVE on TTFA with a CI excluding zero -> prediction 1 is
+    wrong and speculation pays on some turns after all;
+  - B=0 on fewer than 80% of turns while still matching REACTIVE -> the cost
+    model or the state signal is doing something the prediction did not expect;
+  - BUDGET-R loses to REACTIVE by more than the speculative arms do -> the
+    controller is worse than either fixed policy and the design is wrong.
+
+WHAT A CONFIRMED PREDICTION WOULD MEAN, stated now so it cannot be dressed up
+later. If BUDGET-R's optimum is B=0 on this hardware with this model, then ON
+THIS BENCHMARK the budgeted controller degenerates to the reactive baseline, and
+that is a publishable NEGATIVE RESULT: speculation is not worth its occupancy
+when a quantized ~4B model cannot guess its own answer. The paper says so
+plainly rather than reporting a controller that "correctly learns not to act" as
+though that were a win.
+
+THE SCOPE CONDITION, and the honest caveat on the negative result. This
+benchmark discards speculation output unless PredGen's verifier accepts it. The
+thesis's own framing — think WHILE listening — also covers using that time to
+produce a BETTER answer, not only a faster one. A task where speculative output
+is usable (a reasoning model, or a design that consumes the draft rather than
+verifying it token-by-token) could invert the result. That is a different
+experiment, and the negative result is scoped to this one.

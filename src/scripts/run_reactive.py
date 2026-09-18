@@ -748,10 +748,18 @@ def main() -> None:
     n_budgets = len([b for b in a.interleave.split(",") if b.strip()])
     n_arms = len([x for x in a.interleave_policies.split(",") if x.strip()])
     if n_arms:
-        # Blocked design: warm-up, plus one same-arm washout per block, plus
-        # every utterance measured once per arm.
-        blocks = n_arms * max(1, -(-n_wavs // a.block_size))
-        turns = a.warmup_turns + blocks + n_wavs * n_arms
+        # Ask the SCHEDULER, do not recompute. A separately-derived count can
+        # disagree with the schedule that actually runs, and on 2026-09-18 it
+        # did: the gate advertised 51 turns for a 63-turn blocked schedule.
+        turns = len(
+            build_block_schedule(
+                n_wavs,
+                n_arms,
+                block_size=a.block_size,
+                seed=a.interleave_seed,
+                warmup=a.warmup_turns,
+            )
+        )
     elif n_budgets:
         turns = n_wavs * n_budgets + a.warmup_turns
     else:
