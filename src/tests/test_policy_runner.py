@@ -29,9 +29,9 @@ class FakeSpec:
     async def prefill(self, partial: str) -> None:
         self.prefills.append(partial)
 
-    def speculate_on(self, partial: str, budget_tokens: int) -> str:
+    async def commit(self, partial: str, budget_tokens: int, *, resend: bool) -> dict:
         self.calls.append((partial, budget_tokens))
-        return self.reply
+        return {"outcome": self.reply, "issued": self.reply == "issued", "resend": resend}
 
 
 @dataclass
@@ -172,3 +172,36 @@ def test_every_partial_warms_the_slot_even_when_the_policy_declines() -> None:
     run(r, "what is", "what is the")
     assert spec.calls == [], "the policy declined, so nothing should be generated"
     assert spec.prefills == ["what is", "what is the"], "but the slot is still warmed"
+
+
+def test_pg_resends_on_every_commit_and_continue_does_not() -> None:
+    """The one difference that makes PredGen-Greedy's verifier work at all."""
+    from twl.policies import SpecAlwaysPG, SpecContinue
+
+    assert SpecAlwaysPG().decide("what is the", 0.0, False).resend is True
+    assert SpecContinue().decide("what is the", 0.0, False).resend is False
+
+
+def test_the_runner_passes_the_arm_s_resend_flag_to_the_driver() -> None:
+    """The driver must not have to know which arm it is serving."""
+    import asyncio
+    from dataclasses import dataclass, field
+
+    from twl.policies import SpecAlwaysPG
+
+    @dataclass
+    class RecordingSpec:
+        seen: list[bool] = field(default_factory=list)
+
+        async def prefill(self, partial: str) -> None:
+            return None
+
+        async def commit(self, partial: str, budget_tokens: int, *, resend: bool) -> dict:
+            self.seen.append(resend)
+            return {"outcome": "issued", "issued": True}
+
+    turns, spec = FakeTurns(), RecordingSpec()
+    r = PolicyRunner(policy=SpecAlwaysPG(), turns=turns, speculation=spec)  # type: ignore[arg-type]
+    asyncio.run(r.on_partial("what is the capital of"))
+    assert spec.seen == [True]
+    assert turns.decisions[0]["commit"]["issued"] is True

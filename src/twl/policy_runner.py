@@ -70,8 +70,12 @@ class PolicyRunner:
             await self.speculation.prefill(text)
 
         outcome = "not issued"
+        commit: dict[str, object] = {}
         if decision.speculate and self.speculation is not None:
-            outcome = self.speculation.speculate_on(text, decision.budget_tokens)
+            commit = await self.speculation.commit(
+                text, decision.budget_tokens, resend=decision.resend
+            )
+            outcome = str(commit.get("outcome") or "issued")
             self.decisions_to_speculate += 1
         elif decision.speculate:
             outcome = "no speculation driver"
@@ -81,6 +85,7 @@ class PolicyRunner:
             decision=decision.as_dict(),
             trigger=reading.as_dict(),
             outcome=outcome,
+            commit=commit,
             # Trigger latency as Ali defined it: the STT partial latency is
             # logged separately per partial; this is the evaluation half.
             decide_ms=(now_ns() - t0) / 1e6,

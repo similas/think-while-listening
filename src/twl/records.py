@@ -201,6 +201,10 @@ class DecisionRecord:
     trigger: dict[str, Any]
     outcome: str
     decide_ms: float
+    # Per-COMMIT speculation metrics: cancellation wait, tokens thrown away,
+    # decode time of the cancelled attempt. Aggregating these per turn would
+    # hide the mechanism, since one turn can hold several commits.
+    commit: dict[str, Any] = field(default_factory=dict)
 
     kind: str = field(default="decision_record", init=False)
 

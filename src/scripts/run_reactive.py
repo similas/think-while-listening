@@ -369,6 +369,12 @@ async def run(args: argparse.Namespace) -> None:
         # The runner needs the TurnManager build_pipeline just created, so it
         # is attached after construction rather than passed in.
         if args.policy != "reactive":
+            if speculation is not None:
+                # Upper bound for the pre-synthesis saving: when a complete
+                # sentence first existed, against tts_first_audio.
+                speculation.on_first_sentence = lambda ns: built.turns.mark(
+                    "spec_first_sentence", at_ns=ns, once=True
+                )
             built.observer.attach_runner(
                 PolicyRunner(
                     policy=policy,

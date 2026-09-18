@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -65,6 +66,9 @@ class SpeculationStats:
     verifier_discarded_tokens: int = 0
     first_sentence: str = ""
     candidate: str = ""
+    # Per-commit counters. A turn may hold several commits.
+    commits: int = 0
+    commits_cancelled: int = 0
     prefills: int = 0
     prefill_ms: float = 0.0
     prefill_skipped_busy: int = 0
@@ -79,6 +83,8 @@ class SpeculationStats:
             "cancelled": self.cancelled,
             "errors": self.errors,
             "cancel_to_slot_free_ms": round(self.cancel_to_slot_free_ms, 1),
+            "commits": self.commits,
+            "commits_cancelled": self.commits_cancelled,
             "accepted_tokens": self.accepted_tokens,
             "verifier_discarded_tokens": self.verifier_discarded_tokens,
             # The TEXT, not just its length: whether pre-synthesizing this
@@ -107,6 +113,10 @@ class SpeculationDriver:
     # partial exists. Phase 3 policies pass the LIVE transcript instead.
     partial_text: str = "I have a question about"
     system_prompt: str = SPEC_SYSTEM
+    # Called the first time a complete sentence exists in a candidate, so
+    # the pre-synthesis saving has an UPPER bound and not only the lower
+    # bound that stt_final -> tts_first_audio provides.
+    on_first_sentence: Callable[[int], None] | None = None
     _task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
     _verifier: GreedyVerifier = field(default_factory=GreedyVerifier, init=False, repr=False)
     _client: LlamaClient | None = field(default=None, init=False, repr=False)
@@ -148,6 +158,61 @@ class SpeculationDriver:
         self._task = asyncio.get_running_loop().create_task(
             self._speculate(partial or self.partial_text)
         )
+
+    async def commit(self, partial: str, budget_tokens: int, *, resend: bool) -> dict[str, Any]:
+        """One policy commit, with PER-COMMIT accounting.
+
+        resend=True is PredGen-Greedy: cancel whatever is in flight and start a
+        fresh decode from the longer partial, so successive candidates can be
+        verified against each other. resend=False is continue-the-slot: leave
+        the running decode alone.
+
+        The returned metrics are per COMMIT, not per turn. A per-turn aggregate
+        cannot show the mechanism under test — whether the arm spends more time
+        waiting for its own cancellations than decoding — because a turn may
+        hold several commits with very different waits.
+        """
+        out: dict[str, Any] = {
+            "resend": resend,
+            "cancelled": False,
+            "cancel_to_slot_free_ms": -1.0,
+            "cancelled_tokens": 0,
+            "cancelled_decode_ms": -1.0,
+            "issued": False,
+            "outcome": "",
+        }
+        in_flight = self._task is not None and not self._task.done()
+        if in_flight and not resend:
+            out["outcome"] = "continue-the-slot: decode already in flight"
+            return out
+        if in_flight:
+            tokens_before = self.stats.tokens_produced
+            decode_before = self.stats.decode_ms
+            cancel_ns = now_ns()
+            assert self._task is not None
+            self._task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._task
+            # The slot is not free the instant the request is cancelled; the
+            # server finishes what it is doing first. That interval is the cost
+            # PredGen's loop pays on every commit, and it is measured here
+            # rather than assumed.
+            out["cancel_to_slot_free_ms"] = await self._wait_for_slot(cancel_ns)
+            out["cancelled"] = True
+            out["cancelled_tokens"] = self.stats.tokens_produced - tokens_before
+            out["cancelled_decode_ms"] = round(self.stats.decode_ms - decode_before, 1)
+            self.stats.commits_cancelled += 1
+            self._task = None
+        if budget_tokens <= 0:
+            out["outcome"] = "budget is zero"
+            return out
+        self.budget_tokens = budget_tokens
+        self.stats.budget_tokens = budget_tokens
+        self.stats.commits += 1
+        self._task = asyncio.get_running_loop().create_task(self._speculate(partial))
+        out["issued"] = True
+        out["outcome"] = "issued"
+        return out
 
     def speculate_on(self, partial: str, budget_tokens: int) -> str:
         """CONTINUE THE SLOT: issue a decode only if none is already running.
@@ -289,6 +354,8 @@ class SpeculationDriver:
         self.stats.candidate = text
         sentence = first_sentence(text)
         if sentence:
+            if not self.stats.first_sentence and self.on_first_sentence is not None:
+                self.on_first_sentence(now_ns())
             self.stats.first_sentence = sentence
 
     async def end_turn(self) -> SpeculationStats:

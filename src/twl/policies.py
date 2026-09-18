@@ -47,6 +47,14 @@ PLAIN_SYSTEM = "You are a concise voice assistant. Answer in one or two short se
 class PolicyKind(str, Enum):
     REACTIVE = "reactive"
     SPEC_ALWAYS = "spec_always"
+    # PredGen-Greedy as published: cancel and resend on every partial commit,
+    # verifying each candidate against the last.
+    SPEC_ALWAYS_PG = "spec_always_pg"
+    # Continue-the-slot: one decode per turn, no verification. NOT a degraded
+    # PredGen — a separate design, adopted because Phase 2 measured cancellation
+    # on this device at 725-908 ms of slot-free time, which PredGen's loop pays
+    # on every commit.
+    SPEC_CONTINUE = "spec_continue"
     SPEC_TRIGGER = "spec_trigger"
     BUDGET_R = "budget_r"
 
@@ -60,6 +68,10 @@ class Decision:
     reason: str
     p_done: float = -1.0
     contended: bool = False
+    # PredGen cancels and resends on every commit; continue-the-slot does not.
+    # Carried on the decision so the driver never has to know which arm it
+    # serves. Last field, so every positional construction still works.
+    resend: bool = False
 
     def as_dict(self) -> dict[str, float | str | bool]:
         return {
@@ -68,6 +80,7 @@ class Decision:
             "reason": self.reason,
             "p_done": round(self.p_done, 5),
             "contended": self.contended,
+            "resend": self.resend,
         }
 
 
@@ -91,11 +104,53 @@ class SpecAlways(Policy):
     budget_tokens: int = 96
     system_prompt: str = PREDGEN_SYSTEM
     min_chars: int = 8
+    # Whether a commit cancels an in-flight decode and starts a new one.
+    resend_on_commit: bool = False
 
     def decide(self, partial: str, p_done: float, contended: bool) -> Decision:
         if len(partial.strip()) < self.min_chars:
             return Decision(False, 0, "too little text to guess from", p_done, contended)
-        return Decision(True, self.budget_tokens, "spec-always: every commit", p_done, contended)
+        return Decision(
+            True,
+            self.budget_tokens,
+            "spec-always: every commit",
+            p_done,
+            contended,
+            resend=self.resend_on_commit,
+        )
+
+
+@dataclass
+class SpecAlwaysPG(SpecAlways):
+    """PredGen-Greedy, faithfully: resend on every commit and verify.
+
+    The defining mechanism of PredGen-Greedy is not "speculate early" — it is
+    speculate, then REGENERATE as more speech arrives and keep whatever prefix
+    of the earlier guess survives. That requires a fresh decode per commit, so
+    the arm cancels whatever is in flight and resends.
+
+    Measured 2026-09-17: with continue-the-slot there is only ever one decode
+    per turn, so the verifier has nothing to compare and recorded 0 accepted /
+    0 discarded across 14 turns. This arm exists so the baseline runs its own
+    loop rather than ours.
+    """
+
+    kind: PolicyKind = PolicyKind.SPEC_ALWAYS_PG
+    resend_on_commit: bool = True
+
+
+@dataclass
+class SpecContinue(SpecAlways):
+    """Continue-the-slot: one decode per turn, left to run.
+
+    A separate design, not a compromise of PredGen. Cancellation costs 725-908
+    ms of slot-free time on this device's single llama-server slot, so a policy
+    that never cancels mid-turn pays none of it — at the cost of a candidate
+    conditioned only on the partial that started it.
+    """
+
+    kind: PolicyKind = PolicyKind.SPEC_CONTINUE
+    resend_on_commit: bool = False
 
 
 @dataclass
@@ -176,6 +231,10 @@ def build_policy(
         return Policy()
     if kind == PolicyKind.SPEC_ALWAYS:
         return SpecAlways(budget_tokens=budget_tokens)
+    if kind == PolicyKind.SPEC_ALWAYS_PG:
+        return SpecAlwaysPG(budget_tokens=budget_tokens)
+    if kind == PolicyKind.SPEC_CONTINUE:
+        return SpecContinue(budget_tokens=budget_tokens)
     if kind == PolicyKind.SPEC_TRIGGER:
         return SpecTrigger(budget_tokens=budget_tokens, theta=theta, horizon_s=horizon_s)
     raise ValueError(f"unknown policy {kind!r}; known: {[k.value for k in PolicyKind]}")
