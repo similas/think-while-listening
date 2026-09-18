@@ -1658,3 +1658,46 @@ consumes the speculation yet: GreedyVerifier exists in twl/policies.py but is
 not wired, so SPEC-ALWAYS is currently PredGen's LOAD without PredGen's BENEFIT.
 Until it is wired, no TTFA comparison between arms means anything, and none is
 claimed here.
+
+## The prefix rule, applied where it is sent: 75 -> 21 tokens re-evaluated
+
+The Phase 1 rule has two halves and both belong INSIDE speculation:
+
+    grow bare       a prefill on every partial: head + transcript, no tail
+    tail at commit  the generation closes the template, so it ANSWERS
+
+"Commit" means the moment of GENERATION, not the real request. Read the other
+way it implies the speculative decode itself must be bare — and a bare prompt
+does not answer. Measured: for "...the number that I'm showing with my", the
+bare prompt completed " phone?" (continuing the user's sentence) while the
+tailed prompt produced an answer. A verifier cannot check a continuation
+against an answer, so bare-only would have made PredGen-Greedy impossible.
+
+    speculative generation          prompt_n (re-evaluated)   cache_n
+    tailed, no prefill (offline)                        75          1
+    bare prefill then tailed (offline)                  22         54
+    bare prefill then tailed (LIVE, 16 turns)           21         46
+
+A 72% reduction in tokens the speculative generation must re-read, reproduced
+live. Cost: one prefill per turn, 84.6 ms median.
+
+WHAT THIS DOES AND DOES NOT BUY. It does not save work; it MOVES work off the
+critical path — the transcript is prefilled while the user is still speaking
+instead of after the endpoint. For the speculative decode that means more of
+the budget is spent generating rather than re-reading, so more tokens land
+before the endpoint cancels it.
+
+It does NOT help the real request, and that is measured, not assumed: REACTIVE
+shows real_prompt_n 5 / real_cache_n 31 and speculation leaves it unchanged
+(5 / 35). The real request uses /v1/chat/completions with SERVER-SIDE
+templating and a different system prompt, so it shares no token prefix with the
+speculative path built from our own template. Aligning them would mean moving
+the answer onto the raw completion endpoint with one shared system prompt,
+which breaks PredGen's truncated-instruction design. Recorded as the open
+design question rather than decided here.
+
+A CAUTION ON cache_n. It was tempting to read speculative cache_n 46 against
+REACTIVE's 31 as reuse working. It is not: the PREDGEN head alone tokenizes to
+45 tokens and the PLAIN head to 25, so the entire difference is head size.
+prompt_n — the tokens actually re-evaluated — is the honest cost metric here,
+and it is the one that moved.
