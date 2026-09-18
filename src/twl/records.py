@@ -136,7 +136,10 @@ class TurnRecord:
     # to, and estimate_stale (see twl.contention).
     contention: dict[str, Any] = field(default_factory=dict)
     # Phase 2: the independent variable and the quantities it moves.
-    spec: dict[str, float] = field(default_factory=dict)
+    # Speculation stats. Values are mixed: counts, milliseconds, and the
+    # candidate text the verifier accepted (needed to judge offline whether
+    # pre-synthesizing it would have been correct).
+    spec: dict[str, Any] = field(default_factory=dict)
     endpoint_delay_ms: float = -1.0
     wer: float = -1.0
     reference: str = ""

@@ -1701,3 +1701,38 @@ REACTIVE's 31 as reuse working. It is not: the PREDGEN head alone tokenizes to
 45 tokens and the PLAIN head to 25, so the entire difference is head size.
 prompt_n — the tokens actually re-evaluated — is the honest cost metric here,
 and it is the one that moved.
+
+## Decisions 2026-09-18 (Ali): the cache_n criterion is retired
+
+1. THE "cache_n RISES ON THE REAL REQUEST" ACCEPTANCE CRITERION IS WITHDRAWN.
+   It assumed the speculative and real paths could share a token prefix. They
+   cannot, unless SPEC-ALWAYS gives up PredGen's truncated-instruction system
+   prompt and moves onto the same endpoint — and BASELINE FIDELITY OUTRANKS A
+   CACHE METRIC. A baseline bent to make our instrumentation look good is not a
+   baseline.
+
+   The measurement stands as the record of why:
+
+       arm            real_prompt_n   real_cache_n
+       REACTIVE                   5             31
+       speculating                5             35
+
+   Speculation leaves the real request untouched. The speculative path builds
+   its prompt from our Gemma template on /completion; the real request uses
+   /v1/chat/completions with server-side templating and a different system
+   prompt. No shared prefix exists to inherit.
+
+2. THE PREFILL WIN IS A SCHEDULING WIN, and is to be described as one: 72%
+   fewer tokens re-read by the speculative decode (75 -> 21), at 84.6 ms per
+   turn, buying more of the budget spent generating before the endpoint
+   cancels. It is not a compute saving — the same prefill work happens either
+   way, earlier and off the critical path.
+
+3. PARKED FOR PHASE 4, and this is the interesting one. OUR OWN policies are
+   under no obligation to imitate PredGen's prompt layout. A budgeted policy
+   may run speculation and answer on ONE endpoint under ONE system prompt, so
+   the real request inherits the speculative prefix directly. That is a
+   potential ADVANTAGE OF THE BUDGETED DESIGN over PredGen as published, and it
+   must be measured as such — as a difference between our controller and the
+   baseline, never retrofitted into SPEC-ALWAYS. Retrofitting it would improve
+   the baseline's numbers and erase the very advantage being claimed.

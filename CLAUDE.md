@@ -47,6 +47,11 @@ wins; if a brief is wrong, say so and propose an edit rather than silently devia
   100% T-SEM agreement between engines; neither engine had fired once, because
   the trigger was dead on punctuated partials. The marginal rate would have
   shown it immediately.)
+- NEVER compare absolute cache_n (or any absolute prefix-reuse count) across
+  arms whose system prompts differ: the constant head dominates it. Report
+  RE-EVALUATED TOKENS AS A FRACTION OF PROMPT LENGTH. (2026-09-17: speculative
+  cache_n 46 against REACTIVE's 31 looked like reuse; the PREDGEN head alone is
+  45 tokens and the PLAIN head 25, so the whole difference was head size.)
 - COMMON SUPPORT. When a configuration changes which items it covers, report
   paired deltas on the COMMON-SUPPORT set and on the newly covered set
   SEPARATELY. Never pool them: a pooled mean compares different populations and

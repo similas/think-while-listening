@@ -104,3 +104,31 @@ def test_cost_is_proportional_to_the_budget_with_no_fee() -> None:
         assert contention_cost_ms(64, contended) == pytest.approx(
             2 * contention_cost_ms(32, contended)
         )
+
+
+def test_greedy_verifier_keeps_the_agreed_prefix_and_counts_the_rest() -> None:
+    """PredGen-Greedy: more speech refutes part of an earlier guess."""
+    from twl.policies import GreedyVerifier
+
+    v = GreedyVerifier()
+    v.verify("The capital of France is Paris.")
+    accepted, keep, dropped = v.verify("The capital of France is Lyon.")
+    assert accepted == "The capital of France is"
+    assert keep == 5
+    assert dropped == 1, "only the refuted word is discarded"
+
+
+def test_greedy_verifier_accepts_everything_when_the_guess_holds() -> None:
+    from twl.policies import GreedyVerifier
+
+    v = GreedyVerifier()
+    v.verify("It is four.")
+    accepted, keep, dropped = v.verify("It is four.")
+    assert accepted == "It is four."
+    assert dropped == 0
+
+
+def test_first_sentence_is_only_taken_once_complete() -> None:
+    """Pre-synthesizing half a sentence would speak a fragment aloud."""
+    assert first_sentence("It is four. And more.") == "It is four."
+    assert first_sentence("It is four") == "", "no terminator yet: nothing to speak"

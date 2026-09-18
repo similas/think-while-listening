@@ -19,7 +19,7 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 import yaml
 
@@ -384,7 +384,7 @@ class TurnManager:
     def set_phase2(
         self,
         *,
-        spec: dict[str, float] | None = None,
+        spec: dict[str, Any] | None = None,
         endpoint_delay_ms: float = -1.0,
         wer: float = -1.0,
         reference: str = "",

@@ -24,10 +24,12 @@ import asyncio
 import contextlib
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 from twl.clock import now_ns
 from twl.config import LlmConfig
 from twl.llm import LlamaClient
+from twl.policies import GreedyVerifier, first_sentence
 from twl.prompting import incremental_prompt
 
 log = logging.getLogger(__name__)
@@ -58,11 +60,16 @@ class SpeculationStats:
     spec_prompt_n: int = -1
     spec_cache_n: int = -1
     # The bare prefills that warm the slot ahead of the tailed generation.
+    # PredGen-Greedy's verification, measured per turn.
+    accepted_tokens: int = 0
+    verifier_discarded_tokens: int = 0
+    first_sentence: str = ""
+    candidate: str = ""
     prefills: int = 0
     prefill_ms: float = 0.0
     prefill_skipped_busy: int = 0
 
-    def as_dict(self) -> dict[str, float]:
+    def as_dict(self) -> dict[str, Any]:
         return {
             "budget_tokens": self.budget_tokens,
             "requests": self.requests,
@@ -72,6 +79,13 @@ class SpeculationStats:
             "cancelled": self.cancelled,
             "errors": self.errors,
             "cancel_to_slot_free_ms": round(self.cancel_to_slot_free_ms, 1),
+            "accepted_tokens": self.accepted_tokens,
+            "verifier_discarded_tokens": self.verifier_discarded_tokens,
+            # The TEXT, not just its length: whether pre-synthesizing this
+            # would have been right is decided against the real reply, and
+            # that comparison is made offline from this log.
+            "first_sentence": self.first_sentence[:200],
+            "candidate": self.candidate[:400],
             "prefills": self.prefills,
             "prefill_ms": round(self.prefill_ms, 1),
             "prefill_skipped_busy": self.prefill_skipped_busy,
@@ -94,6 +108,7 @@ class SpeculationDriver:
     partial_text: str = "I have a question about"
     system_prompt: str = SPEC_SYSTEM
     _task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
+    _verifier: GreedyVerifier = field(default_factory=GreedyVerifier, init=False, repr=False)
     _client: LlamaClient | None = field(default=None, init=False, repr=False)
     stats: SpeculationStats = field(default_factory=SpeculationStats, init=False)
 
@@ -121,6 +136,7 @@ class SpeculationDriver:
         """
         self.budget_tokens = self.budget_for(turn) if turn else self.budget_tokens
         self.stats = SpeculationStats(budget_tokens=self.budget_tokens)
+        self._verifier.reset()
 
     def start_turn(self, partial: str | None = None, *, turn: int = 0) -> None:
         """Begin speculating for a turn that has just started."""
@@ -215,10 +231,15 @@ class SpeculationDriver:
         t0 = now_ns()
         streamed = 0
 
-        def count(_token: str) -> None:
+        text_parts: list[str] = []
+
+        def count(token: str) -> None:
             nonlocal streamed
             streamed += 1
             self.stats.tokens_produced += 1
+            # The candidate TEXT, not just its length: PredGen-Greedy verifies
+            # one generation against the next, which needs the words.
+            text_parts.append(token)
 
         try:
             self.stats.requests += 1
@@ -238,9 +259,13 @@ class SpeculationDriver:
             self.stats.spec_prompt_n = timings.get("prompt_n", -1)
             self.stats.spec_cache_n = timings.get("cache_n", -1)
             self.stats.decode_ms += (now_ns() - t0) / 1e6
+            self._record_candidate("".join(text_parts))
         except asyncio.CancelledError:
             # The turn ended first: every token this decode produced is waste,
-            # and thanks to streaming we know exactly how many that was.
+            # and thanks to streaming we know exactly how many that was. The
+            # partial candidate is still verified — a cancelled decode can have
+            # produced a usable first sentence before it was stopped.
+            self._record_candidate("".join(text_parts))
             self.stats.cancelled += 1
             self.stats.tokens_discarded += streamed
             self.stats.decode_ms += (now_ns() - t0) / 1e6
@@ -248,6 +273,23 @@ class SpeculationDriver:
         except Exception:
             self.stats.errors += 1
             log.debug("speculative decode failed", exc_info=True)
+
+    def _record_candidate(self, text: str) -> None:
+        """Verify this generation against the one before it, PredGen-Greedy.
+
+        The candidate was generated from an EARLIER partial. Whatever prefix
+        survives into the next generation is what the model still believes
+        having heard more speech; the rest was a guess the extra words refuted.
+        """
+        if not text:
+            return
+        _accepted, keep, dropped = self._verifier.verify(text)
+        self.stats.accepted_tokens += keep
+        self.stats.verifier_discarded_tokens += dropped
+        self.stats.candidate = text
+        sentence = first_sentence(text)
+        if sentence:
+            self.stats.first_sentence = sentence
 
     async def end_turn(self) -> SpeculationStats:
         """Cancel any in-flight decode and return what this turn spent."""
