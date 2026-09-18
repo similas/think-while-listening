@@ -327,6 +327,7 @@ class TurnManager:
         outcome: str,
         decide_ms: float,
         commit: Mapping[str, object] | None = None,
+        arm: str = "",
     ) -> None:
         """Record one policy decision. Written immediately, not buffered.
 
@@ -349,6 +350,7 @@ class TurnManager:
                 outcome=outcome,
                 decide_ms=round(decide_ms, 1),
                 commit=dict(commit or {}),
+                arm=arm,
             ),
         )
 

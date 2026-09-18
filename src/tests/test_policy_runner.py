@@ -15,6 +15,8 @@ from twl.trigger import TriggerReading
 class FakeTurns:
     decisions: list[dict[str, Any]] = field(default_factory=list)
     orphan_marks: int = 0
+    # The runner reads this to choose the arm when policies are interleaved.
+    turn: int = 1
 
     def note_decision(self, **kw: Any) -> None:
         self.decisions.append(kw)
@@ -205,3 +207,22 @@ def test_the_runner_passes_the_arm_s_resend_flag_to_the_driver() -> None:
     asyncio.run(r.on_partial("what is the capital of"))
     assert spec.seen == [True]
     assert turns.decisions[0]["commit"]["issued"] is True
+
+
+def test_interleaving_selects_the_arm_by_turn_number() -> None:
+    """Every utterance is measured under every arm inside one run."""
+    from twl.policies import SpecAlwaysPG, SpecContinue
+
+    arms = [Policy(), SpecAlwaysPG(), SpecContinue()]
+    # turn 1 -> arms[2], turn 2 -> arms[0], turn 3 -> arms[1]
+    r = PolicyRunner(
+        policy=arms[0],
+        turns=FakeTurns(),  # type: ignore[arg-type]
+        policies=arms,
+        schedule=[2, 0, 1],
+    )
+    assert r.policy_for(1).kind is arms[2].kind
+    assert r.policy_for(2).kind is arms[0].kind
+    assert r.policy_for(3).kind is arms[1].kind
+    # Past the end of the schedule it falls back rather than raising.
+    assert r.policy_for(99).kind is arms[0].kind

@@ -227,8 +227,20 @@ async def run(args: argparse.Namespace) -> None:
     cfg = load_config(args.config)
     if args.llm_backend is not None:
         cfg = replace(cfg, llm=replace(cfg.llm, backend=args.llm_backend))
+    arms = [a for a in args.interleave_policies.split(",") if a.strip()]
     budgets = tuple(int(b) for b in args.interleave.split(",") if b.strip())
     schedule: list[int] | None = None
+    policy_schedule: list[int] | None = None
+    if arms:
+        n_utt = len(sorted(Path(args.wav_dir).glob("*.wav")))
+        if args.live or not n_utt:
+            raise SystemExit("--interleave-policies needs a wav set: pairing is per utterance")
+        # The same Latin square used for budgets, over arm indices: every
+        # utterance is measured under every arm, and no arm is systematically
+        # early or late in the run.
+        policy_schedule = build_schedule(
+            n_utt, tuple(range(len(arms))), seed=args.interleave_seed, warmup=args.warmup_turns
+        )
     if budgets:
         n_utt = len(sorted(Path(args.wav_dir).glob("*.wav")))
         if args.live or not n_utt:
@@ -304,11 +316,13 @@ async def run(args: argparse.Namespace) -> None:
             base_wavs = sorted(Path(args.wav_dir).glob("*.wav"))
             if not base_wavs:
                 raise SystemExit(f"no wavs in {args.wav_dir}")
-            if schedule is not None:
-                # One pass per budget, so every utterance is measured at every
-                # budget INSIDE this run; the warm-up turns are extra wavs at
-                # the front and are excluded from analysis (twl.schedule).
-                wavs = base_wavs[: args.warmup_turns] + base_wavs * len(budgets)
+            if schedule is not None or policy_schedule is not None:
+                # One pass per interleaved level — per budget, or per arm — so
+                # every utterance is measured under every level INSIDE this run.
+                # The warm-up turns are extra wavs at the front and are excluded
+                # from analysis by their recorded flag (twl.schedule).
+                passes = len(budgets) if schedule is not None else len(arms)
+                wavs = base_wavs[: args.warmup_turns] + base_wavs * passes
             else:
                 wavs = base_wavs * args.repeat
             source = FileFrameSource(wavs, gap_ms=args.gap_ms, turn_gate=turn_gate)
@@ -319,8 +333,21 @@ async def run(args: argparse.Namespace) -> None:
         )
         sampler.start()
 
+        interleaved_policies = (
+            [
+                build_policy(
+                    a,
+                    budget_tokens=args.spec_tokens or 96,
+                    theta=args.theta,
+                    horizon_s=args.horizon_s,
+                )
+                for a in arms
+            ]
+            if arms
+            else None
+        )
         policy = build_policy(
-            args.policy,
+            arms[0] if arms else args.policy,
             budget_tokens=args.spec_tokens or 96,
             theta=args.theta,
             horizon_s=args.horizon_s,
@@ -334,7 +361,7 @@ async def run(args: argparse.Namespace) -> None:
                 schedule=schedule,
                 system_prompt=policy.system_prompt,
             )
-            if (args.spec_tokens > 0 or schedule is not None or args.policy != "reactive")
+            if (args.spec_tokens > 0 or schedule is not None or args.policy != "reactive" or arms)
             else None
         )
         detector = ContentionDetector(history_fn=sampler.recent_soc_mw)
@@ -368,7 +395,7 @@ async def run(args: argparse.Namespace) -> None:
         )
         # The runner needs the TurnManager build_pipeline just created, so it
         # is attached after construction rather than passed in.
-        if args.policy != "reactive":
+        if args.policy != "reactive" or arms:
             if speculation is not None:
                 # Upper bound for the pre-synthesis saving: when a complete
                 # sentence first existed, against tts_first_audio.
@@ -378,6 +405,8 @@ async def run(args: argparse.Namespace) -> None:
             built.observer.attach_runner(
                 PolicyRunner(
                     policy=policy,
+                    policies=interleaved_policies,
+                    schedule=policy_schedule,
                     turns=built.turns,
                     speculation=speculation,
                     trigger=trigger,
@@ -644,6 +673,13 @@ def main() -> None:
         help="Phase 2: concurrent speculative decode of B tokens during speech",
     )
     p.add_argument(
+        "--interleave-policies",
+        default="",
+        help="comma-separated arms to interleave WITHIN one run (e.g. "
+        "reactive,spec_always_pg,spec_continue); each utterance is measured "
+        "under each arm, so arm comparisons are paired within run",
+    )
+    p.add_argument(
         "--policy",
         default="reactive",
         choices=[k.value for k in PolicyKind],
@@ -687,7 +723,12 @@ def main() -> None:
     a = p.parse_args()
 
     n_wavs = len(sorted(Path(a.wav_dir).glob("*.wav"))) if not a.live else 0
-    turns = n_wavs * a.repeat
+    # Interleaving plays one pass per level plus the warm-up block, so the plan
+    # must count those turns or the gate understates what it is approving.
+    n_budgets = len([b for b in a.interleave.split(",") if b.strip()])
+    n_arms = len([x for x in a.interleave_policies.split(",") if x.strip()])
+    passes = n_budgets or n_arms
+    turns = (n_wavs * passes + a.warmup_turns) if passes else n_wavs * a.repeat
     steps = [
         f"{'live mic for ' + str(a.live_seconds) + 's' if a.live else str(turns) + ' turns'}"
         f", clocks={'pinned' if a.clocks else 'as-found'}, llm={a.llm_backend or 'config'}"

@@ -205,6 +205,8 @@ class DecisionRecord:
     # decode time of the cancelled attempt. Aggregating these per turn would
     # hide the mechanism, since one turn can hold several commits.
     commit: dict[str, Any] = field(default_factory=dict)
+    # Which arm ran this turn, when policies are interleaved within a run.
+    arm: str = ""
 
     kind: str = field(default="decision_record", init=False)
 

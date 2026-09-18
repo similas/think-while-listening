@@ -37,6 +37,10 @@ class PolicyRunner:
 
     policy: Policy
     turns: TurnManager
+    # Per-turn policy interleaving. When set, the arm for a turn is
+    # policies[schedule[turn - 1]] and ``policy`` is only the fallback.
+    policies: list[Policy] | None = None
+    schedule: list[int] | None = None
     speculation: SpeculationDriver | None = None
     trigger: SemanticTrigger | None = None
     detector: ContentionDetector | None = None
@@ -52,6 +56,15 @@ class PolicyRunner:
             # simply proceeds as if it had not speculated.
             log.exception("policy runner failed on a partial")
 
+    def policy_for(self, turn: int) -> Policy:
+        """The arm this turn runs. Interleaving makes it a function of the turn."""
+        if self.policies is None or self.schedule is None:
+            return self.policy
+        i = turn - 1
+        if 0 <= i < len(self.schedule):
+            return self.policies[self.schedule[i]]
+        return self.policy
+
     async def _on_partial(self, text: str) -> None:
         self.partials_seen += 1
         t0 = now_ns()
@@ -61,7 +74,8 @@ class PolicyRunner:
             else TriggerReading(text, 0.0, 0.0, 0.0)
         )
         contended = self.detector.current().contended if self.detector is not None else False
-        decision = self.policy.decide(text, reading.p_done, contended)
+        policy = self.policy_for(self.turns.turn)
+        decision = policy.decide(text, reading.p_done, contended)
 
         # Warm the slot on EVERY partial, whether or not the policy fires: the
         # prefill is what makes a later generation cheap, and a policy that
@@ -86,6 +100,7 @@ class PolicyRunner:
             trigger=reading.as_dict(),
             outcome=outcome,
             commit=commit,
+            arm=policy.kind.value,
             # Trigger latency as Ali defined it: the STT partial latency is
             # logged separately per partial; this is the evaluation half.
             decide_ms=(now_ns() - t0) / 1e6,
