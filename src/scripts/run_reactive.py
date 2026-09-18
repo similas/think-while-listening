@@ -390,7 +390,9 @@ async def run(args: argparse.Namespace) -> None:
             segment_dir=run_dir / "segments",
             detector=detector,
             temps_fn=sampler.temps_since,
-            warmup_turns=args.warmup_turns if schedule is not None else 0,
+            warmup_turns=(
+                args.warmup_turns if (schedule is not None or policy_schedule is not None) else 0
+            ),
             speculation=speculation,
         )
         # The runner needs the TurnManager build_pipeline just created, so it
