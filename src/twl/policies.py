@@ -32,7 +32,7 @@ import logging
 from dataclasses import dataclass, field
 from enum import Enum
 
-from twl.contention import contention_cost_ms
+from twl.contention import ttfa_cost_ms
 
 log = logging.getLogger(__name__)
 
@@ -297,7 +297,8 @@ class BudgetR(Policy):
 
     kind: PolicyKind = PolicyKind.BUDGET_R
     system_prompt: str = PREDGEN_SYSTEM
-    arms: tuple[int, ...] = (0, 32, 64, 96)
+    # B=48 added to bracket the measured uncontended crossover at B=56.
+    arms: tuple[int, ...] = (0, 32, 48, 64, 96)
     p_usable: float = P_DRAFT_USABLE_PRIOR
     saving_ms: float = SPEC_SAVING_MS
     decode_ms_per_token: float = SPEC_DECODE_MS_PER_TOKEN
@@ -325,31 +326,38 @@ class BudgetR(Policy):
         b_fit = int(remaining / self.decode_ms_per_token)
         expected_saving = self.p_usable * self.saving_ms
 
-        affordable = [
-            b
-            for b in self.arms
-            if b > 0 and b <= b_fit and contention_cost_ms(b, contended) < expected_saving
-        ]
-        if not affordable:
-            # Say WHY in the record: whether nothing fit, or nothing was worth it.
-            biggest = max((b for b in self.arms if b > 0), default=0)
-            smallest = min((b for b in self.arms if b > 0), default=0)
-            if smallest and smallest > b_fit:
-                why = f"no arm fits {remaining:.0f} ms of speech (B_fit={b_fit})"
-            else:
-                why = (
-                    f"expected saving {expected_saving:.0f} ms < cost "
-                    f"{contention_cost_ms(smallest, contended):.0f} ms at B={smallest}"
-                    f" (p_usable={self.p_usable:.3f})"
-                )
-            return Decision(False, 0, f"budget-r: {why}; biggest arm {biggest}", p_done, contended)
-
-        b = max(affordable)
+        # Value of a budget = what the draft is worth when usable, MINUS what
+        # holding the slot costs. The cost term can be NEGATIVE uncontended
+        # (measured fee -76.9 ms), so a budget can pay even when the draft
+        # almost never is — which is why this maximizes value rather than
+        # filtering on affordability.
+        fits = [b for b in self.arms if b > 0 and b <= b_fit]
+        if not fits:
+            return Decision(
+                False,
+                0,
+                f"budget-r: no arm fits {remaining:.0f} ms of speech (B_fit={b_fit})",
+                p_done,
+                contended,
+            )
+        values = {b: expected_saving - ttfa_cost_ms(b, contended) for b in fits}
+        best = max(values, key=lambda b: values[b])
+        if values[best] <= 0:
+            return Decision(
+                False,
+                0,
+                f"budget-r: no arm has positive value; best B={best} at "
+                f"{values[best]:+.0f} ms (saving {expected_saving:.0f} - cost "
+                f"{ttfa_cost_ms(best, contended):+.0f}, p_usable={self.p_usable:.3f})",
+                p_done,
+                contended,
+            )
         return Decision(
             True,
-            b,
-            f"budget-r: B={b} fits {remaining:.0f} ms (B_fit={b_fit}), "
-            f"cost {contention_cost_ms(b, contended):.0f} ms < saving {expected_saving:.0f} ms",
+            best,
+            f"budget-r: B={best} value {values[best]:+.0f} ms "
+            f"(saving {expected_saving:.0f} - cost {ttfa_cost_ms(best, contended):+.0f}), "
+            f"fits {remaining:.0f} ms (B_fit={b_fit})",
             p_done,
             contended,
             resend=False,

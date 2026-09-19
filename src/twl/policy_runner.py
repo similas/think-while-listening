@@ -77,15 +77,19 @@ class PolicyRunner:
         policy = self.policy_for(self.turns.turn)
         decision = policy.decide(text, reading.p_done, contended)
 
-        # Warm the slot on EVERY partial, whether or not the policy fires: the
-        # prefill is what makes a later generation cheap, and a policy that
-        # fires on a late partial still benefits from the earlier ones.
-        if self.speculation is not None:
-            await self.speculation.prefill(text)
-
+        # GATED ON THE DECISION. The prefill was originally unconditional, on
+        # the reasoning that a policy firing on a late partial benefits from the
+        # earlier ones. Measured 2026-09-18, that reasoning does not survive its
+        # price: one prefill per turn costs a median 104 ms, and it buys cheaper
+        # decoding for a draft that is usable 2% of the time. It accounts for
+        # most of the gap between the arm comparison (+104 ms) and the budget
+        # grid's prediction (+30 ms at the same budget, no prefills).
+        #
+        # A turn that will not speculate must not pay for speculation.
         outcome = "not issued"
         commit: dict[str, object] = {}
         if decision.speculate and self.speculation is not None:
+            await self.speculation.prefill(text)
             commit = await self.speculation.commit(
                 text, decision.budget_tokens, resend=decision.resend
             )

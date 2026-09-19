@@ -134,30 +134,6 @@ def test_first_sentence_is_only_taken_once_complete() -> None:
     assert first_sentence("It is four") == "", "no terminator yet: nothing to speak"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Encodes the PRE-REGISTERED prediction at 5ab29ec, not the measured "
-        "arithmetic. BUDGET-R currently chooses B=64 uncontended because the A3 "
-        "cost model prices STT inflation, while the objective is TTFA/occupancy "
-        "— a ~10x mismatch. strict=True so this fails loudly if it starts "
-        "passing: that would mean the model changed under it. To be rewritten on "
-        "measured inputs once the TTFA cost grid lands, asserting the arithmetic "
-        "(more p_usable -> more spend, contention -> less) and never a specific B."
-    ),
-)
-def test_budget_r_chooses_zero_at_the_measured_usability() -> None:
-    """The degenerate choice must come from arithmetic, not a special case."""
-    from twl.policies import BudgetR
-
-    b = BudgetR()  # p_usable = 0.02, the measured Phase 3 value
-    for contended in (False, True):
-        d = b.decide("what is the capital of", p_done=0.0, contended=contended)
-        assert d.speculate is False
-        assert d.budget_tokens == 0
-        assert "p_usable" in d.reason or "no arm fits" in d.reason
-
-
 def test_budget_r_spends_when_the_draft_becomes_usable() -> None:
     """Raise the one measured input and the SAME rule starts spending.
 
@@ -184,24 +160,65 @@ def test_budget_r_will_not_start_a_speculation_that_cannot_finish() -> None:
     assert "no arm fits" in d.reason
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Encodes the PRE-REGISTERED prediction at 5ab29ec, not the measured "
-        "arithmetic. BUDGET-R currently chooses B=64 uncontended because the A3 "
-        "cost model prices STT inflation, while the objective is TTFA/occupancy "
-        "— a ~10x mismatch. strict=True so this fails loudly if it starts "
-        "passing: that would mean the model changed under it. To be rewritten on "
-        "measured inputs once the TTFA cost grid lands, asserting the arithmetic "
-        "(more p_usable -> more spend, contention -> less) and never a specific B."
-    ),
-)
-def test_budget_r_spends_less_when_contended() -> None:
-    """The state signal has to change the budget, or it is not a state signal."""
+def test_budget_r_optimum_follows_the_measured_cost_curve() -> None:
+    """The choice must be argmax of value, whatever budget that turns out to be.
+
+    Deliberately asserts NO specific B. The two tests this replaces encoded the
+    pre-registered prediction (5ab29ec) rather than the arithmetic, and a test
+    that names the predicted answer cannot falsify it. What is asserted here is
+    the PROPERTY: BUDGET-R picks the arm maximizing expected saving minus
+    measured TTFA cost, and declines when no arm has positive value.
+    """
+    from twl.contention import ttfa_cost_ms
+    from twl.policies import BudgetR
+
+    b = BudgetR()
+    for contended in (False, True):
+        d = b.decide("what is the capital of", p_done=0.0, contended=contended)
+        saving = b.p_usable * b.saving_ms
+        values = {arm: saving - ttfa_cost_ms(arm, contended) for arm in b.arms if arm > 0}
+        best = max(values, key=lambda a: values[a])
+        if values[best] > 0:
+            assert d.speculate is True
+            assert d.budget_tokens == best, f"expected argmax {best}, got {d.budget_tokens}"
+        else:
+            assert d.speculate is False and d.budget_tokens == 0
+
+
+def test_contention_can_only_reduce_the_budget() -> None:
+    """Contention raises the entry fee, so it can never justify spending MORE."""
     from twl.policies import BudgetR
 
     b = BudgetR(p_usable=0.9)
     cold = b.decide("what is the capital of", p_done=0.0, contended=False)
     hot = b.decide("what is the capital of", p_done=0.0, contended=True)
-    assert cold.budget_tokens >= hot.budget_tokens
-    assert hot.budget_tokens < cold.budget_tokens or hot.speculate is False
+    assert hot.budget_tokens <= cold.budget_tokens
+
+
+def test_a_more_usable_draft_never_reduces_the_budget() -> None:
+    """Monotone in the one input a different consumer would change."""
+    from twl.policies import BudgetR
+
+    budgets = [
+        BudgetR(p_usable=p).decide("what is the capital of", 0.0, True).budget_tokens
+        for p in (0.0, 0.02, 0.5, 0.95)
+    ]
+    assert budgets == sorted(budgets), budgets
+
+
+def test_the_fee_is_what_makes_a_small_budget_pay_uncontended() -> None:
+    """The measured negative fee, stated as the property the controller uses.
+
+    Uncontended the fixed term is negative, so a small budget costs less than
+    nothing; contended it is not. This is the inverted role of the detector:
+    contention moves the FEE, not the per-token slope.
+    """
+    from twl.contention import MS_PER_TOKEN, ttfa_cost_ms
+
+    assert ttfa_cost_ms(32, contended=False) < 0.0
+    assert ttfa_cost_ms(32, contended=True) > 0.0
+    # One slope, both states: the measured estimates were 1.382 and 1.350 with
+    # overlapping CIs, so the model carries a single state-invariant slope.
+    per_token_cold = ttfa_cost_ms(96, False) - ttfa_cost_ms(95, False)
+    per_token_hot = ttfa_cost_ms(96, True) - ttfa_cost_ms(95, True)
+    assert per_token_cold == pytest.approx(per_token_hot) == pytest.approx(MS_PER_TOKEN)

@@ -162,8 +162,8 @@ def test_speculation_stats_reset_every_turn_even_without_an_onset_decode() -> No
     assert d.stats.budget_tokens == 96
 
 
-def test_every_partial_warms_the_slot_even_when_the_policy_declines() -> None:
-    """The prefill is unconditional: a later firing reuses the earlier ones."""
+def test_a_declining_turn_does_not_pay_for_a_prefill() -> None:
+    """The prefill is GATED: a turn that will not speculate must not pay."""
     turns, spec = FakeTurns(), FakeSpec()
     r = PolicyRunner(
         policy=SpecTrigger(theta=0.9),
@@ -173,7 +173,10 @@ def test_every_partial_warms_the_slot_even_when_the_policy_declines() -> None:
     )
     run(r, "what is", "what is the")
     assert spec.calls == [], "the policy declined, so nothing should be generated"
-    assert spec.prefills == ["what is", "what is the"], "but the slot is still warmed"
+    assert spec.prefills == [], (
+        "and nothing should be prefilled either: a prefill costs a median 104 ms "
+        "and only pays if this turn goes on to speculate (results/NOTES.md)"
+    )
 
 
 def test_pg_resends_on_every_commit_and_continue_does_not() -> None:

@@ -301,9 +301,52 @@ class ContentionDetector:
 #
 # It is set to 0.0 rather than to the fitted -5.4: a negative cost for starting
 # to speculate is not a thing, and both CIs contain zero.
+# THE DETECTOR'S ROLE IS INVERTED ON THIS METRIC, and this is the single most
+# important line in the file for the controller. Measured 2026-09-18 on the
+# blocked TTFA grid (B in {0,32,64,96} x state, 3 reps, 48 curves per state):
+#
+#     state          ENTRY_FEE (ms)           slope (ms/token)
+#     uncontended    -76.9 [-122.7, -33.4]    +1.382 [+0.761, +1.794]
+#     contended      +20.2 [ -94.9,  +99.9]   +1.350 [+0.486, +2.380]
+#
+# The per-token slope does NOT depend on contention — 1.382 against 1.350, CIs
+# almost entirely overlapping — so a single state-invariant slope is the honest
+# representation. Contention moves the ENTRY FEE instead.
+#
+# Contrast the same budgets measured on STT inflation (A3): 0.135 uncontended
+# against 1.514 contended, an 11x ratio. Different mechanisms, different
+# sensitivities. Memory contention slows the RECOGNIZER, so STT inflation
+# tracks it; TTFA is delayed by the decode OCCUPYING THE SLOT, and a slot is
+# occupied for the same duration whether or not memory is contended.
+#
+# The uncontended fee is NEGATIVE with a CI excluding zero: a small speculation
+# makes TTFA faster. Mechanism not established (warming is the leading
+# candidate and is under test); the number is measured, the explanation is not.
+# The contended fee's CI spans zero, so it is carried as 0.0 rather than as its
+# +20.2 point estimate, the same rule applied to A3's fee.
+ENTRY_FEE_UNCONTENDED_MS = -76.9
+ENTRY_FEE_CONTENDED_MS = 0.0
+MS_PER_TOKEN = 1.37
+
+# Kept for the Phase 2 analyses that consume STT inflation. NOT the cost a TTFA
+# controller should use: these differ from the TTFA figures above by ~10x and
+# measure a different quantity.
 ENTRY_FEE_MS = 0.0
 MS_PER_TOKEN_UNCONTENDED = 0.135
 MS_PER_TOKEN_CONTENDED = 1.514
+
+
+def ttfa_cost_ms(budget_tokens: int, contended: bool) -> float:
+    """Milliseconds a budget of B adds to TIME TO FIRST AUDIO.
+
+    This is the cost a budget controller optimizes, and it can be NEGATIVE:
+    uncontended, the fixed term is -76.9 ms, so a small speculation pays for
+    itself. Crossover is at B = 56 uncontended; contended, every budget costs.
+    """
+    if budget_tokens <= 0:
+        return 0.0
+    fee = ENTRY_FEE_CONTENDED_MS if contended else ENTRY_FEE_UNCONTENDED_MS
+    return fee + MS_PER_TOKEN * budget_tokens
 
 
 def contention_cost_ms(budget_tokens: int, contended: bool) -> float:
