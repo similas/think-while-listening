@@ -2189,3 +2189,70 @@ every partial whether or not the policy speculates. At 104 ms per turn, buying
 cheaper decoding for a draft that is usable 2% of the time, it is close to pure
 cost in the current configuration. It should be gated on the decision to
 speculate, not issued regardless.
+
+## p_usable(B) CANNOT be measured from existing logs. Assumed flat, untested
+
+Attempted on the PG-arm logs (n=48 turns with a first sentence, drafts of 44-117
+tokens, 25 distinct lengths). Scored: exact first-sentence match 2/48 (4.2%);
+word overlap with the real first sentence by draft length —
+
+    draft tokens   n    median overlap
+      24-47        7          0.500
+      48-71        4          0.333
+      72-95       19          0.100
+      96-119      18          0.062
+
+which looks like usability FALLING with length. It cannot be read that way.
+
+THE CONFOUND IS TOTAL: r(draft tokens, utterance seconds) = +0.955. The draft
+runs until the endpoint cancels it, so its length IS the utterance's length in
+this design. r(tokens, overlap) = -0.420 and r(utterance seconds, overlap) =
+-0.417 are the same correlation seen twice. A further artifact pushes the same
+way: r(real reply length, overlap) = -0.309, because WER against a longer
+reference scores lower by construction.
+
+The verifier signal points the OTHER way (accepted tokens only in the longest
+bin, 6 of 18) and is also an artifact: survival needs two candidates to compare,
+and only long drafts live long enough to be resent.
+
+CONCLUSION: p_usable is assumed FLAT in B, and that assumption is UNTESTED. If
+it rises with length the optimum moves off the smallest arm; if it falls, B=32
+stands. Recorded in twl/policies.py where the assumption is used.
+
+THE EXPERIMENT THAT WOULD RESOLVE IT, for later: run the PG policy under a
+BUDGET-interleaved schedule (B in {32,48,64,96}) so the same utterance produces
+drafts capped at different lengths. That breaks the length/utterance confound by
+construction. The existing budget grid cannot serve: its speculation runs on the
+placeholder text, not the live transcript. Deferred to the second-consumer
+experiment, where a draft's value varies with length by design.
+
+## The negative fee is NOT LLM warming, and the fee itself is an extrapolation
+
+Stage decomposition at B=32, uncontended, paired per utterance, n=48:
+
+    interval                             delta at B=32        95% CI
+    speech end -> stt_final                    -14.0 ms   [-22.0, +6.7]
+    stt_final -> llm_first_token                +0.8 ms   [ -1.7, +2.8]
+    llm_first_token -> tts_first_audio          -3.3 ms   [-27.3, +8.6]
+    TOTAL speech end -> first audio             -8.4 ms   [-35.8, +18.7]
+
+WARMING IS REFUTED AS STATED. If a recently-decoded slot served the real request
+faster, the stt_final -> llm_first_token interval would shrink. It does not:
++0.8 ms with a tight CI of [-1.7, +2.8]. Whatever the negative fee is, it is not
+the LLM answering sooner.
+
+The only suggestive component is the STT commit (-14.0 ms), whose CI spans zero
+— and which would be the opposite sign to Phase 2's contention result, where
+speculation SLOWED the recognizer. Unexplained, and reported as unexplained.
+
+A CAVEAT ON THE FEE THAT MATTERS FOR THE CONTROLLER. The -76.9 ms fee is the
+INTERCEPT of a line fitted over B in {32, 64, 96}, extrapolated 32 tokens below
+the smallest budget measured. The measured median at B=32 is -18.9 ms, while the
+model predicts -33.1 ms. The controller is therefore acting on an extrapolation
+that overstates the benefit at its own chosen arm by ~14 ms.
+
+Ali's discriminator tests exactly this: a budget of B=1 touches the slot while
+generating almost nothing. If the negative fee is a fixed effect of speculating
+at all, B=1 shows most of it; if the benefit scales with tokens, B=1 shows
+little and the fitted intercept is an artifact of extrapolation. Running now as
+a blocked grid over B in {0, 1, 32}, uncontended, 3 reps.

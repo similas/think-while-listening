@@ -299,6 +299,11 @@ class BudgetR(Policy):
     system_prompt: str = PREDGEN_SYSTEM
     # B=48 added to bracket the measured uncontended crossover at B=56.
     arms: tuple[int, ...] = (0, 32, 48, 64, 96)
+    # ASSUMED FLAT IN B, AND UNTESTED. Existing logs cannot measure
+    # p_usable(B): the draft runs until the endpoint cancels it, so its length
+    # correlates with the utterance length at r=0.955 and the two cannot be
+    # separated (results/NOTES.md). If p_usable RISES with length, the optimum
+    # moves off the smallest arm and this model understates large budgets.
     p_usable: float = P_DRAFT_USABLE_PRIOR
     saving_ms: float = SPEC_SAVING_MS
     decode_ms_per_token: float = SPEC_DECODE_MS_PER_TOKEN
