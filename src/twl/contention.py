@@ -340,7 +340,27 @@ class ContentionDetector:
 # fee: the point estimate where its CI excludes zero, otherwise zero.
 ENTRY_FEE_UNCONTENDED_MS = 0.0
 ENTRY_FEE_CONTENDED_MS = 0.0
-MS_PER_TOKEN = 1.37
+# RETRACTION (2026-09-20). This file previously stated, from the free-intercept
+# fit, that contention moves the ENTRY FEE and not the per-token slope. That
+# conclusion was an artifact of fitting an unconstrained intercept to budgets
+# no smaller than 32, and the B=1 anchor contradicts it: the free-intercept
+# model predicts -75.5 ms at B=1, the through-origin model predicts +0.05 ms,
+# and the measurement is -5.9 ms [-63.6, +42.3].
+#
+# With the intercept constrained to zero — which B=1 justifies — the state
+# dependence returns to the SLOPE, as it was on STT inflation:
+#
+#     state          slope through origin (ms/token)      resolved?
+#     uncontended    +0.046  [-0.421, +0.548]   n=96      NO, spans zero
+#     contended      +1.147  [+0.406, +1.892]   n=48      yes
+#
+# THE UNCONTENDED COST IS NOT RESOLVABLE AT THESE BUDGETS. That is a statement
+# about measurement resolution, not a measurement of zero: at B=32 the cost
+# could be anywhere in [-13.5, +17.5] ms, against an expected saving of 12.2 ms.
+# A controller choosing uncontended is therefore choosing on an undetermined
+# quantity; only its CONTENDED decision is grounded.
+MS_PER_TOKEN_TTFA_UNCONTENDED = 0.046
+MS_PER_TOKEN_TTFA_CONTENDED = 1.147
 
 # Kept for the Phase 2 analyses that consume STT inflation. NOT the cost a TTFA
 # controller should use: these differ from the TTFA figures above by ~10x and
@@ -360,7 +380,8 @@ def ttfa_cost_ms(budget_tokens: int, contended: bool) -> float:
     if budget_tokens <= 0:
         return 0.0
     fee = ENTRY_FEE_CONTENDED_MS if contended else ENTRY_FEE_UNCONTENDED_MS
-    return fee + MS_PER_TOKEN * budget_tokens
+    slope = MS_PER_TOKEN_TTFA_CONTENDED if contended else MS_PER_TOKEN_TTFA_UNCONTENDED
+    return fee + slope * budget_tokens
 
 
 def contention_cost_ms(budget_tokens: int, contended: bool) -> float:

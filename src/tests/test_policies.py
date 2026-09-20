@@ -215,14 +215,15 @@ def test_no_budget_is_free_in_either_state() -> None:
     both spanning zero. The model therefore carries no fee, and this test pins
     that: a speculation always costs slot time.
     """
-    from twl.contention import MS_PER_TOKEN, ttfa_cost_ms
+    from twl.contention import ttfa_cost_ms
 
     for contended in (False, True):
         assert ttfa_cost_ms(0, contended) == 0.0
         for b in (1, 32, 48, 64, 96):
             assert ttfa_cost_ms(b, contended) > 0.0
-    # One slope, both states: the measured estimates were 1.382 and 1.350 with
-    # overlapping CIs, so the model carries a single state-invariant slope.
+    # Contention scales the SLOPE, through-origin: +0.046 uncontended against
+    # +1.147 contended. The earlier claim that it moved the FEE instead was an
+    # artifact of an unconstrained intercept and is retracted (twl/contention.py).
     per_token_cold = ttfa_cost_ms(96, False) - ttfa_cost_ms(95, False)
     per_token_hot = ttfa_cost_ms(96, True) - ttfa_cost_ms(95, True)
-    assert per_token_cold == pytest.approx(per_token_hot) == pytest.approx(MS_PER_TOKEN)
+    assert per_token_hot > per_token_cold

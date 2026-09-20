@@ -2310,3 +2310,63 @@ away.
 What changed is not the prediction but its GROUND: it was predicted from
 p_usable being too small to pay, and it now holds because no budget is free
 either. Both routes lead to B=0; only the second is measured.
+
+## RETRACTION: contention moves the SLOPE, not the fee. And the uncontended cost is unresolved
+
+The B=1 anchor discriminates between two fits of the same data:
+
+    model                     predicts at B=1    predicts at B=32
+    free intercept            -75.5 ms           -33.1 ms
+    intercept forced to 0      +0.05 ms           +1.5 ms
+    MEASURED                   -5.9 ms            -16.0 ms
+                               [-63.6, +42.3]     [-45.9, +12.9]
+
+-5.9 is far closer to 0 than to -75.5, so the through-origin fit is the one the
+data supports, and the earlier claim in this file — that contention moves the
+ENTRY FEE and not the per-token slope — was an artifact of fitting an
+unconstrained intercept to budgets no smaller than 32. RETRACTED.
+
+Slopes with the intercept constrained to zero:
+
+    state          slope (ms/token)              n     resolved?
+    uncontended    +0.046  [-0.421, +0.548]     96     NO, spans zero
+    contended      +1.147  [+0.406, +1.892]     48     yes
+
+So the state dependence sits in the slope after all, as it did on STT inflation
+(0.135 vs 1.514 there, 0.046 vs 1.147 here).
+
+THE DISTINCTION THAT DECIDES WHAT THE NEGATIVE RESULT MEANS (Ali). Uncontended,
+EVERY budget the controller can choose has a cost whose CI spans zero, and B=32
+does not reproduce its sign across sessions (-18.9 then +5.4). The cost landscape
+at small budgets is FLAT WITHIN MEASUREMENT RESOLUTION. At B=32 the cost could be
+anywhere in [-13.5, +17.5] ms against an expected saving of 12.2 ms — the sign of
+the decision is not determined by the data.
+
+BUDGET-R choosing B=0 is therefore "NO RESOLVABLE BENEFIT TO SPEND ON", not
+"found the optimum". Only the CONTENDED decision is grounded: there the cost is
+resolved (+36.7 ms at B=32) and exceeds the saving, so B=0 follows from
+measurement. The paper must not blur these: one is a claim about the device, the
+other about the resolution of this experiment.
+
+(With the through-origin model the controller now picks B=32 uncontended and B=0
+contended — but the uncontended pick rests on a slope whose CI spans zero and
+should be reported as undetermined rather than as a choice.)
+
+## The pre-registered prediction: CONFIRMED ON DIFFERENT GROUND
+
+Not a clean confirmation, and not to be reported as one.
+
+    PREDICTED (5ab29ec): BUDGET-R will not beat REACTIVE and will choose B=0 on
+    most turns, BECAUSE a draft usable 2% of the time cannot repay its cost.
+
+    HOLDS, BUT BECAUSE: no budget shows a resolvable net benefit. Uncontended the
+    cost cannot be distinguished from zero and neither can the benefit; contended
+    the cost is resolved and exceeds the saving.
+
+The predicted ROUTE runs through p_usable, which remains ASSUMED FLAT IN B AND
+UNTESTED — the existing logs confound draft length with utterance length at
+r=0.955. The route that actually holds runs through the cost side, which is
+measured. Both reach B=0; only the second is supported.
+
+Reporting this as confirmation of the original reasoning would credit an
+untested assumption with a result it did not produce.
