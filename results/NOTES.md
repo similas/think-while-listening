@@ -2381,3 +2381,48 @@ measured. Both reach B=0; only the second is supported.
 
 Reporting this as confirmation of the original reasoning would credit an
 untested assumption with a result it did not produce.
+
+## The prefill is NOT the arm penalty. The grid-vs-arm gap is OPEN
+
+Discriminator, 2026-09-20: prefill disabled outright (--no-prefill) against
+enabled, three arms blocked within each run so the penalty is a within-run
+paired quantity, 2 reps per condition.
+
+    arm               prefill ON              prefill OFF
+    spec_always_pg    +79 [+42, +109]         +77 [-23, +104]
+    spec_continue     +72 [+37, +124]         +39 [ -9,  +92]
+
+PG's penalty is UNCHANGED (79 -> 77, a 2 ms difference against a prefill that
+costs 104 ms in isolation). CONTINUE moves 33 ms with heavily overlapping CIs.
+Disabling the prefill did not recover ~100 ms, so the prefill is not most of the
+arm penalty and the reconciliation asserted earlier is REFUTED, not merely
+unverified. A prefill evidently overlaps enough other work that removing it
+returns little of its isolated cost.
+
+THE DISCREPANCY IS NOW LARGER, NOT SMALLER. The through-origin cost model
+predicts 0.046 x 78 = 3.6 ms for an uncontended arm producing ~78 tokens. The
+arms measure +72 to +192 ms depending on session:
+
+    114 [+61, +161]   blocked, 3 reps, 18 Sep
+    100 [+52, +149]   blocked, 3 reps, 18 Sep
+    192 [+124, +253]  blocked, 1 rep,  20 Sep
+     79 [+42, +109]   blocked, 2 reps, 20 Sep
+     77 [-23, +104]   blocked, 2 reps, 20 Sep, no prefill
+
+The arm penalty is real (most CIs exclude zero) and roughly 20x what the cost
+model predicts. The model was fitted on the SAME metric (TTFA) with the SAME
+blocked design, so this is not a metric mismatch. It is an open discrepancy in
+the cost model and is reported as one.
+
+WHAT DIFFERS BETWEEN THE TWO DESIGNS, none of it tested:
+ 1. WHEN speculation starts. The budget grid issues at VAD onset, early in the
+    utterance; the policy arms issue at the FIRST PARTIAL, roughly 2 s in and
+    much closer to the endpoint. A decode that runs late is more likely to
+    still hold the slot when the answer needs it. This is the leading
+    candidate and it is cheap to test.
+ 2. WHAT is speculated on. The grid speculates on placeholder text; the arms on
+    the live transcript, which is longer and differently tokenized.
+ 3. HOW MANY commits. PG resends per commit (1.31/turn); the grid issues once.
+
+Until one of these is measured, BUDGET-R's cost model describes the budget grid
+and not the pipeline the controller runs in, and the Phase 4 report says so.
