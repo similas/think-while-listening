@@ -113,6 +113,10 @@ class SpeculationDriver:
     # partial exists. Phase 3 policies pass the LIVE transcript instead.
     partial_text: str = "I have a question about"
     system_prompt: str = SPEC_SYSTEM
+    # Set False to disable the bare prefill entirely. Exists so the prefill can
+    # be measured as a FACTOR: the arms always speculate, so gating the prefill
+    # on the decision is a no-op for them and cannot test its cost.
+    prefill_enabled: bool = True
     # Called the first time a complete sentence exists in a candidate, so
     # the pre-synthesis saving has an UPPER bound and not only the lower
     # bound that stt_final -> tts_first_audio provides.
@@ -256,6 +260,8 @@ class SpeculationDriver:
         Skipped while a decode is in flight: the prefill would queue behind it
         on the shared slot and arrive too late to help.
         """
+        if not self.prefill_enabled:
+            return
         if self._task is not None and not self._task.done():
             self.stats.prefill_skipped_busy += 1
             return

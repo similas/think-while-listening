@@ -2178,10 +2178,21 @@ Blocked grid, B in {0,32,64,96} x {uncontended, contended}, same-arm washout,
    considered. It missed that speculation has an effect on TTFA that does not
    run through the draft being usable at all.
 
-RECONCILING THIS WITH THE ARM COMPARISON, which measured +100 to +114 ms for the
-speculative arms. The model predicts +30 ms at B=77 uncontended. The gap is the
-PREFILL: the policy arms issue one bare prefill per turn (median 104 ms), the
-budget grid issues none (0 prefills, no PolicyRunner). Measured, not inferred.
+RECONCILING THIS WITH THE ARM COMPARISON — CORRECTED 2026-09-20, IT WAS
+OVERCLAIMED. The arms measured +100 to +114 ms; the model predicts +30 ms at
+B=77 uncontended. It was asserted here that the gap IS the prefill, on the
+grounds that the policy arms issue one prefill per turn at a median 104 ms while
+the budget grid issues none.
+
+What was actually established is that the two designs DIFFER in prefills (1/turn
+vs 0/turn, measured) and that the gap is ~74 ms while the prefill costs ~104 ms.
+Attributing one to the other rests on two numbers both being about 100 — the
+same shape of coincidence that produced the entry-fee artifact, where a fitted
+intercept agreed with nothing once measured directly. A prefill overlaps other
+work and need not cost the critical path what it costs in isolation.
+
+The claim is therefore UNVERIFIED pending the discriminator below, and the
+grid-vs-arm gap is an OPEN DISCREPANCY in the cost model until it is settled.
 
 That has a consequence. The prefill was adopted as a scheduling win — 72% fewer
 tokens re-read by the speculative decode — and it is unconditional, issued on

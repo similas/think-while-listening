@@ -384,6 +384,7 @@ async def run(args: argparse.Namespace) -> None:
                 budget_tokens=args.spec_tokens,
                 schedule=schedule,
                 system_prompt=policy.system_prompt,
+                prefill_enabled=not args.no_prefill,
             )
             if (args.spec_tokens > 0 or schedule is not None or args.policy != "reactive" or arms)
             else None
@@ -698,6 +699,12 @@ def main() -> None:
         type=int,
         default=0,
         help="Phase 2: concurrent speculative decode of B tokens during speech",
+    )
+    p.add_argument(
+        "--no-prefill",
+        action="store_true",
+        help="disable the speculative prefill outright, to measure its cost as "
+        "a factor (gating it on the decision is a no-op for always-firing arms)",
     )
     p.add_argument(
         "--interleave-policies",
