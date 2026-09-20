@@ -2256,3 +2256,57 @@ generating almost nothing. If the negative fee is a fixed effect of speculating
 at all, B=1 shows most of it; if the benefit scales with tokens, B=1 shows
 little and the fitted intercept is an artifact of extrapolation. Running now as
 a blocked grid over B in {0, 1, 32}, uncontended, 3 reps.
+
+## The negative fee does not replicate. BUDGET-R degenerates to B=0 (2026-09-20)
+
+Ali's discriminator, pre-specified: a budget of B=1 touches the slot while
+generating essentially nothing. If the negative entry fee is a fixed effect of
+speculating at all, B=1 shows most of it.
+
+    measurement                        delta TTFA            95% CI        n
+    B=1  (1 token, slot touched)          -5.9 ms   [-63.6, +42.3]        48
+    B=32 pooled over both grids          -16.0 ms   [-45.9, +12.9]        96
+      18 Sep TTFA grid                   -18.9 ms   [-45.9,  +3.0]        48
+      20 Sep discriminator                +5.4 ms   [-72.2, +54.5]        48
+    fitted intercept, extrapolated to 0  -76.9 ms   [-122.7, -33.4]
+
+    gap between the B=1 anchor and the extrapolated intercept: 69.6 ms
+
+EVERY BUDGET THE CONTROLLER CAN ACTUALLY CHOOSE HAS A CI SPANNING ZERO, and
+B=32 does not reproduce its own SIGN between sessions (-18.9 then +5.4). The
+-76.9 ms intercept is an extrapolation 32 tokens below the smallest budget
+measured, and direct measurement does not support it. The model now carries
+ENTRY_FEE_UNCONTENDED_MS = 0.0, applying the rule already used for A3's fee and
+the contended fee: the point estimate where its CI excludes zero, otherwise
+zero.
+
+STAGE DECOMPOSITION AT B=1, against B=0, paired (n=48):
+    speech end -> stt_final              -8.5 ms  [-28.0, +16.5]
+    stt_final -> llm_first_token         +0.5 ms  [ -1.9,  +2.1]
+    llm_first_token -> tts_first_audio   -8.8 ms  [-20.9,  +4.0]
+and at B=32 the same intervals give +8.0, +0.5, -5.9 — nothing resolves, and the
+-14 ms STT component seen in the first grid neither reappears cleanly at B=1 nor
+scales at B=32. The unexplained component is now bounded rather than explained:
+whatever it is, it is not the LLM answering sooner (+0.5 ms in both, with CIs of
+about +-2 ms), and it is not large enough to survive replication.
+
+CONSEQUENCE FOR THE CONTROLLER, AND FOR THE PRE-REGISTRATION. With no fee, every
+budget costs 1.37 ms/token and at p_usable = 0.02 the expected saving is 12.2 ms
+— less than the 43.8 ms cost of the smallest arm. BUDGET-R chooses B=0 in BOTH
+states. Raising p_usable to 0.9 makes the same rule choose B=32 in both, so the
+degeneracy remains a consequence of measured inputs rather than a special case.
+
+THE PRE-REGISTRATION AT 5ab29ec IS THEREFORE RESTORED, AND THE SEQUENCE IS WORTH
+STATING PLAINLY BECAUSE IT LOOKS BAD. It went: prediction made blind; falsified
+by a fitted negative fee; the fee tested by a discriminator ALI specified; the
+fee failed to replicate; the prediction restored. Reaching one's own prediction
+by way of a test that removes the disconfirming evidence is exactly the shape of
+motivated reasoning, so the safeguards are recorded rather than asserted — the
+discriminator was designed by Ali and not by me, its falsification condition was
+fixed before it ran, the B=32 non-replication is visible in both directions, and
+the intermediate falsification stands in this file unamended rather than edited
+away.
+
+What changed is not the prediction but its GROUND: it was predicted from
+p_usable being too small to pay, and it now holds because no budget is free
+either. Both routes lead to B=0; only the second is measured.

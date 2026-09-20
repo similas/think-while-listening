@@ -324,7 +324,21 @@ class ContentionDetector:
 # candidate and is under test); the number is measured, the explanation is not.
 # The contended fee's CI spans zero, so it is carried as 0.0 rather than as its
 # +20.2 point estimate, the same rule applied to A3's fee.
-ENTRY_FEE_UNCONTENDED_MS = -76.9
+# THE NEGATIVE FEE DID NOT REPLICATE AND IS NOT CARRIED. The fit over
+# B in {32,64,96} gave an intercept of -76.9 ms [-122.7, -33.4], excluding zero
+# — but that is an EXTRAPOLATION 32 tokens below the smallest budget measured,
+# and direct measurement at the budgets a controller can actually choose does
+# not support it (2026-09-20):
+#
+#     B=1  (slot touched, 1 token)   -5.9 ms  [-63.6, +42.3]   n=48
+#     B=32 pooled over both grids   -16.0 ms  [-45.9, +12.9]   n=96
+#       of which: 18 Sep grid       -18.9 ms  [-45.9,  +3.0]   n=48
+#                 20 Sep discrim.    +5.4 ms  [-72.2, +54.5]   n=48
+#
+# Both span zero, and B=32 does not even reproduce its own sign between
+# sessions. Carrying 0.0 applies the rule used for A3's fee and the contended
+# fee: the point estimate where its CI excludes zero, otherwise zero.
+ENTRY_FEE_UNCONTENDED_MS = 0.0
 ENTRY_FEE_CONTENDED_MS = 0.0
 MS_PER_TOKEN = 1.37
 

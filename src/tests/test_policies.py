@@ -206,17 +206,21 @@ def test_a_more_usable_draft_never_reduces_the_budget() -> None:
     assert budgets == sorted(budgets), budgets
 
 
-def test_the_fee_is_what_makes_a_small_budget_pay_uncontended() -> None:
-    """The measured negative fee, stated as the property the controller uses.
+def test_no_budget_is_free_in_either_state() -> None:
+    """The negative fee did not replicate, so every budget costs.
 
-    Uncontended the fixed term is negative, so a small budget costs less than
-    nothing; contended it is not. This is the inverted role of the detector:
-    contention moves the FEE, not the per-token slope.
+    The fit over B in {32,64,96} gave an intercept of -76.9 ms, but direct
+    measurement at the budgets a controller can choose does not support it:
+    B=1 gave -5.9 ms [-63.6, +42.3] and B=32 pooled -16.0 ms [-45.9, +12.9],
+    both spanning zero. The model therefore carries no fee, and this test pins
+    that: a speculation always costs slot time.
     """
     from twl.contention import MS_PER_TOKEN, ttfa_cost_ms
 
-    assert ttfa_cost_ms(32, contended=False) < 0.0
-    assert ttfa_cost_ms(32, contended=True) > 0.0
+    for contended in (False, True):
+        assert ttfa_cost_ms(0, contended) == 0.0
+        for b in (1, 32, 48, 64, 96):
+            assert ttfa_cost_ms(b, contended) > 0.0
     # One slope, both states: the measured estimates were 1.382 and 1.350 with
     # overlapping CIs, so the model carries a single state-invariant slope.
     per_token_cold = ttfa_cost_ms(96, False) - ttfa_cost_ms(95, False)
