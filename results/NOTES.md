@@ -2703,3 +2703,59 @@ but only if there is something worth spending on.
 PHASE 4'S CONCLUSION STANDS: with p_usable ~ 0, the optimal budget is zero in
 every state, and no controller test is meaningful until speculation has a value
 side. The next work is therefore to build one, not to tune the arms.
+
+## Prefill-while-listening: built, measured, and it cannot pay on THIS benchmark
+
+Built as Ali specified: a PREFILL-ALWAYS policy that warms the slot on every
+partial and decodes no draft, plus a completion-mode answer path using our own
+template and the SAME system prompt, so the answer can inherit the prefix.
+SPEC-ALWAYS-PG keeps the chat path deliberately — changing it would improve the
+baseline on our design's terms.
+
+FIRST MEASUREMENT: the answer inherited nothing (prompt_n 23 / cache_n 26
+against REACTIVE's 5 / ~30). Cause: the recognizer PUNCTUATES its partials, so
+head + "What is the number?" is not a prefix of head + "What is the number that
+I'm showing with my hands?". Same root cause as the T-SEM failure. Fixed by
+reusing strip_terminal on the prefill's text.
+
+SECOND MEASUREMENT, after the fix: 24 / 25. Essentially unchanged.
+
+WHY, and it is arithmetic rather than a bug. The assumption held — 12 of 15
+partials ARE prefixes of their final transcript once punctuation is stripped —
+but the reusable span is tiny:
+
+    system head                25 tokens   ALREADY cached by the previous
+                                           turn's answer, with no prefill
+    transcript + template tail 24 tokens   (median; range 20-31)
+    whole answer prompt        48 tokens
+
+The head is cached anyway. The tail comes after the point where partial and
+final diverge. So the prefill's ceiling is the PARTIAL's own tokens — and the
+utterances here are a median 6 words. Measured end to end on a real turn:
+
+    answer after a prefill : prompt_n 23
+    answer with no prefill : prompt_n 25
+    saved by the prefill   :  2 tokens
+
+Two tokens of prefill, against a prefill that costs ~104 ms to issue. The
+earlier offline result that motivated this (75 -> 22 tokens re-evaluated) was
+measured from a COLD slot, where the prefill also warmed the 45-token PREDGEN
+head. In the pipeline the head is never cold, so that part of the saving does
+not exist.
+
+SCOPE, because this is a negative result about the BENCHMARK as much as the
+mechanism. Prefill-while-listening saves the partial transcript's tokens. Its
+value therefore scales with how much the user has said before the endpoint:
+  - this benchmark: median 6 words, ~5-15 tokens -> a few milliseconds;
+  - a long user turn, or a conversation with history in the prompt, would put
+    hundreds of tokens on the reusable side.
+The mechanism is not refuted; it is shown to have nothing to work with here.
+Measuring it honestly requires a benchmark with long user turns, which is the
+same benchmark gap the second-consumer experiment identified.
+
+NO PRE-REGISTRATION WAS FILED for the PREFILL-ALWAYS vs REACTIVE comparison,
+and none should be: the effect it would test is bounded above by ~2 tokens of
+prefill, far below the measurement resolution of TTFA on this pipeline
+(session-to-session arm penalties vary by tens of milliseconds). Running it
+would be the same error as the BUDGET-R comparison — a design whose output
+cannot move the metric being compared.

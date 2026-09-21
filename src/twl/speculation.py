@@ -32,6 +32,7 @@ from twl.config import LlmConfig
 from twl.llm import LlamaClient
 from twl.policies import GreedyVerifier, first_sentence
 from twl.prompting import incremental_prompt
+from twl.trigger import strip_terminal
 
 log = logging.getLogger(__name__)
 
@@ -299,7 +300,18 @@ class SpeculationDriver:
         of the commit prompt's head, so the slot's KV cache extends rather than
         being rebuilt.
         """
-        return incremental_prompt(self.system_prompt, partial, final=False)
+        # STRIP TERMINAL PUNCTUATION. The recognizer adds "?" or "." to a
+        # partial, and the final transcript continues past it — so
+        # head + "What is the number?" is NOT a prefix of
+        # head + "What is the number that I am showing?" and the cache diverges
+        # exactly where the prefill was supposed to help. Measured before this
+        # fix: the answer reused 26 tokens, the bare system head, having gained
+        # nothing from a prefill of the same turn's transcript.
+        #
+        # Same root cause as the T-SEM failure (twl.trigger.strip_terminal):
+        # punctuation the recognizer invents is not part of what the speaker
+        # has said yet.
+        return incremental_prompt(self.system_prompt, strip_terminal(partial), final=False)
 
     async def _speculate(self, partial: str) -> None:
         client = await self.client()
