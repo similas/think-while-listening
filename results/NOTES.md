@@ -2759,3 +2759,49 @@ prefill, far below the measurement resolution of TTFA on this pipeline
 (session-to-session arm penalties vary by tens of milliseconds). Running it
 would be the same error as the BUDGET-R comparison — a design whose output
 cannot move the metric being compared.
+
+## EPA (acoustic trigger): AUC 0.531. Neither trigger predicts the window
+
+Offline scoring pass on the Jetson, llama-server stopped, no measured run
+active. Same decision points, same labels, same question as the T-SEM test.
+
+    trigger              AUC (>900 ms remaining)   r with remaining    n
+    T-SEM (semantic)                       0.568             -0.304  700
+    EPA   (acoustic)                       0.531             -0.044  200
+    chance                                 0.500
+
+EPA's decile curve is non-monotone (1471, 561, 1328, 352, 468, 584, 1343, 624,
+493, 629 ms) and its scores sit low throughout (median P(end within 960 ms) =
+0.071, max 0.798): the model rarely judges an endpoint imminent on this audio.
+
+Checkpoint integrity was verified rather than assumed: 98 tensors loaded,
+0 missing, 0 unexpected, despite moshi declaring torch<2.10 against the 2.14
+installed. A silently mis-loaded model would have produced exactly this AUC, so
+the guard mattered.
+
+THE RESULT IS AMBIGUOUS, AND THE AMBIGUITY IS THE POINT. A low AUC cannot
+distinguish:
+  (a) an acoustic trigger does not transfer to this DEVICE CLASS, from
+  (b) an acoustic trigger does not transfer to THIS BENCHMARK.
+and (b) has a specific, plausible mechanism. EPA was trained on two-party
+conversational corpora (SpokenWOZ, Switchboard) to predict when a speaker will
+YIELD THE TURN. Our label is when Silero VAD declares silence on a scripted
+single-speaker utterance played from a file. Those are different events, and
+nothing here separates them.
+
+WHAT IS UNAMBIGUOUS: on this benchmark, with this labelling, NEITHER a semantic
+nor an acoustic trigger carries usable information about how much speech
+remains. Both sit within 0.07 of chance. The controller therefore has no
+varying input from either family, which was the open question Phase 4 left.
+
+COST, recorded as instructed:
+    disk        ~1.5 GB venv + 101 MB EPA checkpoint + 385 MB Mimi
+    wall clock  11.5 s per 2.4 s segment on CPU = 4.8x SLOWER THAN REAL TIME
+    setup       moshi's sphn has no aarch64 wheel and there is no Rust
+                toolchain; installed moshi --no-deps plus einops and
+                sentencepiece to avoid a source build
+
+The wall-clock number stands on its own regardless of the AUC: EPA as published
+runs live on a server GPU, and at 4.8x slower than real time on this CPU it
+could not gate anything live here even if its predictions were perfect. Pricing
+T-EPA for live deployment is therefore not justified, and the venv is torn down.
