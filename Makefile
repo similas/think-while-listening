@@ -21,6 +21,7 @@ check:
 # building them is a misconfiguration and fails loudly (CLAUDE.md §3).
 results:
 	PYTHONPATH=src $(BIN)/python src/scripts/make_tables.py
+	PYTHONPATH=src $(BIN)/python src/scripts/trigger_auc.py
 
 figures:
 	PYTHONPATH=src $(BIN)/python src/scripts/make_figures.py

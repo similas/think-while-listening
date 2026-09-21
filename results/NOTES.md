@@ -2805,3 +2805,52 @@ The wall-clock number stands on its own regardless of the AUC: EPA as published
 runs live on a server GPU, and at 4.8x slower than real time on this CPU it
 could not gate anything live here even if its predictions were perfect. Pricing
 T-EPA for live deployment is therefore not justified, and the venv is torn down.
+
+## CORRECTION (2026-09-21) to the EPA entry above. Original text left unedited
+
+THE COMPARISON ABOVE WAS NOT PAIRED. T-SEM was scored on a 700-point sample and
+EPA on a 200-point sample drawn from a DIFFERENT population (turns with a saved
+segment, vs partials with text), each shuffled with its own seed. The 200 were
+never a subset of the 700, so 0.568 against 0.531 could have been sampling
+alone. Both triggers have now been scored on the SAME 198 decision points
+(2 of the 200 had no recoverable partial text), and the CIs resample
+UTTERANCES rather than points, because the same 16 utterances recur across runs
+and points within one are not independent.
+
+    trigger                  AUC     95% CI (utterance bootstrap)
+    T-SEM (semantic)       0.557     [0.309, 0.820]
+    EPA   (acoustic)       0.523     [0.321, 0.734]
+    chance                 0.500
+
+THE INTERVALS ARE MUCH WIDER THAN THE EARLIER POINT ESTIMATES IMPLIED. Neither
+trigger can be distinguished from chance, and neither can be distinguished from
+the other. The earlier text's "EPA scores slightly worse than T-SEM" is not
+supported: that difference is inside the noise.
+
+WHAT SURVIVES, AND IT IS THE CONCLUSION THAT MATTERS. A feasibility controller
+needs AUC >= 0.918 on this decision, derived from the BUDGET ARMS and not from
+the trigger data: spending when a window exists is worth p_usable (0.02) x
+saving (610 ms) = 12.2 ms, spending when it does not costs the measured overlap
+penalty of 100.3 ms, so break-even needs precision > 0.892, which at a 42.4%
+base rate needs AUC >= 0.918. BOTH CIs LIE ENTIRELY BELOW THAT: upper bounds
+0.820 and 0.734. Even the optimistic end of each interval falls short of what
+the controller would need, which is a stronger statement than either point
+estimate supports on its own.
+
+DISK COST, CORRECTED. Reported earlier as ~1.44 GB. Actual:
+
+    1.2 GB   ~/.venvs/epa
+     97 MB   viks66/endpoint-anticipation checkpoint
+    2.3 GB   kyutai/stt-1b-en_fr  <- THE WHOLE REPO
+             of which 1978 MB is an STT language model EPA never uses;
+             only the 385 MB Mimi file was needed.
+
+Cause: loaders.CheckpointInfo.from_hf_repo fetches the entire repository. The
+earlier estimate assumed it would fetch only the file named in the config, and
+that assumption was not verified before quoting the figure.
+
+Wall clock stands as reported: 11.5 s per 2.4 s segment, 4.8x slower than real
+time on CPU.
+
+Numbers in this section regenerate from src/scripts/trigger_auc.py over
+results/raw/triggers/decision_points.json, via `make results`.
