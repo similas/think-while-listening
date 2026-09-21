@@ -2578,3 +2578,57 @@ model may NOT make is that any feasible budget is free — at B=64 and above,
 finishing was not sufficient. Since the measured window (median 588 ms) makes
 B=64 infeasible on 100% of turns anyway, the controller does not depend on the
 part of the model that failed.
+
+## The trigger carries no usable information about REMAINING speech (2026-09-21)
+
+The feasibility controller needs one input: how much speech is left when it must
+decide. Built offline from 2401 first-emitted partials across 60 runs, each
+labelled with its turn's measured endpoint.
+
+NON-LLM FEATURES HAVE NO SKILL. Correlation with remaining speech:
+
+    partial words   r = -0.093      elapsed at decode done   r = -0.022
+    partial chars   r = -0.069      partial decode ms        r = -0.022
+
+T-SEM HAS A WEAK CORRELATION AND NO DISCRIMINATION (n=700 scored offline):
+
+    r(T-SEM raw, remaining speech)              = -0.304
+    AUC for "more than 900 ms remaining"        =  0.568   (0.5 = chance)
+    base rate of >900 ms remaining              =  39.3%
+
+The sign is right — a more "complete"-looking partial has less speech left — but
+the ranking is not usable. Remaining speech by T-SEM decile is non-monotone:
+1185, 1268, 441, 503, 1237, 1705, 1868, 68, 533, 629 ms. An isotonic fit on
+this is near-flat, which is why the AUC sits barely above chance.
+
+CONSEQUENCE: BUDGET-R DEGENERATES TO REACTIVE BY CONSTRUCTION. With no skillful
+estimator the best available predictor is the unconditional median, 588 ms.
+After the 250 ms margin that leaves 338 ms usable, which at 34 ms/token affords
+9.9 tokens — below the smallest arm (16). The controller therefore chooses B=0
+on every turn, not because it weighed a cost and declined, but because it has no
+signal to weigh.
+
+THE 2e4e8eb PREDICTION IS MARKED "NOT TESTABLE ON THIS PIPELINE", NOT CONFIRMED.
+It predicted BUDGET-R would match REACTIVE and beat the fixed speculative arms.
+Running the comparison now would produce exactly that, trivially, because
+BUDGET-R would be REACTIVE with extra logging. A controller that cannot vary its
+output has not been tested, and reporting the match as confirmation would claim
+a result the design cannot produce.
+
+WHAT WOULD MAKE IT TESTABLE, both already identified elsewhere in this file:
+  1. A SKILLFUL remaining-speech estimator. T-SEM answers "is this complete",
+     which is a different question from "how much is left" — and the data says
+     the first does not answer the second. An acoustic or prosodic predictor is
+     the natural candidate, which is what T-EPA would have been; it was deferred
+     on the Phase 2 occupancy result.
+  2. A LARGER WINDOW. The window is small because the first usable partial
+     arrives ~2.4 s into the utterance, which is decode-bound. A faster partial
+     engine moves it earlier and widens the window directly — the two-engine
+     result (828 ms partial decode against 1608) and GPU STT (deferred, needs a
+     source build) both point here.
+
+THE FRAMING STANDS, and is now sharper. The controller's ceiling on this
+pipeline was to stop speculation costing, not to make it pay. It turns out it
+cannot even do that deliberately: there is no window to allocate and no signal
+with which to allocate it. The value side remains the second-consumer
+experiment's question.
