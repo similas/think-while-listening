@@ -70,6 +70,14 @@ case "${1:-status}" in
         --threads "$THREADS" --parallel "$PARALLEL" \
         --cache-reuse "$CACHE_REUSE" \
         --reasoning off --reasoning-budget 0
+    # Byte offset of the log BEFORE this start, so the guard reads only what
+    # this process writes. Without it the grep sees the accumulated log and a
+    # stale warning aborts a healthy start — which is why the offset exists.
+    #
+    # It was USED but never ASSIGNED from 8afb9b1 until 2026-09-21. Under
+    # set -u the expansion failed inside a subshell, the condition evaluated
+    # false, and THE GUARD SILENTLY PASSED on every start for five days.
+    LOG_OFFSET=$(stat -c %s "$LOG" 2>/dev/null || echo 0)
     for _ in $(seq 1 120); do
       if health; then
         # Refuse a silent CPU-only start: the GPU warning appears within the

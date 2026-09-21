@@ -2877,3 +2877,41 @@ time on CPU.
 
 Numbers in this section regenerate from src/scripts/trigger_auc.py over
 results/raw/triggers/decision_points.json, via `make results`.
+
+## The CPU-fallback guard was dead for five days. No run was invalidated by it
+
+src/scripts/llama_server.sh line 77 read LOG_OFFSET, which was never assigned.
+Introduced that way in 8afb9b1 (2026-09-16 10:30) and fixed 2026-09-21. Under
+`set -u` the expansion failed inside a subshell, so only the subshell died, the
+condition evaluated FALSE, and the guard reported a clean start every time
+without ever inspecting the log. It has been passing unconditionally since.
+
+The guard exists because llama-server that loses its CUDA backend starts
+happily and serves at roughly a tenth of the speed — which would silently
+invalidate every measurement taken against it.
+
+AUDIT OF EVERY RUN SINCE. 171 runs post-date the break. Independent evidence of
+GPU offload, not resting on the guard:
+
+ 1. EACH RUN RECORDS ITS OWN llama-server COMMAND LINE in run_meta.software.
+    Of all 201 runs: 176 requested --n-gpu-layers 99, 4 requested 0 (the
+    deliberate CPU-only C'' condition of Phase 2), 21 predate the field.
+    Of the 171 post-break runs, 8 lack a recorded cmdline.
+ 2. DECODE RATE. Across the 86 runs with completed speculative decodes the
+    median is 33.0 ms/token (range 32.4-47.8). A CPU-only gemma-4-E2B q4_0 on
+    3 threads runs several times slower; NO run is slower than 47.8 ms/token.
+    A CPU fallback could not hide inside that distribution.
+ 3. THE THREE "no usable GPU found" WARNINGS in results/raw/llama-server.log
+    each directly follow a "cleaning up before exit", i.e. they belong to the
+    deliberate NGL=0 starts, which take the NO_CUDA path where the guard is
+    skipped BY DESIGN.
+
+CONCLUSION: no run's validity rested on the guard alone, and none is flagged
+invalid. The 8 post-break runs without a recorded cmdline are covered by
+evidence (2): all sit inside the 32-48 ms/token band.
+
+This is luck rather than process. The guard was the designed protection, it was
+dead, and what saved the data was a covariate recorded for another purpose.
+Fixed, and pinned by src/tests/test_llama_guard.py, which asserts the guard
+fires on a simulated fallback, ignores a stale warning from an earlier run, and
+that LOG_OFFSET is assigned before it is read.
