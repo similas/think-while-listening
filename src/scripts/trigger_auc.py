@@ -64,6 +64,38 @@ def cluster_bootstrap(rows: list[dict[str, Any]], field: str, seed: int = 0) -> 
     return vals[int(0.025 * len(vals))], vals[int(0.975 * len(vals)) - 1]
 
 
+def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Wilson 95% interval for a proportion. Honest at the small n here.
+
+    best_precision below is a POST-HOC MAXIMUM over thresholds on the same
+    points it is evaluated on, so its point estimate is optimistically biased.
+    The interval does not remove that bias; it only shows how little the counts
+    (28/43, 10/12) pin down.
+    """
+    if n == 0:
+        return (float("nan"), float("nan"))
+    ph = k / n
+    d = 1 + z * z / n
+    c = (ph + z * z / (2 * n)) / d
+    h = z * ((ph * (1 - ph) / n + z * z / (4 * n * n)) ** 0.5) / d
+    return (max(0.0, c - h), min(1.0, c + h))
+
+
+def expected_saving_per_turn(
+    fire_rate: float, precision: float, p_usable: float, saving_ms: float, overlap_cost_ms: float
+) -> float:
+    """Milliseconds a trigger is worth per TURN, at most one fire per turn.
+
+        fire_rate * ( precision * p_usable * saving  -  (1-precision) * cost )
+
+    A fire that lands on a real window pays p_usable * saving; one that does not
+    pays the overlap penalty. Turns where the trigger never fires contribute
+    nothing, which is why fire_rate multiplies the whole bracket rather than
+    being folded into precision.
+    """
+    return fire_rate * (precision * p_usable * saving_ms - (1 - precision) * overlap_cost_ms)
+
+
 def required_precision(p_usable: float, saving_ms: float, overlap_cost_ms: float) -> float:
     """Precision a spend decision needs to break even. From the ARMS, not the data.
 
@@ -143,17 +175,40 @@ def main() -> None:
         mark = "   <- dev-set PredGen value, under re-measurement" if p_u == 0.02 else ""
         print(f"  {p_u:>9.2f} {required_precision(p_u, 610.0, 100.3):>19.3f}{mark}")
 
-    print("\nWHAT EACH TRIGGER CAN DELIVER, read off its own ROC on these points:")
+    print("\nWHAT EACH TRIGGER DELIVERS — POST-HOC MAX over thresholds on the")
+    print("  same points it is evaluated on, so the point estimate is")
+    print("  optimistically biased; the Wilson interval shows how little the")
+    print("  counts pin it down, not how much the bias is worth.")
     print(f"  (base rate {base:.3f} is the precision of firing on everything)")
+    chosen = {}
     for name, field in (("T-SEM", "tsem"), ("EPA", "epa")):
         prec, thr, n_fired = best_precision([r[field] for r in rows], labels)
+        k = round(prec * n_fired)
+        lo, hi = wilson(k, n_fired)
+        chosen[field] = (prec, thr, n_fired)
         print(
-            f"  {name:>6}: best precision {prec:.3f} at threshold {thr:.4f} "
-            f"(fires on {n_fired}/{len(rows)})"
+            f"  {name:>6}: precision {prec:.3f} = {k}/{n_fired}  "
+            f"Wilson 95% [{lo:.3f}, {hi:.3f}]  threshold {thr:.4f}"
         )
-    print("\n  Compare the two tables at the p_usable in force. Neither trigger is")
-    print("  read as passing or failing here: that comparison belongs with a")
-    print("  re-measured p_usable, not the dev-set 0.02.")
+    print("  EPA is retained for completeness ONLY: at 11.5 s per 2.4 s segment")
+    print("  (4.8x real time) it is disqualified on wall clock whatever its")
+    print("  precision, and could not gate anything live on this device.")
+
+    prec, thr, n_fired = chosen["tsem"]
+    fire_rate = n_fired / len(rows)
+    print("\nEXPECTED SAVING PER TURN, T-SEM only, at its dev threshold")
+    print(f"  (fire rate {fire_rate:.3f} = {n_fired}/{len(rows)}, precision {prec:.3f},")
+    print("   at most one fire per turn, the first):")
+    print(f"  {'p_usable':>9} {'ms per turn':>13}")
+    for p_u in (0.02, 0.10, 0.30, 0.50):
+        v = expected_saving_per_turn(fire_rate, prec, p_u, 610.0, 100.3)
+        mark = "   <- dev-set value" if p_u == 0.02 else ""
+        print(f"  {p_u:>9.2f} {v:>+13.1f}{mark}")
+    print("  Negative means the trigger costs more than it returns.")
+
+    print(f"\nFROZEN: T-SEM's dev-chosen threshold is {thr:.4f}. On any further")
+    print("  dataset it is evaluated OUT OF SAMPLE at this value and is NOT")
+    print("  re-selected, or the post-hoc bias above is imported wholesale.")
 
     print("\nPOWER. With 16 utterances as the resampling unit, the clustered CIs")
     print("  above exclude only AUC above roughly 0.8. Below that the null is")

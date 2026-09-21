@@ -2915,3 +2915,54 @@ dead, and what saved the data was a covariate recorded for another purpose.
 Fixed, and pinned by src/tests/test_llama_guard.py, which asserts the guard
 fires on a simulated fallback, ignores a stale warning from an earlier run, and
 that LOG_OFFSET is assigned before it is read.
+
+## CORRECTION (2026-09-21b) to the required-precision paragraph. Previous text stands
+
+The previous correction overcorrected. Three things were wrong with it.
+
+1. best_precision IS A POST-HOC MAXIMUM over thresholds, evaluated on the same
+   198 points it was selected on. Its point estimate is optimistically biased,
+   and at these counts it is barely pinned down at all:
+
+       T-SEM   28/43 = 0.651   Wilson 95% [0.501, 0.776]
+       EPA     10/12 = 0.833   Wilson 95% [0.552, 0.953]
+
+   The intervals do not remove the selection bias; they only show how little
+   the counts constrain the estimate. T-SEM's lower bound sits below the base
+   rate region and EPA's spans nearly half the scale.
+
+2. "A PERFECTLY USABLE OPERATING POINT" IS WITHDRAWN for EPA. It is disqualified
+   on WALL CLOCK regardless of precision: 11.5 s per 2.4 s segment, 4.8x real
+   time, so it cannot gate anything live on this device. Its numbers are kept
+   for completeness and must not be cited as a viable configuration.
+
+3. "BOTH TRIGGERS CLEAR THE BAR once p_usable reaches 0.10" IS WITHDRAWN.
+   Clearing break-even is not the same as being worth running. The quantity
+   that matters is expected saving PER TURN, at most one fire per turn:
+
+       saving = fire_rate x ( precision x p_usable x 610 - (1-precision) x 100.3 )
+
+   T-SEM at its dev threshold (fire rate 43/198 = 0.217, precision 0.651):
+
+       p_usable    ms per turn
+           0.02          -5.9    <- dev-set value: the trigger COSTS more than it returns
+           0.10          +1.0    <- break-even cleared, and worth ~1 ms
+           0.30         +18.3
+           0.50         +35.5
+
+   So even where the earlier text said the bar was cleared, the trigger is
+   worth about one millisecond per turn — inside the noise of every latency
+   measurement in this project. Nothing here supports "the trigger works".
+
+WHAT THE DEV SET ACTUALLY SUPPORTS: it cannot resolve the trigger question in
+EITHER direction. The AUCs are underpowered below ~0.8 (16 utterances), the
+precisions are post-hoc and wide, and the per-turn value is dominated by an
+unmeasured p_usable. Neither "the triggers work" nor "the triggers do not
+predict" is supportable from these data.
+
+FROZEN FOR OUT-OF-SAMPLE USE: T-SEM's dev-chosen threshold is 0.0000 (it fires
+on the points where the completeness mass is exactly zero, 43 of 198). On
+Spoken-MQA it is evaluated AT THIS VALUE and not re-selected; re-selecting would
+import the post-hoc bias wholesale. Recorded here so the freeze is auditable.
+
+All numbers regenerate from src/scripts/trigger_auc.py.
