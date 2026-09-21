@@ -2426,3 +2426,59 @@ WHAT DIFFERS BETWEEN THE TWO DESIGNS, none of it tested:
 
 Until one of these is measured, BUDGET-R's cost model describes the budget grid
 and not the pipeline the controller runs in, and the Phase 4 report says so.
+
+## THE COST MODEL'S VARIABLE IS ENDPOINT OVERLAP, NOT B (2026-09-21)
+
+Ali's split, applied to existing logs: every speculating turn classified by
+whether its decode had FINISHED before the endpoint or was STILL RUNNING at it
+(spec.cancelled records exactly this), paired against reactive within run.
+
+    decode state at the endpoint      n     median TTFA penalty
+    finished before it                30    -12.4 ms [-79.3, +71.3]   spans 0
+    still running at it              130   +100.3 ms [+78.0, +123.9]
+
+THE ENTIRE ARM PENALTY IS IN THE OVERLAPPING TURNS. Turns whose speculation
+finished in time show no penalty at all.
+
+THIS RESOLVES THE 20x DISCREPANCY that two successive cost models could not.
+The two designs differ in ONSET, and therefore in overlap rate:
+
+    design                     issues speculation at    overlap rate
+    budget grid                VAD onset                 9/144 =  6%
+    policy arms                first partial (~2 s in)  130/160 = 81%
+
+Same metric, same blocked design, same hardware. The grid measured almost no
+cost because its decodes almost always finished; the arms measure ~+100 ms
+because theirs almost never do. B was never the causal variable — it was a
+proxy for decode DURATION, and duration matters only through whether it exceeds
+the speech remaining when the decode starts.
+
+THE MODEL IS RE-DERIVED ON THAT VARIABLE and is BINARY, not per-token:
+
+    cost = 0          if B * 34 ms <= remaining speech at issue
+    cost = ~100 ms    otherwise
+
+At the measured 34 ms/token, B=32 needs 1.1 s of remaining speech, B=64 needs
+2.2 s, B=96 needs 3.3 s. Median utterance here is 2.4 s, and speculation issued
+at the first partial has roughly 0.5-1.0 s left — which is why the arms overlap
+on 81% of turns.
+
+THE CONTROLLER'S RULE, now grounded rather than assumed: ISSUE ONLY WHAT THE
+REMAINING SPEECH CAN ABSORB. BudgetR already had a fit constraint of this shape
+(b_fit = remaining / decode rate); what was wrong was the COST it traded against
+— a per-token term that priced the wrong thing.
+
+WHAT THIS RETIRES. The per-token slopes (0.046 uncontended, 1.147 contended) and
+the fee, negative or otherwise, were all fitted to B while the causal variable
+was overlap. They described the grid's regime, where overlap was rare and cost
+therefore looked small and B-shaped. They are kept in the file for the Phase 2
+STT analyses that consume them and are NOT the controller's cost.
+
+UNMEASURED, AND NOT GUESSED: the overlap penalty under contention. Both grids
+that could measure it ran uncontended, and the contended grid used VAD onset so
+it rarely overlapped. The contended cost of overlap is not in the data.
+
+STILL TO CONFIRM BY CONSTRUCTION: the onset-timing run (grid at first-partial
+onset) should reproduce the arms' ~+100 ms penalty at budgets that do not fit
+the remaining speech. That is a prediction this model makes, and it is being run
+as a test of it rather than as further exploration.

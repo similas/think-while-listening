@@ -370,6 +370,49 @@ MS_PER_TOKEN_UNCONTENDED = 0.135
 MS_PER_TOKEN_CONTENDED = 1.514
 
 
+# THE COST MODEL'S TRUE VARIABLE IS OVERLAP WITH THE ENDPOINT, NOT B.
+# Measured 2026-09-21 over 160 policy-arm turns paired against reactive:
+#
+#     decode state at the endpoint      n     median TTFA penalty
+#     finished before it                30    -12.4 ms [-79.3, +71.3]  spans 0
+#     still running at it              130   +100.3 ms [+78.0, +123.9]
+#
+# The entire penalty sits in turns whose decode had not finished. This also
+# explains a 20x discrepancy that two earlier models could not: the VAD-onset
+# budget grid overlapped the endpoint on 6% of turns (9/144) and measured almost
+# no cost, while the policy arms, issuing at the first partial roughly 2 s
+# later, overlap on 81% (130/160) and measure ~+100 ms. Same metric, same
+# blocked design; B was never the variable, it was a proxy for how long the
+# decode ran and therefore for whether it was still running at the end.
+#
+# B matters only through decode DURATION: at ~34 ms/token measured, B tokens
+# occupy B * 34 ms of slot, and the cost is paid if that exceeds the speech
+# remaining when the decode starts.
+OVERLAP_PENALTY_MS = 100.3
+OVERLAP_PENALTY_CI = (78.0, 123.9)
+NO_OVERLAP_PENALTY_MS = 0.0  # -12.4 measured, CI spans zero
+SPEC_DECODE_MS_PER_TOKEN = 34.0
+
+# UNMEASURED: the overlap penalty under contention. Both grids that measured it
+# ran uncontended, and the contended grid used VAD onset, so it overlapped
+# rarely. A contended overlap penalty is not in the data and is not guessed.
+
+
+def overlap_cost_ms(budget_tokens: int, remaining_speech_ms: float) -> float:
+    """TTFA cost of a budget, priced on whether it will overlap the endpoint.
+
+    Binary, not per-token: a decode that finishes in time costs nothing
+    measurable, and one that does not costs ~100 ms however many tokens it
+    produced. The controller's rule follows directly — issue only what the
+    remaining speech can absorb.
+    """
+    if budget_tokens <= 0:
+        return 0.0
+    if budget_tokens * SPEC_DECODE_MS_PER_TOKEN <= remaining_speech_ms:
+        return NO_OVERLAP_PENALTY_MS
+    return OVERLAP_PENALTY_MS
+
+
 def ttfa_cost_ms(budget_tokens: int, contended: bool) -> float:
     """Milliseconds a budget of B adds to TIME TO FIRST AUDIO.
 
