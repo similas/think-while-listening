@@ -2985,7 +2985,7 @@ common_params_print_info. Per segment: whether "no usable GPU found" appeared,
 and the generation rate from print_timing "eval time" lines (>= 8 tokens;
 "prompt eval time" is prefill and is excluded). llama.cpp timestamps are
 process-relative, so absolute time comes from the journal's "Started" records,
-now cached to results/raw/llama_server_starts.json because the journal rotates
+now cached to results/llama_server_starts.json because the journal rotates
 and this evidence would otherwise expire.
 
 TWO READINGS WERE WRONG ON THE FIRST PASS, and each inverted a conclusion:

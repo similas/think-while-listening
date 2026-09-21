@@ -91,7 +91,9 @@ def journal_starts(unit: str, cache: Path) -> list[tuple[dt.datetime, int]]:
     dates these segments will disappear from this machine and cannot be
     regenerated. Every reading is therefore merged into ``cache`` and committed
     with the results, which is what makes this audit reproducible later and on
-    another machine.
+    another machine. The cache lives under results/ rather than results/raw/
+    because it is derived provenance — start times and a flag value, no log
+    text and no audio — and results/raw/ stays local by CLAUDE.md §1.
     """
     starts: dict[str, int] = {}
     if cache.exists():
@@ -173,7 +175,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--log", type=Path, default=Path("results/raw/llama-server.log"))
     p.add_argument("--unit", default="twl-llama.service")
-    p.add_argument("--starts", type=Path, default=Path("results/raw/llama_server_starts.json"))
+    p.add_argument("--starts", type=Path, default=Path("results/llama_server_starts.json"))
     p.add_argument("--runs", action="store_true", help="list every post-break run")
     args = p.parse_args()
 
