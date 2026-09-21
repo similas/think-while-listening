@@ -3054,3 +3054,41 @@ The outcome was right; the reasoning was not.
 
 Regenerates with `make results` (src/scripts/audit_gpu_offload.py), pinned by
 src/tests/test_gpu_offload_audit.py.
+
+## 2026-09-21 — Spoken-MQA acquired: what the card says, and what it does not
+
+amao0o0/spoken-mqa (Wei, Wang, Kim, Chen, arXiv:2505.15000). The card is
+metadata only — no prose, no description, no homepage.
+
+    split                    items   parquet MB   measured duration s (median / min-max)   words
+    short_digit                100         13.6    4.8 / 2.9-7.3                             4
+    long_digit                 173         25.9    5.4 / 3.5-7.1                             4
+    single_step_reasoning      594        175.0   10.6 / 7.6-13.7                           25
+    multi_step_reasoning      1402        680.8   11.7 / 7.9-24.3                           32
+    TOTAL                     2269        895.5
+
+Durations are MEASURED, from the wavs themselves: all 80 pulled items for
+multi_step_reasoning, a 20-item sample for each other split (the card gives no
+duration at all, only byte counts). Words are the median of the reference
+transcript.
+
+Audio: 16 kHz, mono, 16-bit PCM wav. Only ``context`` — the problem read aloud —
+carries audio. ``instruction`` is the same sentence on every item and its audio
+field is null; ``answer`` is text. ``context_transcript`` is the reference text.
+
+LICENSE: NOT DECLARED. The card carries no license field, the repo has no LICENSE
+file, and the Hub's info endpoint returns an empty license string. Cited by paper,
+used here for measurement only; if anything from it is to be redistributed or
+put in the thesis, the licence question has to be settled first.
+
+WHY THIS SPLIT. multi_step_reasoning is the GSM8K-derived one and its utterances
+are 11.7 s at the median against ~2.4 s on the 16-utterance dev set. The dev
+set's anticipation window was 588 ms and decode-bound; this corpus is the test of
+whether that was a property of the mechanism or of the utterances.
+
+PULLED: 80 items of multi_step_reasoning, 32.4 MB; plus 20 each of the other
+three splits for the duration table, 13.2 MB. 45.6 MB total against the 500 MB
+cap, out of 895.5 MB in the repo. No snapshot_download and no load_dataset: the
+Hub's rows endpoint serves the metadata as JSON and each utterance as its own
+wav, and only those wavs were fetched (src/scripts/fetch_spoken_mqa.py). Audio
+lives in results/raw/spoken_mqa/ and stays local.
