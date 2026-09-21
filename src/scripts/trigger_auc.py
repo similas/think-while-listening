@@ -64,36 +64,46 @@ def cluster_bootstrap(rows: list[dict[str, Any]], field: str, seed: int = 0) -> 
     return vals[int(0.025 * len(vals))], vals[int(0.975 * len(vals)) - 1]
 
 
-def required_auc(
-    p_usable: float, saving_ms: float, overlap_cost_ms: float, base_rate: float
-) -> float:
-    """The AUC a feasibility controller would need to be worth running.
+def required_precision(p_usable: float, saving_ms: float, overlap_cost_ms: float) -> float:
+    """Precision a spend decision needs to break even. From the ARMS, not the data.
 
-    Derived from the BUDGET ARMS, not from the trigger data. Spending when a
-    window exists is worth p_usable * saving; spending when it does not costs
-    the measured overlap penalty. Break-even needs
+        benefit of a correct spend = p_usable * saving_ms
+        cost of a wrong spend      = the measured overlap penalty
+        break-even                 = TP * benefit > FP * cost
+                                   => precision > cost / (cost + benefit)
 
-        TP * benefit  >  FP * cost      =>  precision > cost / (cost + benefit)
+    NO CONVERSION TO AUC IS ATTEMPTED. An earlier version of this script mapped
+    precision to a required AUC through an invented relation ("precision ~ AUC
+    at the operating point where sensitivity equals AUC"), which is not a
+    property of ROC curves. What a trigger can actually deliver is read off its
+    own ROC instead.
 
-    An AUC is then required such that the achievable precision at the base rate
-    reaches that. Using the crude but conservative relation precision ~ AUC at
-    the operating point where sensitivity equals AUC, the requirement is
-
-        AUC_min  such that  base * AUC / (base * AUC + (1-base) * (1-AUC)) >= p*
-
-    solved numerically below.
+    p_usable is the dominant term and is NOT a constant: 0.02 is the dev-set
+    PredGen value (first sentence matched 0/15; successive candidates shared
+    2.4% of tokens) and is under re-measurement.
     """
-    benefit = p_usable * saving_ms
-    p_star = overlap_cost_ms / (overlap_cost_ms + benefit)
-    lo, hi = 0.5, 1.0
-    for _ in range(60):
-        mid = (lo + hi) / 2
-        prec = base_rate * mid / (base_rate * mid + (1 - base_rate) * (1 - mid))
-        if prec < p_star:
-            lo = mid
-        else:
-            hi = mid
-    return hi
+    return overlap_cost_ms / (overlap_cost_ms + p_usable * saving_ms)
+
+
+def best_precision(
+    scores: list[float], labels: list[int], min_fires: int = 5
+) -> tuple[float, float, int]:
+    """Best precision achievable at ANY threshold, read off the observed ROC.
+
+    The rule fires on scores BELOW a threshold (a low score means more speech
+    left). Thresholds firing on fewer than ``min_fires`` points are skipped: a
+    precision of 1.0 over two points is not an operating point a controller
+    could use.
+    """
+    best = (0.0, float("nan"), 0)
+    for thr in sorted(set(scores)):
+        fired = [(s, y) for s, y in zip(scores, labels, strict=True) if s <= thr]
+        if len(fired) < min_fires:
+            continue
+        prec = sum(y for _, y in fired) / len(fired)
+        if prec > best[0]:
+            best = (prec, thr, len(fired))
+    return best
 
 
 def main() -> None:
@@ -122,19 +132,33 @@ def main() -> None:
         print(f"{name:>18} {a:>7.3f} {f'[{lo:.3f}, {hi:.3f}]':>32}")
     print(f"{'chance':>18} {0.5:>7.3f}")
 
-    need = required_auc(p_usable=0.02, saving_ms=610.0, overlap_cost_ms=100.3, base_rate=base)
-    print(f"\nAUC a feasibility controller would need: {need:.3f}")
-    print("  from the arms, not the data: spending when a window exists is worth")
-    print("  p_usable(0.02) x saving(610 ms) = 12.2 ms; spending when it does not")
-    print("  costs the measured overlap penalty 100.3 ms. Break-even needs")
-    print(f"  precision > {100.3 / (100.3 + 12.2):.3f}, which at a {base:.0%} base rate needs")
-    print(f"  AUC >= {need:.3f}.")
+    print("\nWHAT A SPEND DECISION WOULD NEED, from the budget arms:")
+    print("  benefit of a correct spend = p_usable x saving; saving = 610 ms, the")
+    print("  stt_final -> tts_first_audio window measured in")
+    print("  results/raw/reactive/reactive-20260918-011014-83c9cf (median 610 ms")
+    print("  [567, 645], n=16).")
+    print("  cost of a wrong spend = 100.3 ms, the measured overlap penalty.\n")
+    print(f"  {'p_usable':>9} {'required precision':>19}")
+    for p_u in (0.02, 0.10, 0.30, 0.50):
+        mark = "   <- dev-set PredGen value, under re-measurement" if p_u == 0.02 else ""
+        print(f"  {p_u:>9.2f} {required_precision(p_u, 610.0, 100.3):>19.3f}{mark}")
+
+    print("\nWHAT EACH TRIGGER CAN DELIVER, read off its own ROC on these points:")
+    print(f"  (base rate {base:.3f} is the precision of firing on everything)")
     for name, field in (("T-SEM", "tsem"), ("EPA", "epa")):
-        a, lo, hi = results[field]
-        verdict = "REACHES it" if lo >= need else "does NOT reach it (CI upper bound below)"
-        if hi >= need > lo:
-            verdict = "cannot be resolved against it (CI straddles)"
-        print(f"    {name:>6}: CI [{lo:.3f}, {hi:.3f}] {verdict}")
+        prec, thr, n_fired = best_precision([r[field] for r in rows], labels)
+        print(
+            f"  {name:>6}: best precision {prec:.3f} at threshold {thr:.4f} "
+            f"(fires on {n_fired}/{len(rows)})"
+        )
+    print("\n  Compare the two tables at the p_usable in force. Neither trigger is")
+    print("  read as passing or failing here: that comparison belongs with a")
+    print("  re-measured p_usable, not the dev-set 0.02.")
+
+    print("\nPOWER. With 16 utterances as the resampling unit, the clustered CIs")
+    print("  above exclude only AUC above roughly 0.8. Below that the null is")
+    print("  UNDERPOWERED: these data support 'not detectable on the dev set',")
+    print("  not 'does not predict'.")
 
 
 if __name__ == "__main__":
