@@ -419,6 +419,7 @@ async def run(args: argparse.Namespace) -> None:
                 args.warmup_turns if (schedule is not None or policy_schedule is not None) else 0
             ),
             plan=turn_plan,
+            spec_onset=args.spec_onset,
             speculation=speculation,
         )
         # The runner needs the TurnManager build_pipeline just created, so it
@@ -699,6 +700,13 @@ def main() -> None:
         type=int,
         default=0,
         help="Phase 2: concurrent speculative decode of B tokens during speech",
+    )
+    p.add_argument(
+        "--spec-onset",
+        default="vad",
+        choices=("vad", "partial"),
+        help="when a FIXED-budget speculation starts: vad onset (Phase 2) or the "
+        "first partial (where policy arms start). Sets endpoint overlap.",
     )
     p.add_argument(
         "--no-prefill",

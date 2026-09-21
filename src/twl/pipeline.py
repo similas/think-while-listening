@@ -63,6 +63,7 @@ def build_pipeline(
     warmup_turns: int = 0,
     plan: list[PlannedTurn] | None = None,
     policy_runner: PolicyRunner | None = None,
+    spec_onset: str = "vad",
 ) -> BuiltPipeline:
     """Assemble the REACTIVE pipeline around the given audio source."""
     turns = TurnManager(
@@ -117,7 +118,12 @@ def build_pipeline(
     )
 
     observer = StageObserver(
-        turns, tts, vad_stop_secs=cfg.vad.stop_secs, speculation=speculation, runner=policy_runner
+        turns,
+        tts,
+        vad_stop_secs=cfg.vad.stop_secs,
+        speculation=speculation,
+        runner=policy_runner,
+        spec_onset=spec_onset,
     )
     pipeline = Pipeline([transport.input(), stt, llm, tts, transport.output()])
     task = PipelineTask(

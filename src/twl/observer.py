@@ -66,12 +66,20 @@ class StageObserver(BaseObserver):
         vad_stop_secs: float,
         speculation: SpeculationDriver | None = None,
         runner: PolicyRunner | None = None,
+        spec_onset: str = "vad",
     ) -> None:
         super().__init__()
         self._turns = turns
         self._tts = tts
         self._speculation = speculation
         self._runner = runner
+        # "vad": the fixed-budget speculation starts at voice onset (Phase 2).
+        # "partial": it starts at the first partial, where policy arms start.
+        # Not cosmetic: onset sets how much speech remains for the decode, and
+        # endpoint OVERLAP is the cost model's real variable — 6% of turns
+        # overlap at VAD onset against 81% at the first partial.
+        self._spec_onset = spec_onset
+        self._spec_started_turn = 0
         # Held so the tasks are not garbage-collected mid-flight; discarded on
         # completion so the set cannot grow without bound over a long run.
         self._decision_tasks: set[asyncio.Task[None]] = set()
@@ -126,7 +134,11 @@ class StageObserver(BaseObserver):
                     # Per-turn stats belong to every arm, including the ones
                     # that do not decode at onset.
                     self._speculation.reset_turn(turn=self._turns.turn)
-                if self._speculation is not None and self._runner is None:
+                if (
+                    self._speculation is not None
+                    and self._runner is None
+                    and self._spec_onset == "vad"
+                ):
                     # PHASE 2 ARMS ONLY. Speculate WHILE the user speaks: that
                     # co-activation is the independent variable of Phase 2, and
                     # the budget comes from a fixed flag or the interleaving
@@ -170,6 +182,15 @@ class StageObserver(BaseObserver):
             # scoring the trigger calls the LLM and must never sit on the audio
             # path. A partial the policy is still thinking about is simply a
             # partial it has not acted on yet.
+            if (
+                self._speculation is not None
+                and self._runner is None
+                and self._spec_onset == "partial"
+                and self._spec_started_turn != self._turns.turn
+            ):
+                self._spec_started_turn = self._turns.turn
+                self._turns.sample_contention("pre_decode")
+                self._speculation.start_turn(turn=self._turns.turn)
             if self._runner is not None and self._first_time(frame):
                 task = asyncio.create_task(self._runner.on_partial(frame.text))
                 self._decision_tasks.add(task)
