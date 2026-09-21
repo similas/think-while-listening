@@ -2827,15 +2827,38 @@ trigger can be distinguished from chance, and neither can be distinguished from
 the other. The earlier text's "EPA scores slightly worse than T-SEM" is not
 supported: that difference is inside the noise.
 
-WHAT SURVIVES, AND IT IS THE CONCLUSION THAT MATTERS. A feasibility controller
-needs AUC >= 0.918 on this decision, derived from the BUDGET ARMS and not from
-the trigger data: spending when a window exists is worth p_usable (0.02) x
-saving (610 ms) = 12.2 ms, spending when it does not costs the measured overlap
-penalty of 100.3 ms, so break-even needs precision > 0.892, which at a 42.4%
-base rate needs AUC >= 0.918. BOTH CIs LIE ENTIRELY BELOW THAT: upper bounds
-0.820 and 0.734. Even the optimistic end of each interval falls short of what
-the controller would need, which is a stronger statement than either point
-estimate supports on its own.
+WHAT A SPEND DECISION NEEDS, AND IT DEPENDS ON p_usable. The break-even is set
+by the arms: a correct spend is worth p_usable x saving, a wrong one costs the
+measured overlap penalty of 100.3 ms, so precision must exceed
+cost / (cost + benefit). The saving of 610 ms is the stt_final ->
+tts_first_audio window, median 610 ms [567, 645] n=16, measured in
+results/raw/reactive/reactive-20260918-011014-83c9cf.
+
+    p_usable   required precision
+        0.02                0.892   <- dev-set PredGen value, UNDER RE-MEASUREMENT
+        0.10                0.622
+        0.30                0.354
+        0.50                0.247
+
+WHAT THE TRIGGERS DELIVER, read off their own ROC on these 198 points rather
+than converted from AUC (base rate 0.424 is the precision of firing on
+everything):
+
+    T-SEM   best precision 0.651 at threshold 0.0000, fires on 43/198
+    EPA     best precision 0.833 at threshold 0.0153, fires on 12/198
+
+AN EARLIER VERSION OF THIS SECTION CLAIMED A REQUIRED AUC OF 0.918 AND THAT
+BOTH TRIGGERS FELL BELOW IT. That threshold came from converting precision to
+AUC through an invented relation ("precision ~ AUC at the operating point where
+sensitivity equals AUC"), which is not a property of ROC curves. IT IS
+WITHDRAWN. On the honest comparison BOTH TRIGGERS CLEAR THE BAR once p_usable
+reaches 0.10, and EPA clears it at 0.833 even though its AUC is 0.523 — high
+precision at low coverage, a perfectly usable operating point for a controller
+that may decline most turns.
+
+The 0.918 figure and its "both CIs lie below it" conclusion must not be cited.
+Whether either trigger suffices belongs with a RE-MEASURED p_usable, not the
+dev-set 0.02. These numbers regenerate from src/scripts/trigger_auc.py.
 
 DISK COST, CORRECTED. Reported earlier as ~1.44 GB. Actual:
 
