@@ -1,8 +1,11 @@
 """The CPU-fallback guard in llama_server.sh must actually fire.
 
 It exists because a llama-server that loses its CUDA backend starts happily and
-serves at roughly a tenth of the speed, which would have silently invalidated
-every measurement taken against it.
+serves, which would silently invalidate every measurement taken against it. How
+much slower it serves is measured, not assumed: the one generation this machine
+recorded with no layers offloaded ran at 139.05 ms/token against a GPU median of
+31.8 ms/token over 7,062 generations — 4.4x — but that is a SINGLE generation of
+15 tokens, not a distribution (src/scripts/audit_gpu_offload.py).
 
 The guard reads only the bytes this start appended (LOG_OFFSET), because the log
 accumulates and a stale warning from an earlier CPU-only run would otherwise

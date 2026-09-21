@@ -22,6 +22,7 @@ check:
 results:
 	PYTHONPATH=src $(BIN)/python src/scripts/make_tables.py
 	PYTHONPATH=src $(BIN)/python src/scripts/trigger_auc.py
+	PYTHONPATH=src $(BIN)/python src/scripts/audit_gpu_offload.py
 
 figures:
 	PYTHONPATH=src $(BIN)/python src/scripts/make_figures.py

@@ -2966,3 +2966,91 @@ Spoken-MQA it is evaluated AT THIS VALUE and not re-selected; re-selecting would
 import the post-hoc bias wholesale. Recorded here so the freeze is auditable.
 
 All numbers regenerate from src/scripts/trigger_auc.py.
+
+## CORRECTION (2026-09-21c) to the CPU-fallback audit above. Outcome holds, two of its three legs do not
+
+The conclusion — no run silently ran on the CPU — survives. Two of the three
+pieces of evidence it rested on do not, and the CPU-only speed it quoted was
+never measured. Redone at the level of the server process, by
+src/scripts/audit_gpu_offload.py, wired into `make results`.
+
+EVIDENCE (1) IS WITHDRAWN. run_meta.software records the command line that was
+REQUESTED. A server whose CUDA backend fails to load is started with exactly
+"--n-gpu-layers 99" and ignores it; the record would look identical. It is a
+request, not evidence, and counting runs by it proved nothing. Nothing below
+uses it except as a cross-check against the server's own behaviour.
+
+METHOD. results/raw/llama-server.log is split into server-start segments at
+common_params_print_info. Per segment: whether "no usable GPU found" appeared,
+and the generation rate from print_timing "eval time" lines (>= 8 tokens;
+"prompt eval time" is prefill and is excluded). llama.cpp timestamps are
+process-relative, so absolute time comes from the journal's "Started" records,
+now cached to results/raw/llama_server_starts.json because the journal rotates
+and this evidence would otherwise expire.
+
+TWO READINGS WERE WRONG ON THE FIRST PASS, and each inverted a conclusion:
+
+ - THE WARNING BELONGS TO THE SEGMENT THAT FOLLOWS IT, not the one it appears
+   after. It is printed during argument parsing, before the logger exists, so
+   it lands with no timestamp between the previous process's "cleaning up
+   before exit" and the next process's first line. The observation in the
+   audit above — "each directly follows a cleaning up before exit" — is a
+   property of every such warning, not a fact about those three. Read the naive
+   way, one warning lands on a segment that decoded 32 generations at 31.6
+   ms/token, i.e. on the GPU.
+ - THE LOG HOLDS 32 SEGMENTS, THE JOURNAL 33 STARTS: the log postdates the
+   first start. The alignment is pinned by a physical constraint — a process
+   cannot outlive its successor's start — which exactly one offset satisfies,
+   and several segments then match their gap to within 3 seconds.
+
+WHAT THE WARNINGS ACTUALLY WERE. All three fall on starts that requested
+--n-gpu-layers 0 (2026-09-16 10:27:07, 10:59:34, 12:07:31). Two of the seven
+ngl=0 starts did NOT warn. The split is the C'' design, and run_meta.notes
+confirms it independently: C2a "stub LLM, llama ngl0 with cuda" keeps the
+backend and does not warn; C2b "stub LLM, llama cpu-only no cuda" takes the
+LLAMA_NO_CUDA path, never sets GGML_BACKEND_PATH, and warns. That the two C2b
+runs land on exactly the two warning segments is what confirms the alignment
+and the warning attribution at the same time.
+
+NO SEGMENT THAT REQUESTED OFFLOAD EVER WARNED. 25 non-warning segments with
+ngl>0: median 31.8 ms/token over 7,062 generations.
+
+THE CPU-ONLY RATE, MEASURED, replacing "roughly a tenth" and "several times
+slower". This machine recorded exactly ONE generation with no layers offloaded:
+139.05 ms/token over 15 tokens (prompt eval 63.20 ms/token over 34 tokens), in
+the segment started 2026-09-16 10:28:37. Against the 31.8 ms/token GPU median
+that is 4.4x. n=1 GENERATION — it is an anchor, not a distribution, and no
+interval is quoted for it.
+
+The instruction was to take this number from the four ngl=0 runs. It cannot come
+from them: all four are attribution arms that run a STUB LLM and never call the
+server. Their segments contain no generations at all, which is why the one
+usable CPU-side observation comes from a probe start outside them.
+
+EVERY POST-BREAK RUN NOW HAS A SEGMENT. Of 171 runs after 8afb9b1:
+ - 165 ran while a server was live; 155 of those sit in a segment that decoded,
+   all between 31.4 and 31.9 ms/token — a tighter band on more data than the
+   32.4-47.8 quoted above, which came from per-run speculative decodes rather
+   than the server's own timings;
+ - 10 sit in segments that decoded nothing. Every one of them is a stub-LLM run,
+   established from the replies themselves (all equal to StubLlmProcessor.REPLY),
+   not from the notes, which do not always say so;
+ - 6 ran with NO server live at all, all of them the "llama stopped" and
+   "inert ballast" attribution arms, which is their condition.
+ - 154 runs actually called the server. None is in a warning segment.
+
+FLAGGING. Two runs sit in warning segments: reactive-20260916-110003-9937d5 and
+reactive-20260916-120813-52c75a. Both are the C2b arm, which asked for no CUDA
+backend and got none. I have NOT marked them invalid — the standing rule is
+aimed at runs that fell to the CPU unintentionally, and marking these would
+delete a control arm that did exactly what it was told. Flagged here for the
+call rather than made silently.
+
+CORRECTED CONCLUSION. No run that wanted the GPU failed to get it, and the
+guard's five dead days cost no data. But the earlier audit reached that by two
+routes that do not carry weight — a recorded request, and a warning attributed
+to the wrong process — and by a CPU-speed claim that had never been measured.
+The outcome was right; the reasoning was not.
+
+Regenerates with `make results` (src/scripts/audit_gpu_offload.py), pinned by
+src/tests/test_gpu_offload_audit.py.
