@@ -2482,3 +2482,61 @@ STILL TO CONFIRM BY CONSTRUCTION: the onset-timing run (grid at first-partial
 onset) should reproduce the arms' ~+100 ms penalty at budgets that do not fit
 the remaining speech. That is a prediction this model makes, and it is being run
 as a test of it rather than as further exploration.
+
+## The anticipation window is 588 ms, and the arm set never fitted it
+
+Measured 2026-09-21 over 238 policy-arm turns: ACTUAL speech remaining at the
+first EMITTED partial — the first moment a policy can act.
+
+    p5    38 ms     p25   349 ms     p50   588 ms     p75  1421 ms     p95 1973 ms
+
+The controller's estimator predicts (1 - p_done) * 2400 ms with an uncalibrated
+p_done, i.e. ~2400 ms every turn. It OVERESTIMATES ON 238 OF 238 TURNS, median
++1812 ms. Overestimating is the dangerous direction: it authorises a budget the
+speech cannot absorb, which is the overlap that costs ~100 ms. This single
+number explains the 81% overlap rate.
+
+FEASIBILITY at the measured 34 ms/token, against ACTUAL remaining speech:
+
+    B=16 needs  544 ms   fits 58% of turns
+    B=32 needs 1088 ms   fits 38%
+    B=48 needs 1632 ms   fits 18%
+    B=64 needs 2176 ms   fits  0%
+    B=96 needs 3264 ms   fits  0%
+
+B=64 AND B=96 NEVER FIT. The arm set {0,32,48,64,96}, inherited from Phase 2
+where speculation started at VAD onset and had the whole utterance to run, is
+mostly infeasible once speculation starts where a trigger can actually fire.
+To be safe on 75% of turns a budget must be about 10 tokens; on 90%, about 2.
+
+This is the real ceiling on think-while-listening in this pipeline: the first
+actionable partial arrives ~2.4 s into the utterance (decode-bound, Phase 3),
+leaving a median 588 ms window worth ~17 tokens.
+
+## PRE-REGISTERED PREDICTION for feasibility-BUDGET-R (2026-09-21, before the rewrite)
+
+Committed before the controller is rewritten.
+
+DESIGN UNDER TEST: B = largest arm with B * (live decode ms/token) <= (remaining
+speech estimate - margin), else 0. Decode rate from live llama-server timings,
+so contention enters through feasibility rather than through a fitted cost term.
+
+PREDICTION:
+  1. BUDGET-R MATCHES REACTIVE on TTFA, CI including zero. It avoids the overlap
+     penalty by declining infeasible budgets, and it cannot do better because
+     the drafts it can afford are not usable (0/15 first-sentence match).
+  2. It BEATS both fixed speculative arms by roughly the overlap penalty
+     (~100 ms), since those arms overlap on 81% of turns and it should not.
+  3. It chooses B=0 on most turns: at a median 588 ms window, even B=32 fits
+     only 38% of turns before any safety margin.
+
+FALSIFICATION:
+  - BUDGET-R WORSE than REACTIVE with a CI excluding zero -> the remaining-speech
+    estimate is still too optimistic and the margin is set wrong;
+  - BUDGET-R NO BETTER than the fixed arms -> the feasibility constraint is not
+    binding, i.e. it is issuing the same budgets they do.
+
+Note what this design does NOT claim: it does not make speculation pay. It makes
+speculation stop costing. On this pipeline the best available outcome for a
+budget controller is to match the reactive baseline while retaining the option
+to spend when a window appears — and that is the honest headline.
