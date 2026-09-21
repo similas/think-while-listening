@@ -38,6 +38,7 @@ from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
 from twl.config import LlmConfig, TtsConfig
 from twl.llm import LlamaClient
+from twl.prompting import gemma_prompt
 from twl.turns import TurnManager
 
 if TYPE_CHECKING:
@@ -54,11 +55,29 @@ class LlamaChatProcessor(FrameProcessor):
     """Streams a chat completion for each final transcript."""
 
     def __init__(
-        self, cfg: LlmConfig, turns: TurnManager, *, client: LlamaClient | None = None
+        self,
+        cfg: LlmConfig,
+        turns: TurnManager,
+        *,
+        client: LlamaClient | None = None,
+        answer_mode: str = "chat",
+        answer_system_prompt: str | None = None,
     ) -> None:
         super().__init__()
         self._cfg = cfg
         self._turns = turns
+        # "chat": /v1/chat/completions with server-side templating — the
+        # baseline path, and the one SPEC-ALWAYS-PG must keep, because PredGen
+        # owns its prompt.
+        #
+        # "completion": the raw endpoint with OUR template and the SAME system
+        # prompt the speculative prefill used, so the answer can inherit the
+        # partial transcript already in the slot. The two paths tokenize the
+        # conversation differently, which is why a chat-mode answer shares no
+        # prefix with a completion-mode prefill (measured: REACTIVE and
+        # speculating arms both sat at ~30 cached tokens, the system head).
+        self._answer_mode = answer_mode
+        self._answer_system_prompt = answer_system_prompt or cfg.system_prompt
         self._client = client  # injectable for tests; created lazily otherwise
         self._task: asyncio.Task[None] | None = None
         self.dropped_transcripts = 0
@@ -77,20 +96,28 @@ class LlamaChatProcessor(FrameProcessor):
     async def _generate(self, text: str) -> None:
         if self._client is None:
             self._client = LlamaClient(self._cfg.host, self._cfg.port)
-        messages = [
-            {"role": "system", "content": self._cfg.system_prompt},
-            {"role": "user", "content": text},
-        ]
         await self.push_frame(LLMFullResponseStartFrame())
         first_ns: list[int] = []
         try:
-            result = await self._client.stream_chat(
-                messages,
-                max_tokens=self._cfg.max_tokens,
-                temperature=self._cfg.temperature,
-                on_first_token_ns=first_ns,
-                on_delta=self._on_delta,
-            )
+            if self._answer_mode == "completion":
+                result = await self._client.stream_completion_chat(
+                    gemma_prompt(self._answer_system_prompt, text),
+                    max_tokens=self._cfg.max_tokens,
+                    temperature=self._cfg.temperature,
+                    on_first_token_ns=first_ns,
+                    on_delta=self._on_delta,
+                )
+            else:
+                result = await self._client.stream_chat(
+                    [
+                        {"role": "system", "content": self._cfg.system_prompt},
+                        {"role": "user", "content": text},
+                    ],
+                    max_tokens=self._cfg.max_tokens,
+                    temperature=self._cfg.temperature,
+                    on_first_token_ns=first_ns,
+                    on_delta=self._on_delta,
+                )
         except Exception:
             log.exception("llm: generation failed")
             await self.push_frame(LLMFullResponseEndFrame())

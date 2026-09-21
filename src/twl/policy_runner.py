@@ -88,7 +88,13 @@ class PolicyRunner:
         # A turn that will not speculate must not pay for speculation.
         outcome = "not issued"
         commit: dict[str, object] = {}
-        if decision.speculate and self.speculation is not None:
+        if decision.prefill_only and self.speculation is not None:
+            # Warm the slot and stop: no draft, so nothing can overlap the
+            # endpoint. The answer inherits the prefix if it runs on the same
+            # endpoint and system prompt (services.answer_mode="completion").
+            await self.speculation.prefill(text)
+            outcome = "prefill only"
+        elif decision.speculate and self.speculation is not None:
             await self.speculation.prefill(text)
             commit = await self.speculation.commit(
                 text, decision.budget_tokens, resend=decision.resend

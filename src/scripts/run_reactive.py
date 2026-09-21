@@ -420,6 +420,11 @@ async def run(args: argparse.Namespace) -> None:
             ),
             plan=turn_plan,
             spec_onset=args.spec_onset,
+            # Only OUR policies re-route the answer. SPEC-ALWAYS-PG keeps the
+            # chat path because PredGen owns its prompt, and changing it would
+            # improve the baseline's numbers on our design's terms.
+            answer_mode=("completion" if args.policy == "prefill_always" else "chat"),
+            answer_system_prompt=policy.system_prompt,
             speculation=speculation,
         )
         # The runner needs the TurnManager build_pipeline just created, so it

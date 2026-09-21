@@ -237,6 +237,64 @@ class LlamaClient:
                     break
         return produced
 
+    async def stream_completion_chat(
+        self,
+        prompt: str,
+        *,
+        max_tokens: int,
+        temperature: float,
+        on_first_token_ns: list[int] | None = None,
+        on_delta: Callable[[str], Awaitable[None]] | None = None,
+    ) -> StreamedChat:
+        """Answer via the RAW endpoint, so it can inherit a prefill's prefix.
+
+        Same shape as stream_chat, but the prompt is built from our own template
+        rather than the server's. That is the point: a prefill issued during
+        speech used this template and this system prompt, so the answer's prompt
+        is a strict extension of what the slot already holds.
+        """
+        payload = {
+            "prompt": prompt,
+            "n_predict": max_tokens,
+            "temperature": temperature,
+            "cache_prompt": True,
+            "stream": True,
+        }
+        t0 = now_ns()
+        content: list[str] = []
+        chunks = 0
+        ttft_ms = -1.0
+        prompt_n = cache_n = -1
+        async with self._client.stream("POST", f"{self._base}/completion", json=payload) as r:
+            r.raise_for_status()
+            async for line in r.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                chunk = json.loads(line[len("data: ") :])
+                text = chunk.get("content", "")
+                if text:
+                    if not chunks:
+                        ttft_ms = (now_ns() - t0) / 1e6
+                        if on_first_token_ns is not None:
+                            on_first_token_ns.append(now_ns())
+                    chunks += 1
+                    content.append(text)
+                    if on_delta is not None:
+                        await on_delta(text)
+                if chunk.get("stop"):
+                    timings = chunk.get("timings") or {}
+                    prompt_n = int(timings.get("prompt_n", -1))
+                    cache_n = int(timings.get("cache_n", -1))
+                    break
+        return StreamedChat(
+            content="".join(content),
+            ttft_ms=ttft_ms,
+            total_ms=(now_ns() - t0) / 1e6,
+            n_chunks=chunks,
+            prompt_n=prompt_n,
+            cache_n=cache_n,
+        )
+
     async def stream_chat(
         self,
         messages: list[dict[str, str]],

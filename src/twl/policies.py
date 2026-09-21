@@ -57,6 +57,10 @@ class PolicyKind(str, Enum):
     SPEC_CONTINUE = "spec_continue"
     SPEC_TRIGGER = "spec_trigger"
     BUDGET_R = "budget_r"
+    # Prefill-while-listening: warm the slot with the partial transcript during
+    # speech so the ANSWER inherits its prefix. Spends no tokens on a draft, so
+    # its value does not depend on p_usable.
+    PREFILL_ALWAYS = "prefill_always"
 
 
 @dataclass
@@ -72,6 +76,8 @@ class Decision:
     # Carried on the decision so the driver never has to know which arm it
     # serves. Last field, so every positional construction still works.
     resend: bool = False
+    # Warm the slot but decode nothing: value without spending a draft.
+    prefill_only: bool = False
 
     def as_dict(self) -> dict[str, float | str | bool]:
         return {
@@ -328,6 +334,40 @@ class BudgetR(Policy):
         )
 
 
+@dataclass
+class PrefillAlways(Policy):
+    """Prefill on every partial; never generate a draft.
+
+    THE VALUE SIDE THAT DOES NOT NEED A USABLE DRAFT. Every speculative design
+    measured so far spends tokens on a guess, and the guess is unusable here
+    (first sentence matched 0/15, successive candidates shared 2.4%). A prefill
+    spends no tokens on a guess at all: it puts the partial transcript's KV into
+    the slot so the ANSWER does not have to re-read it.
+
+    Measured offline: a tailed generation re-evaluated 75 tokens without a
+    preceding bare prefill and 22 with one. That saving only reaches the answer
+    if the answer uses the SAME endpoint and system prompt — otherwise the two
+    tokenize differently and share nothing (REACTIVE and every speculating arm
+    alike sat at ~30 cached tokens, the system head).
+
+    Budget is zero by construction: this arm never decodes a draft, so it cannot
+    overlap the endpoint and should show an overlap rate of ~0.
+    """
+
+    kind: PolicyKind = PolicyKind.PREFILL_ALWAYS
+    budget_tokens: int = 0
+    min_chars: int = 8
+
+    def decide(self, partial: str, p_done: float, contended: bool) -> Decision:
+        if len(partial.strip()) < self.min_chars:
+            return Decision(False, 0, "too little text to prefill from", p_done, contended)
+        # speculate=False keeps the driver from decoding; the runner prefills
+        # on the strength of prefill_only.
+        d = Decision(False, 0, "prefill-always: warm the slot, decode nothing", p_done, contended)
+        d.prefill_only = True
+        return d
+
+
 def build_policy(
     kind: str, *, budget_tokens: int = 96, theta: float = 0.5, horizon_s: float = 1.0
 ) -> Policy:
@@ -342,6 +382,8 @@ def build_policy(
         return SpecContinue(budget_tokens=budget_tokens)
     if kind == PolicyKind.BUDGET_R:
         return BudgetR()
+    if kind == PolicyKind.PREFILL_ALWAYS:
+        return PrefillAlways()
     if kind == PolicyKind.SPEC_TRIGGER:
         return SpecTrigger(budget_tokens=budget_tokens, theta=theta, horizon_s=horizon_s)
     raise ValueError(f"unknown policy {kind!r}; known: {[k.value for k in PolicyKind]}")

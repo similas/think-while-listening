@@ -64,6 +64,10 @@ def build_pipeline(
     plan: list[PlannedTurn] | None = None,
     policy_runner: PolicyRunner | None = None,
     spec_onset: str = "vad",
+    # "completion" routes the ANSWER through the raw endpoint with our template,
+    # so it can inherit a prefill's prefix. Default "chat" keeps the baseline.
+    answer_mode: str = "chat",
+    answer_system_prompt: str | None = None,
 ) -> BuiltPipeline:
     """Assemble the REACTIVE pipeline around the given audio source."""
     turns = TurnManager(
@@ -114,7 +118,14 @@ def build_pipeline(
         cfg.stt, turns, sample_rate=cfg.audio.sample_rate, segment_dir=segment_dir
     )
     llm: LlamaChatProcessor | StubLlmProcessor = (
-        StubLlmProcessor(turns) if cfg.llm.backend == "stub" else LlamaChatProcessor(cfg.llm, turns)
+        StubLlmProcessor(turns)
+        if cfg.llm.backend == "stub"
+        else LlamaChatProcessor(
+            cfg.llm,
+            turns,
+            answer_mode=answer_mode,
+            answer_system_prompt=answer_system_prompt,
+        )
     )
 
     observer = StageObserver(

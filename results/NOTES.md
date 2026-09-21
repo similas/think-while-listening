@@ -2683,3 +2683,23 @@ so that a boundary falls between two measured states is one step from choosing
 them so a result appears. The protection is that the arm spacing follows from
 the measured rates and window, both fixed before the arms were chosen, and that
 the prediction is committed before the run.
+
+## Contention: weak as a feasibility signal, strong as a cost-of-error signal
+
+Decision 2026-09-21 (Ali): the arm set {0,16,20,24} is REJECTED. A 16-versus-20
+token decision has no measurable consequence when the draft is unusable — the
+controller's output would vary while the effect would not, which is a worse
+failure than a constant output because it looks like a working controller.
+
+What contention actually is, on the two measurements that bracket it:
+
+    as a FEASIBILITY signal   weak    decode rate 33.1 -> 37.3 ms/token (13%)
+    as a COST-OF-ERROR signal strong  overlap penalty ~100 -> 205 ms (2x)
+
+Contention barely changes what FITS, but it doubles what a misfit COSTS. A
+controller that could not act on the first can still care about the second —
+but only if there is something worth spending on.
+
+PHASE 4'S CONCLUSION STANDS: with p_usable ~ 0, the optimal budget is zero in
+every state, and no controller test is meaningful until speculation has a value
+side. The next work is therefore to build one, not to tune the arms.
