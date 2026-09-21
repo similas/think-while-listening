@@ -2632,3 +2632,54 @@ pipeline was to stop speculation costing, not to make it pay. It turns out it
 cannot even do that deliberately: there is no window to allocate and no signal
 with which to allocate it. The value side remains the second-consumer
 experiment's question.
+
+## Widening the window WORKED. Contention alone still does not vary the decision
+
+EXPERIMENT 1 (2026-09-21): first partial at 0.5 s instead of 1.0 s, two-engine
+pipeline, 2 reps each, alternated within one session (offsets are a config-level
+setting and cannot be blocked within a run, so alternation is the available
+control).
+
+    metric                      EARLY [0.5,1.5,2.5]      CURRENT [1.0,2.0,3.0]
+    decision-window coverage        32/32 = 100%             30/32 = 94%
+    window at first partial     978 ms [846, 1743]      591 ms [474, 1352]
+    B=16 feasible on                     69% of turns          40% of turns
+    STT commit                 1670 ms [1602, 1863]    2040 ms [2008, 2115]
+
+The window widens by 387 ms and coverage reaches 100%. The STT commit also gets
+370 ms FASTER with CIs not overlapping — moving the partial earlier means its
+decode finishes well before the endpoint instead of competing with the final.
+Earlier offsets are better on every axis measured, which was not guaranteed:
+the cadence sweep had shown extra partials costing commit latency.
+
+BUT THE CONTENTION DECISION IS STILL NOT TESTABLE, and this was checked BEFORE
+running it — the methods rule from the Phase 4 report applied prospectively.
+
+Measured decode rates over completed decodes only (a cancelled decode's rate is
+biased by whatever interrupted it):
+
+    uncontended  33.1 ms/token [32.9, 33.3]  n=206
+    contended    37.3 ms/token [37.2, 37.5]  n=203
+
+Contention slows the decode by 13%. Real (CIs do not overlap) but small. At the
+median window of 978 ms and a 250 ms margin, 728 ms are usable, which affords
+22.0 tokens uncontended and 19.5 contended. An arm changes hands only if it
+lies in (19.5, 22.0]. THE CURRENT ARM SET HAS NONE THERE: B=16 fits in both
+states, B=32 in neither. The controller would emit B=16 on every turn — a
+constant output again, and untestable for the same reason as before.
+
+TWO WAYS FORWARD, and the first is a legitimate design response rather than a
+fix to get a result:
+  1. MATCH ARM GRANULARITY TO THE SIGNAL'S RESOLUTION. With arms {0, 16, 20,
+     24} the contended/uncontended boundary at ~20 tokens is crossed:
+     uncontended affords 22 (-> B=20), contended affords 19.5 (-> B=16). The
+     arm set {0,32,64,96} was inherited from Phase 2, where the window was the
+     whole utterance; it was never chosen for a 978 ms window.
+  2. ACCEPT that contention is too weak a signal here and report it as such.
+
+Recommendation: (1), stated in advance as a design change with its reason, and
+pre-registered before it runs. The risk to name honestly is that choosing arms
+so that a boundary falls between two measured states is one step from choosing
+them so a result appears. The protection is that the arm spacing follows from
+the measured rates and window, both fixed before the arms were chosen, and that
+the prediction is committed before the run.
