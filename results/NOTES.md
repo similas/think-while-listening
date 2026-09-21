@@ -3092,3 +3092,77 @@ cap, out of 895.5 MB in the repo. No snapshot_download and no load_dataset: the
 Hub's rows endpoint serves the metadata as JSON and each utterance as its own
 wav, and only those wavs were fetched (src/scripts/fetch_spoken_mqa.py). Audio
 lives in results/raw/spoken_mqa/ and stays local.
+
+## PRE-REGISTRATION 2026-09-21 — offline prefix probe for p_usable on Spoken-MQA
+
+Written and committed BEFORE the probe runs and before any Spoken-MQA trigger
+number is computed. The required-precision table is recomputed from the measured
+p_usable FIRST; only then is the trigger comparison read.
+
+QUESTION. When the model is given a PREFIX of what the user is saying, is the
+text it produces usable as the start of the answer it would give for the whole
+utterance? p_usable is the only term in the value model that has never been
+measured on anything but 48 dev turns, where it was 2/48.
+
+DESIGN. 80 items of Spoken-MQA multi_step_reasoning. The probe runs on the
+REFERENCE TRANSCRIPTS, not on STT output. That is deliberate: it removes
+recognition error and makes the result an UPPER BOUND on p_usable. If the model
+cannot use a perfect prefix, it cannot use a recognised one.
+
+Per item, prompts are word prefixes of context_transcript at fractions
+0.25, 0.50, 0.75, 0.90, plus the full transcript as the reference. Every
+generation is greedy (temperature 0, one sample), max 96 tokens, through the
+same raw completion endpoint and the same system prompt the speculative prefill
+uses, so the draft and the reference are tokenised identically.
+
+ONE DECODE SERVES EVERY BUDGET. The 96-token draft is truncated to 16, 32 and 96
+tokens at scoring time, which gives p_usable(B) on the same generations and costs
+nothing extra. p_usable being FLAT IN B is the model's current untested
+assumption (recorded above, 2026-09-19).
+
+PRIMARY METRIC, fixed now. A draft is USABLE at budget B if the first TTS chunk
+it yields is a word-prefix of the first TTS chunk of the reference reply. The
+chunk is taken with the pipeline's own rule (twl.services: first clause boundary
+past 8 chars, else a word boundary past 46 chars), because that chunk is exactly
+what earns the 610 ms saving in the required-precision table. Anything shorter
+does not start speech any sooner.
+
+SECONDARY, reported alongside and never in place of it: longest common word
+prefix between draft and reference, in words; exact first-sentence match, which
+is the 2/48 = 4.2% dev-set figure and is what makes the two comparable.
+
+SAMPLING CONTROL. Two full-transcript generations per item at the live pipeline's
+temperature 0.5, scored against each other by the same metric. This bounds how
+much of any non-match is sampling noise rather than missing information. Without
+it a low p_usable cannot be attributed to the prefix.
+
+PREDICTIONS, recorded so they can be wrong:
+
+ 1. p_usable is near zero at 0.25 and 0.50 and rises at 0.90. A GSM8K problem
+    states its question last; before the question is heard there is nothing to
+    answer. This is the mechanism that would make the trigger question moot on
+    this corpus for the same reason it was moot on the dev set — a different
+    reason from the 588 ms window.
+ 2. p_usable FALLS with B. A longer draft has more ways to diverge, and the
+    metric requires the whole first chunk to match. If it rises instead, the
+    flat-in-B assumption is wrong in the direction that moves the optimum off
+    the smallest arm, and B=32 does not stand.
+ 3. The sampling control matches on well under half of items, i.e. temperature
+    0.5 alone destroys most first-chunk agreement. If so, the LIVE pipeline's
+    p_usable is bounded by that control and not by the prefix at all, and
+    greedy decoding becomes a prerequisite for any speculation to pay.
+
+DECISION RULE, fixed now:
+ - The required-precision table is recomputed at the measured p_usable, and the
+   frozen T-SEM threshold (0.0000) is applied OUT OF SAMPLE, not re-selected.
+ - If p_usable at every prefix fraction below 0.90 is under 0.10, the trigger
+   comparison cannot change the conclusion and is reported as such rather than
+   being read for a result.
+ - Cluster bootstrap over the 80 utterances for every interval; Wilson for the
+   proportions; n stated everywhere.
+
+ANTICIPATED CONFOUND, stated before the fact: the reference is itself one greedy
+generation, not a ground truth. A draft that is a perfectly good answer but
+phrased differently scores as unusable. That is the RIGHT metric for this system
+— a draft is only worth anything if the real answer would have started with it —
+but it is not a measure of answer quality and must not be reported as one.
