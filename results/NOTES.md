@@ -2540,3 +2540,41 @@ Note what this design does NOT claim: it does not make speculation pay. It makes
 speculation stop costing. On this pipeline the best available outcome for a
 budget controller is to match the reactive baseline while retaining the option
 to spend when a window appears — and that is the honest headline.
+
+## Onset prediction test: PARTIALLY confirmed. Overlap is a factor, not the only one
+
+First-partial onset grid, B in {0,32,64,96}, blocked, 2 reps per state. The model
+predicted ~+100 ms where the decode overlaps the endpoint and ~0 where it does not.
+
+    state    B   overlap   finished before end      still running at end
+    uncont  32     0/32    +17.3 [-37.9, +62.5]     --
+    uncont  64     6/32    +24.2 [-40.9, +94.2]     +131.1 [+82.0, +244.9]
+    uncont  96    18/32   +118.1 [ -9.3, +179.3]     +77.9 [-22.4, +167.7]
+    cont    32     0/32     -2.0 [-56.6, +74.8]     --
+    cont    64     3/32   +128.8 [+57.6, +155.7]     +66.7 (n=3)
+    cont    96    16/32    +57.9 [-37.5, +129.8]    +205.1 [+88.9, +295.5]
+
+CONFIRMED where it is cleanly testable: overlap carries a large penalty
+(+131 ms at B=64 uncontended, +205 ms at B=96 contended, both CIs excluding
+zero), and B=32 — which never overlapped in either state — costs nothing
+distinguishable from zero (+17.3 and -2.0, both spanning zero).
+
+NOT CONFIRMED: "finished implies ~0". At B=96 uncontended the FINISHED turns
+cost +118.1, and at B=64 contended they cost +128.8 with a CI excluding zero.
+Finishing before the endpoint does not guarantee a free speculation at large
+budgets — plausibly because a decode that finishes 50 ms before the endpoint
+still held the slot through the window the answer's prefill needed. The binary
+model is therefore an approximation, good at small budgets and leaky at large
+ones.
+
+THE MISSING NUMBER IS NOW MEASURED: the contended overlap penalty is +205.1 ms
+[+88.9, +295.5], about twice the uncontended ~+100 ms. Contention roughly
+doubles what an overlapping speculation costs.
+
+WHAT SURVIVES FOR THE CONTROLLER. Feasibility remains the right rule and is now
+better supported at the budgets it will actually choose: B=32 never overlapped
+in 64 paired turns across both states and cost nothing measurable. The claim the
+model may NOT make is that any feasible budget is free — at B=64 and above,
+finishing was not sufficient. Since the measured window (median 588 ms) makes
+B=64 infeasible on 100% of turns anyway, the controller does not depend on the
+part of the model that failed.
