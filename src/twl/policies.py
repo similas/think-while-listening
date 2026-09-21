@@ -32,8 +32,6 @@ import logging
 from dataclasses import dataclass, field
 from enum import Enum
 
-from twl.contention import ttfa_cost_ms
-
 log = logging.getLogger(__name__)
 
 # PredGen Table 3's device: the model is told the instruction may be truncated,
@@ -225,6 +223,111 @@ def first_sentence(text: str) -> str:
     return ""
 
 
+# Wall-clock rate at which a speculative decode produces tokens on this device
+# (~2.6 s for 77 tokens, measured over 144 turns). Only a FALLBACK: the driver
+# reports its live rate and the controller prefers that, so contention enters
+# through feasibility rather than through a fitted coefficient.
+SPEC_DECODE_MS_PER_TOKEN = 34.0
+
+# Measured median speech remaining at the first EMITTED partial — the first
+# moment a policy can act (n=238). Used as the fallback when no live estimate
+# is available, because the previous fallback (2400 ms) overestimated on every
+# one of those 238 turns.
+MEDIAN_WINDOW_MS = 588.0
+
+
+@dataclass
+class BudgetR(Policy):
+    """Feasibility controller: issue only what the remaining speech can absorb.
+
+    THE RULE:
+
+        B = largest arm with  B * decode_ms_per_token <= remaining - margin
+        else 0
+
+    WHY FEASIBILITY AND NOT A COST CURVE. Three cost models were fitted to B
+    before the variable turned out not to be B. Classified by whether the decode
+    had finished when the user stopped, 160 policy-arm turns gave -12.4 ms
+    [-79.3, +71.3] for decodes that finished and +100.3 ms [+78.0, +123.9] for
+    those still running; the same split explains why a VAD-onset grid (6%
+    overlap) measured almost no cost while the policy arms (81% overlap) measured
+    ~+100 ms. B mattered only as a proxy for how long the decode ran.
+
+    CONTENTION ENTERS THROUGH FEASIBILITY, not through a fitted coefficient. A
+    contended decode is slower, so fewer tokens fit in the same speech — and the
+    penalty for getting it wrong is worse there (+205 ms contended against ~+100
+    uncontended). The rate is read live from the driver rather than assumed.
+
+    THE MARGIN IS THE WHOLE CONTROLLER. The estimator this replaces predicted
+    ~2400 ms of remaining speech on every turn and overestimated on 238 of 238,
+    by a median 1812 ms — which is the direct cause of the 81% overlap rate.
+    Measured remaining speech at the first actionable partial is a median 588 ms
+    (p25 349, p75 1421), so the margin is set from that distribution: at
+    DEFAULT_MARGIN_MS the controller is conservative on roughly three turns in
+    four.
+
+    WHAT THIS DOES NOT CLAIM. It does not make speculation pay. It makes
+    speculation stop costing, and keeps the option to spend when a window
+    appears. On a median 588 ms window even B=32 fits 38% of turns, so B=0 is
+    expected to be the common choice — by arithmetic, not by construction.
+    """
+
+    kind: PolicyKind = PolicyKind.BUDGET_R
+    system_prompt: str = PREDGEN_SYSTEM
+    arms: tuple[int, ...] = (0, 16, 32, 48, 64, 96)
+    # Safety margin against the remaining-speech estimate. Set from the measured
+    # distribution: being early costs nothing, being late costs ~100-205 ms.
+    margin_ms: float = 250.0
+    # Fallback when no live rate is available (first turn of a run).
+    decode_ms_per_token: float = SPEC_DECODE_MS_PER_TOKEN
+    min_chars: int = 8
+
+    def feasible_budget(self, remaining_ms: float, ms_per_token: float) -> int:
+        """Largest arm whose decode fits the speech left, after the margin."""
+        usable = remaining_ms - self.margin_ms
+        if usable <= 0 or ms_per_token <= 0:
+            return 0
+        fits = [b for b in self.arms if b > 0 and b * ms_per_token <= usable]
+        return max(fits) if fits else 0
+
+    def decide(
+        self,
+        partial: str,
+        p_done: float,
+        contended: bool,
+        *,
+        remaining_ms: float | None = None,
+        ms_per_token: float | None = None,
+    ) -> Decision:
+        if len(partial.strip()) < self.min_chars:
+            return Decision(False, 0, "too little text to guess from", p_done, contended)
+
+        rate = ms_per_token if ms_per_token and ms_per_token > 0 else self.decode_ms_per_token
+        # Without a live estimate, fall back to the measured median window
+        # rather than to an optimistic prior — the previous prior's optimism is
+        # what produced the overlap.
+        remaining = remaining_ms if remaining_ms is not None else MEDIAN_WINDOW_MS
+        b = self.feasible_budget(remaining, rate)
+        if b <= 0:
+            return Decision(
+                False,
+                0,
+                f"budget-r: nothing fits {remaining:.0f} ms - {self.margin_ms:.0f} ms margin "
+                f"at {rate:.0f} ms/token",
+                p_done,
+                contended,
+            )
+        return Decision(
+            True,
+            b,
+            f"budget-r: B={b} needs {b * rate:.0f} ms, have {remaining - self.margin_ms:.0f} ms "
+            f"usable ({remaining:.0f} - {self.margin_ms:.0f}) at {rate:.0f} ms/token",
+            p_done,
+            contended,
+            resend=False,
+        )
+
+
 def build_policy(
     kind: str, *, budget_tokens: int = 96, theta: float = 0.5, horizon_s: float = 1.0
 ) -> Policy:
@@ -262,108 +365,3 @@ SPEC_SAVING_MS = 610.0
 # different speculative consumer would change (results/SECOND_CONSUMER_DESIGN.md)
 # and the one BUDGET-L is meant to learn.
 P_DRAFT_USABLE_PRIOR = 0.02
-
-
-@dataclass
-class BudgetR(Policy):
-    """Rule-based budget controller: spend the least slot time that can pay off.
-
-    THE OBJECTIVE, as Phase 3 identified it empirically rather than by
-    assumption: minimize slot occupancy subject to producing a usable answer.
-    Occupancy is what speculation costs on this device (43.8 s of decode against
-    393 ms of cancellation over a 16-turn run), and B sets it directly.
-
-    THE RULE, in the order the constraints bind:
-
-    1. FIT. A speculation cancelled at the endpoint produced nothing usable, so
-       a budget is only worth issuing if it can FINISH before the user stops
-       speaking. The remaining speech is estimated from the trigger's p_done,
-       and B_fit = remaining_ms / SPEC_DECODE_MS_PER_TOKEN.
-    2. VALUE. Speculating is worth it only if the expected saving exceeds the
-       cost it imposes on the recognizer:
-           p_usable * SPEC_SAVING_MS  >  contention_cost_ms(B, contended)
-       Both sides are measured quantities, and the cost side is the Phase 2/A3
-       contention model the controller consumes.
-    3. ARM. The largest configured arm satisfying both, else 0.
-
-    WHY THIS DEGENERATES TO B=0 HERE, AND WHY THAT IS NOT HARDCODED. With
-    p_usable at the measured 0.02, the expected saving is 12 ms, which no budget
-    can justify once contended (B=32 costs 48 ms). The controller therefore
-    chooses 0 — by arithmetic on measured inputs, not by a special case. Raise
-    p_usable (a consumer that uses the draft instead of matching it token-wise)
-    and the same rule starts spending. That is the property that makes the
-    negative result a result rather than an artifact of the policy.
-    """
-
-    kind: PolicyKind = PolicyKind.BUDGET_R
-    system_prompt: str = PREDGEN_SYSTEM
-    # B=48 added to bracket the measured uncontended crossover at B=56.
-    arms: tuple[int, ...] = (0, 32, 48, 64, 96)
-    # ASSUMED FLAT IN B, AND UNTESTED. Existing logs cannot measure
-    # p_usable(B): the draft runs until the endpoint cancels it, so its length
-    # correlates with the utterance length at r=0.955 and the two cannot be
-    # separated (results/NOTES.md). If p_usable RISES with length, the optimum
-    # moves off the smallest arm and this model understates large budgets.
-    p_usable: float = P_DRAFT_USABLE_PRIOR
-    saving_ms: float = SPEC_SAVING_MS
-    decode_ms_per_token: float = SPEC_DECODE_MS_PER_TOKEN
-    # Typical utterance length, for turning p_done into remaining speech.
-    utterance_ms: float = 2400.0
-    min_chars: int = 8
-
-    def remaining_speech_ms(self, p_done: float) -> float:
-        """Speech left, estimated from the trigger's completeness score.
-
-        p_done is the probability the utterance is ALREADY complete, so
-        (1 - p_done) scales the expected remainder. Crude, and deliberately so:
-        a better predictor is a research question of its own, and the rule must
-        degrade gracefully when the trigger is uncalibrated (p_done = 0 then
-        yields the full utterance, i.e. the most optimistic budget, which the
-        value test still has to justify).
-        """
-        return max(0.0, (1.0 - max(0.0, min(1.0, p_done))) * self.utterance_ms)
-
-    def decide(self, partial: str, p_done: float, contended: bool) -> Decision:
-        if len(partial.strip()) < self.min_chars:
-            return Decision(False, 0, "too little text to guess from", p_done, contended)
-
-        remaining = self.remaining_speech_ms(p_done)
-        b_fit = int(remaining / self.decode_ms_per_token)
-        expected_saving = self.p_usable * self.saving_ms
-
-        # Value of a budget = what the draft is worth when usable, MINUS what
-        # holding the slot costs. The cost term can be NEGATIVE uncontended
-        # (measured fee -76.9 ms), so a budget can pay even when the draft
-        # almost never is — which is why this maximizes value rather than
-        # filtering on affordability.
-        fits = [b for b in self.arms if b > 0 and b <= b_fit]
-        if not fits:
-            return Decision(
-                False,
-                0,
-                f"budget-r: no arm fits {remaining:.0f} ms of speech (B_fit={b_fit})",
-                p_done,
-                contended,
-            )
-        values = {b: expected_saving - ttfa_cost_ms(b, contended) for b in fits}
-        best = max(values, key=lambda b: values[b])
-        if values[best] <= 0:
-            return Decision(
-                False,
-                0,
-                f"budget-r: no arm has positive value; best B={best} at "
-                f"{values[best]:+.0f} ms (saving {expected_saving:.0f} - cost "
-                f"{ttfa_cost_ms(best, contended):+.0f}, p_usable={self.p_usable:.3f})",
-                p_done,
-                contended,
-            )
-        return Decision(
-            True,
-            best,
-            f"budget-r: B={best} value {values[best]:+.0f} ms "
-            f"(saving {expected_saving:.0f} - cost {ttfa_cost_ms(best, contended):+.0f}), "
-            f"fits {remaining:.0f} ms (B_fit={b_fit})",
-            p_done,
-            contended,
-            resend=False,
-        )

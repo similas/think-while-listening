@@ -134,78 +134,6 @@ def test_first_sentence_is_only_taken_once_complete() -> None:
     assert first_sentence("It is four") == "", "no terminator yet: nothing to speak"
 
 
-def test_budget_r_spends_when_the_draft_becomes_usable() -> None:
-    """Raise the one measured input and the SAME rule starts spending.
-
-    This is what makes the B=0 result a finding rather than an artifact: the
-    controller is not hardcoded to decline, it declines because a draft that is
-    usable 2% of the time is not worth the occupancy.
-    """
-    from twl.policies import BudgetR
-
-    b = BudgetR(p_usable=0.9)
-    d = b.decide("what is the capital of", p_done=0.0, contended=False)
-    assert d.speculate is True
-    assert d.budget_tokens in b.arms and d.budget_tokens > 0
-
-
-def test_budget_r_will_not_start_a_speculation_that_cannot_finish() -> None:
-    """A decode cancelled at the endpoint produced nothing: do not start it."""
-    from twl.policies import BudgetR
-
-    b = BudgetR(p_usable=0.9)
-    # p_done near 1 means the utterance is essentially over: no room to decode.
-    d = b.decide("what is the capital of france", p_done=0.99, contended=False)
-    assert d.speculate is False
-    assert "no arm fits" in d.reason
-
-
-def test_budget_r_optimum_follows_the_measured_cost_curve() -> None:
-    """The choice must be argmax of value, whatever budget that turns out to be.
-
-    Deliberately asserts NO specific B. The two tests this replaces encoded the
-    pre-registered prediction (5ab29ec) rather than the arithmetic, and a test
-    that names the predicted answer cannot falsify it. What is asserted here is
-    the PROPERTY: BUDGET-R picks the arm maximizing expected saving minus
-    measured TTFA cost, and declines when no arm has positive value.
-    """
-    from twl.contention import ttfa_cost_ms
-    from twl.policies import BudgetR
-
-    b = BudgetR()
-    for contended in (False, True):
-        d = b.decide("what is the capital of", p_done=0.0, contended=contended)
-        saving = b.p_usable * b.saving_ms
-        values = {arm: saving - ttfa_cost_ms(arm, contended) for arm in b.arms if arm > 0}
-        best = max(values, key=lambda a: values[a])
-        if values[best] > 0:
-            assert d.speculate is True
-            assert d.budget_tokens == best, f"expected argmax {best}, got {d.budget_tokens}"
-        else:
-            assert d.speculate is False and d.budget_tokens == 0
-
-
-def test_contention_can_only_reduce_the_budget() -> None:
-    """Contention raises the entry fee, so it can never justify spending MORE."""
-    from twl.policies import BudgetR
-
-    b = BudgetR(p_usable=0.9)
-    cold = b.decide("what is the capital of", p_done=0.0, contended=False)
-    hot = b.decide("what is the capital of", p_done=0.0, contended=True)
-    assert hot.budget_tokens <= cold.budget_tokens
-
-
-def test_a_more_usable_draft_never_reduces_the_budget() -> None:
-    """Monotone in the one input a different consumer would change."""
-    from twl.policies import BudgetR
-
-    budgets = [
-        BudgetR(p_usable=p).decide("what is the capital of", 0.0, True).budget_tokens
-        for p in (0.0, 0.02, 0.5, 0.95)
-    ]
-    assert budgets == sorted(budgets), budgets
-
-
 def test_no_budget_is_free_in_either_state() -> None:
     """The negative fee did not replicate, so every budget costs.
 
@@ -227,3 +155,70 @@ def test_no_budget_is_free_in_either_state() -> None:
     per_token_cold = ttfa_cost_ms(96, False) - ttfa_cost_ms(95, False)
     per_token_hot = ttfa_cost_ms(96, True) - ttfa_cost_ms(95, True)
     assert per_token_hot > per_token_cold
+
+
+def test_feasibility_declines_when_nothing_fits_the_window() -> None:
+    """The measured median window is 588 ms; at 34 ms/token little fits."""
+    from twl.policies import BudgetR
+
+    b = BudgetR()
+    d = b.decide("what is the capital of", 0.0, False, remaining_ms=400.0, ms_per_token=34.0)
+    assert d.speculate is False and d.budget_tokens == 0
+    assert "nothing fits" in d.reason
+
+
+def test_a_longer_window_admits_a_larger_budget() -> None:
+    """Monotone in the quantity the rule is about."""
+    from twl.policies import BudgetR
+
+    b = BudgetR()
+    got = [
+        b.decide(
+            "what is the capital of", 0.0, False, remaining_ms=r, ms_per_token=34.0
+        ).budget_tokens
+        for r in (400, 900, 1400, 2400, 4000)
+    ]
+    assert got == sorted(got), got
+    assert got[-1] > got[0]
+
+
+def test_a_slower_decode_shrinks_the_budget() -> None:
+    """Contention enters through feasibility, not a fitted coefficient.
+
+    Same window, slower tokens, fewer of them fit.
+    """
+    from twl.policies import BudgetR
+
+    b = BudgetR()
+    fast = b.decide("what is the capital of", 0.0, False, remaining_ms=2400, ms_per_token=34.0)
+    slow = b.decide("what is the capital of", 0.0, True, remaining_ms=2400, ms_per_token=100.0)
+    assert slow.budget_tokens < fast.budget_tokens
+
+
+def test_the_issued_budget_always_fits_after_the_margin() -> None:
+    """The invariant the whole controller exists to maintain."""
+    from twl.policies import BudgetR
+
+    b = BudgetR()
+    for remaining in (300, 600, 900, 1500, 2400, 5000):
+        for rate in (20.0, 34.0, 80.0):
+            d = b.decide(
+                "what is the capital of",
+                0.0,
+                False,
+                remaining_ms=float(remaining),
+                ms_per_token=rate,
+            )
+            if d.speculate:
+                assert d.budget_tokens * rate <= remaining - b.margin_ms
+
+
+def test_the_fallback_window_is_the_measured_median_not_an_optimistic_prior() -> None:
+    """The previous fallback predicted 2400 ms and overestimated on 238/238 turns."""
+    from twl.policies import MEDIAN_WINDOW_MS, BudgetR
+
+    assert MEDIAN_WINDOW_MS == 588.0
+    b = BudgetR()
+    blind = b.decide("what is the capital of", 0.0, False)
+    explicit = b.decide("what is the capital of", 0.0, False, remaining_ms=MEDIAN_WINDOW_MS)
+    assert blind.budget_tokens == explicit.budget_tokens

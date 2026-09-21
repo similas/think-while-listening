@@ -117,6 +117,10 @@ class SpeculationDriver:
     # be measured as a FACTOR: the arms always speculate, so gating the prefill
     # on the decision is a no-op for them and cannot test its cost.
     prefill_enabled: bool = True
+    # Live decode rate, updated from server timings after every speculation.
+    # The controller reads it so CONTENTION enters through feasibility — a
+    # slower decode fits less speech — rather than through a fitted cost term.
+    observed_ms_per_token: float = 34.0
     # Called the first time a complete sentence exists in a candidate, so
     # the pre-synthesis saving has an UPPER bound and not only the lower
     # bound that stt_final -> tts_first_audio provides.
@@ -329,7 +333,13 @@ class SpeculationDriver:
             )
             self.stats.spec_prompt_n = timings.get("prompt_n", -1)
             self.stats.spec_cache_n = timings.get("cache_n", -1)
-            self.stats.decode_ms += (now_ns() - t0) / 1e6
+            elapsed_ms = (now_ns() - t0) / 1e6
+            self.stats.decode_ms += elapsed_ms
+            if streamed >= 8:
+                # EWMA over completed decodes only. A cancelled decode's rate is
+                # biased by whatever it was interrupted doing.
+                rate = elapsed_ms / streamed
+                self.observed_ms_per_token = 0.7 * self.observed_ms_per_token + 0.3 * rate
             self._record_candidate("".join(text_parts))
         except asyncio.CancelledError:
             # The turn ended first: every token this decode produced is waste,
