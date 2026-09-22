@@ -3659,3 +3659,70 @@ the top of the utterance.
 
 T-SEM is logged per partial and NOT read. Nothing in run 3 licenses a trigger
 comparison; the falsification of 2026-09-22c settled that.
+
+## 2026-09-22 — POST-MORTEM of reactive-20260922-130314-6a8b26 (run 3, VOID)
+
+Config reactive_mqa.yaml at 6972527, seeded 80, 2.5 s cadence, playback gated on
+silence, turn invariant armed. Aborted by the invariant at turn 16 ("16 turns
+written but only 15 files started"). 16 turn records, no run_complete.
+
+### §3.1 CONFIRMED: HARD_TIMEOUT_MS closed turn 8
+
+    turn 8  close_reason=timeout  invalid_reason=turn_timeout
+            vad_user_started      0.0 ms
+            speech_end_est    33679.5 ms      (33.7 s of speech)
+            vad_user_stopped  34479.5 ms
+            playback_done     45089.0 ms      <- HARD_TIMEOUT_MS = 45 000
+            stt_audio_s = -1.0, reply = "", reply_tokens = 0
+            stages present: vad_*, stt_partial*, speech_end_est, playback_done
+            stages ABSENT:  stt_final, llm_first_token, tts_first_audio, audio_out_first
+
+The base final on 35.1 s of audio had ~10.6 s of budget left after the endpoint
+and did not finish. The turn was force-closed with nothing produced. tj 61.8 C,
+no swap: not thermal, not memory.
+
+### §3.2 NOT CONFIRMED AS STATED. There was no reply 8 to still be generating
+
+v3 §3.2 says the gate released file 9 "while reply 8 was still being generated —
+no reply audio had started". Turn 8 never reached the LLM at all:
+
+  - no llm_first_token, no audio_out_first, reply "" and reply_tokens 0;
+  - results/raw/llama-server.log shows a 49.8 s gap between generations
+    spanning turn 8 (76676.4 s -> 76726.2 s into the server process) against
+    10-25 s gaps on either side. The server was idle across turn 8;
+  - journalctl shows no llama-server restart in the window, so the gap is
+    idleness, not a lost segment.
+
+The gate was therefore held by `turn_open`, not released early, and the
+quiet-1000 ms condition was trivially true because no audio had been produced
+since turn 7. Turn 8's record was written 13:06:21; turn 9's 4.5 s turn ended
+13:06:26, so file 9 started about 0.5 s after turn 8 closed. The gate released
+BECAUSE the timeout closed the turn.
+
+### THE ACTUAL MECHANISM: a closed turn is not an idle pipeline
+
+Turn 8's base final was still decoding when the timeout closed turn 8. It
+completed 1405.7 ms into turn 9 and was recorded there:
+
+    turn 9  stt_final at 1405.7 ms,  stt_audio_s = 35.1 s   <- turn 8's audio
+            speech_end_est absent (turn 9 never registered its own endpoint)
+
+From turn 9 on every final is one turn late, which is the same
+one-turn-late shape as the 1.0 s and 2.5 s runs, reached by a different route.
+The gate checks `turn_open` and output-audio silence; it has no visibility into
+a decode in flight, and the recognizer is exactly where this run's work was.
+
+So the two symptoms are one fault with two parts:
+  1. a timeout calibrated on a corpus fired on a turn doing legitimate work
+     (§3.1 — the third corpus-dependent constant, as v3 says);
+  2. the gate treats "turn closed" as "pipeline idle" (§3.2, but by a different
+     route than the brief states). The fix follows the mechanism: the gate must
+     require the RECOGNIZER idle as well, not only the turn closed. The brief's
+     belt — require the llama-server slot idle — is right and is kept; it would
+     not have caught this one, because the slot WAS idle.
+
+### Carried forward as OBSERVATION, not result
+
+The stage decomposition in v3 §0 (STT final ~70 % of TTFA, LLM TTFT ~3 %) comes
+from 7 clean turns of THIS VOID RUN. It is an observation and is written as one
+everywhere until P1 is scored on valid runs (v3 §5.4, §8 step 2).
