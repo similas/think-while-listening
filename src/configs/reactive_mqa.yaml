@@ -1,0 +1,75 @@
+# REACTIVE on Spoken-MQA multi_step_reasoning (seed 20260922).
+#
+# ONE CHANGE from reactive.yaml: partials at a FIXED CADENCE covering the whole
+# utterance, instead of three fixed offsets. The probe varies the FRACTION of
+# the utterance heard; the pipeline's canonical [1.0, 2.0, 3.0] samples only the
+# first 3 s, which on a 15.4 s median utterance is the first 0.19 of it. To put
+# window(f) on the same f axis as p_usable(f), partials have to reach the end.
+#
+# CADENCE 1.0 s IS SET BY THE DECODE, NOT CHOSEN FOR ROUNDNESS. tiny's decode is
+# per CALL, not per second of audio (fitted 847 ms fixed, -21 ms/s, R^2 0.01;
+# median 759 ms) because Whisper's encoder runs on a 30 s padded window. A
+# cadence below ~0.85 s would queue decodes and the logged partial time would be
+# lock-wait, not availability. 1.0 s is the smallest round cadence above it, and
+# it keeps the first partial at the canonical 1.0 s so the two schedules agree
+# on their first point.
+#
+# The cost of the extra partials is the covariate: STT commit latency against
+# the canonical offsets on the same items, reported paired.
+audio:
+  sample_rate: 16000
+  channels: 1
+  input_device_substr: "reSpeaker"
+  # The array delivers 2 DSP-processed channels; pick one EXPLICITLY. Measured
+  # 2026-09-15 (results/raw/capture_channels/): mean WER ch1 0.025, ch0 0.050,
+  # downmix 0.250. Channel 1 is also ~3x the level of channel 0.
+  device_channels: 2
+  capture_channel: 1
+  # Playback goes to the PortAudio 'pulse' device; PULSE_SINK picks the node.
+  # Headless default twl_null (created by run scripts); set pulse_sink to
+  # "alsa_output.usb-Jieli..." to hear replies on the room speaker.
+  output_device_substr: "pulse"
+  pulse_sink: "twl_null"
+
+vad:
+  confidence: 0.7
+  start_secs: 0.2
+  stop_secs: 0.8
+  min_volume: 0.6
+
+stt:
+  model: "base"
+  compute_type: "int8"
+  language: "en"
+  cpu_threads: 3
+  cpu_affinity: [3, 4, 5]
+  # Two-engine STT, decided 2026-09-17 on the live comparison: tiny for
+  # partials, base for the final, SHARED cores 3-5 and no pinning between them.
+  # Splitting the cores cost +1089 ms of commit latency (results/NOTES.md).
+  partial_offsets_s: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0, 32.0, 33.0, 34.0, 35.0, 36.0]
+  partial_model: "tiny"
+  partial_cpu_threads: 3
+
+llm:
+  host: "127.0.0.1"
+  port: 8093
+  model_path: "/home/ali/voice-companion/models/gemma-4-E2B-q4_0.gguf"
+  ctx_size: 2048
+  threads: 3
+  cpu_affinity: [0, 1, 2]
+  n_gpu_layers: 99
+  parallel: 1
+  cache_reuse: 0
+  memory_max_mb: 3500
+  system_prompt: "You are a concise voice assistant. Answer in one or two short sentences."
+  max_tokens: 150
+  temperature: 0.5
+
+tts:
+  voice_path: "/home/ali/voice-companion/models/en_US-lessac-medium.onnx"
+  cpu_threads: 2
+
+telemetry:
+  interval_ms: 100
+
+results_dir: "results/raw"

@@ -157,6 +157,19 @@ Root-level files are allowed; no other top-level folders.
   observed, what surprised you, what is unresolved. Terse. Facts only.
 - Any run with swap activity, an OOM, or a thermal-throttle event is recorded
   and flagged invalid — never silently dropped or quietly rerun.
+- **`results/raw/` is the only copy of every measurement** and is gitignored by
+  §1, so it is backed up nightly to the Mac — storage only, never compute:
+
+      src/scripts/backup_results.sh          # push-only rsync of results/raw/
+      ~/.config/systemd/user/twl-backup.timer   # 04:30 nightly, Persistent=true
+      TWL_BACKUP_DEST=user@host:/path        # set in ~/.config/twl/backup.env
+
+  Push only, never pull: a pull could overwrite a measurement with a stale copy
+  and there is no reconciliation logic. `--append-verify`, not `--delete` — a
+  file that vanishes locally is not deleted remotely, which is the case this
+  exists for. It skips itself while `run_reactive.py` is in flight, because
+  rsync competes for the SD card and the cores the recognizer is timed on.
+  Nothing in the repo reads from the backup and no analysis runs on the Mac.
 - **Never edit a script that is executing.** bash reads a script incrementally
   by byte offset, so editing the source shifts the interpreter's position and
   it will execute fragments of lines. On 2026-09-15 that restarted a thermal

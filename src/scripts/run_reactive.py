@@ -457,6 +457,33 @@ async def run(args: argparse.Namespace) -> None:
             adversary.start()
             print(f"bandwidth adversary running on cores {list(adv_cpus)}")
 
+        # THE WATCHDOG GUARDS THE MEASUREMENT, NOT ONLY THE SOAK. A cold run
+        # was assumed safe because it does not deliberately heat the board;
+        # that holds for 16 short utterances and not for a long corpus, where
+        # the run itself is the load. Independent process, own session, kills
+        # this process group on breach and restores clocks.
+        run_watchdog = None
+        if args.watchdog:
+            run_watchdog = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(REPO / "src/scripts/thermal_watchdog.py"),
+                    "--pid",
+                    str(os.getpid()),
+                    "--ceiling-c",
+                    str(args.soak_ceiling_c),
+                    "--baseline",
+                    str(baseline),
+                    "--log",
+                    str(run_dir / "thermal_watchdog.log"),
+                    "--summary",
+                    str(run_dir / "thermal_watchdog.json"),
+                ],
+                env={**os.environ, "PYTHONPATH": str(REPO / "src")},
+                start_new_session=True,
+            )
+            print(f"thermal watchdog armed at {args.soak_ceiling_c:.0f} C for the whole run")
+
         soak_report = None
         if args.soak_minutes > 0:
             from twl.soak import soak as run_soak
@@ -569,6 +596,10 @@ async def run(args: argparse.Namespace) -> None:
             else:
                 await asyncio.sleep(args.live_seconds)
         finally:
+            # Disarm before teardown: teardown can hang, and a watchdog that
+            # outlives the measurement would kill the process group during it.
+            if run_watchdog is not None:
+                run_watchdog.terminate()
             if diag_task is not None:
                 diag_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -777,6 +808,12 @@ def main() -> None:
         "--adversary-cpus",
         default="",
         help="Phase 2: comma-separated cores for the bandwidth adversary during the run",
+    )
+    p.add_argument(
+        "--watchdog",
+        action="store_true",
+        help="arm the independent thermal watchdog for the WHOLE run, not just "
+        "a soak — a long corpus is itself the thermal load",
     )
     p.add_argument("--notes", default="")
     add_gate_args(p)

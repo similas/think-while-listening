@@ -17,6 +17,7 @@ from scripts.score_prefix_probe import (
     first_chunk,
     is_word_prefix,
     last_number,
+    number_class,
 )
 from twl.services import PiperTTSService
 
@@ -78,3 +79,17 @@ def test_the_final_answer_is_the_last_number() -> None:
     assert last_number("19 minus 15 is 4.") == 4.0
     assert last_number("That costs $1,250.50 in total") == 1250.50
     assert last_number("I am not sure.") is None
+
+
+def test_a_matched_chunk_that_anticipates_the_answer_is_not_a_restatement() -> None:
+    problem = "Paige raised 7 goldfish and 12 catfish in the pond. Now she has 15 left."
+    gold = ["4"]
+    assert number_class("4 fish disappeared.", gold, problem) == "gold"
+    assert number_class("Paige raised 7 goldfish,", gold, problem) == "premise"
+    assert number_class("She lost 6 of them,", gold, problem) == "other"
+    assert number_class("Let me work that out,", gold, problem) == "none"
+
+
+def test_gold_wins_when_it_is_also_a_premise() -> None:
+    """A gold value that also appears in the problem is still the answer."""
+    assert number_class("7 fish,", ["7"], "she had 7 fish and lost some") == "gold"

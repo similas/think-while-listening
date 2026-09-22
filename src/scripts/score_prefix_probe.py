@@ -33,6 +33,8 @@ GATE = 0.30
 # From the measured arms, not from this data: results/NOTES.md.
 OVERLAP_COST_MS = 100.3
 SAVING_MS = 610.0
+# p x saving = (1 - p) x cost, the p at which one spend pays for one mistake.
+BREAK_EVEN = OVERLAP_COST_MS / (OVERLAP_COST_MS + SAVING_MS)
 NUMBER = re.compile(r"[-+]?\d[\d,]*(?:\.\d+)?")
 # Gemma template markers the raw endpoint sometimes emits; everything from the
 # first one on is template leakage, not reply text.
@@ -103,6 +105,34 @@ def content_free(chunk: str, problem: str) -> bool:
     return not shared
 
 
+def numbers(text: str) -> set[float]:
+    out = set()
+    for tok in NUMBER.findall(text.replace("$", "")):
+        try:
+            out.add(float(tok.replace(",", "")))
+        except ValueError:
+            continue
+    return out
+
+
+def number_class(chunk: str, gold: list[str], problem: str) -> str:
+    """What a matched chunk actually said, by the numbers in it.
+
+    Both classes score as "usable" under the chunk-prefix rule and only one is
+    worth a controller's budget: a draft that ANTICIPATES the answer, against
+    one that RESTATES a premise it was just told. Gold wins ties, since a gold
+    value that also appears in the problem is still the answer.
+    """
+    got = numbers(chunk)
+    if not got:
+        return "none"
+    if got & numbers(" ".join(gold)):
+        return "gold"
+    if got & numbers(problem):
+        return "premise"
+    return "other"
+
+
 def last_number(text: str) -> float | None:
     found = NUMBER.findall(text.replace("$", ""))
     if not found:
@@ -143,29 +173,26 @@ def enrich(data: dict, path: Path, host: str, port: int) -> None:
     path.write_text(json.dumps(data, indent=1) + "\n")
 
 
-def main() -> None:
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--probe", type=Path, default=Path("results/raw/spoken_mqa/prefix_probe.json"))
-    p.add_argument("--config", type=Path, default=Path("src/configs/reactive.yaml"))
-    p.add_argument("--host", default="127.0.0.1")
-    p.add_argument("--port", type=int, default=8093)
-    p.add_argument(
-        "--items",
-        type=Path,
-        default=Path("results/raw/spoken_mqa/multi_step_reasoning.json"),
-        help="the problem texts, needed for the content-free filter",
-    )
-    args = p.parse_args()
+def score_one(
+    probe: Path, items_path: Path, config_path: Path, host: str, port: int
+) -> dict[str, float]:
+    """Score one probe log and print its section. Returns the headline numbers.
 
-    if not args.probe.exists():
+    Returned so several logs can be compared without re-deriving anything:
+    the comparison below must read the SAME quantities the tables print.
+    """
+    print("=" * 72)
+    print(f"{probe}")
+
+    if not probe.exists():
         # results/raw/ is local, so a fresh clone has no probe to score. Say so
         # and exit clean rather than failing `make results` for everyone.
-        print(f"no probe log at {args.probe}; run src/scripts/prefix_probe.py first")
+        print(f"no probe log at {probe}; run src/scripts/prefix_probe.py first")
         return
-    problems = {m["idx"]: m["transcript"] for m in json.loads(args.items.read_text())}
-    cfg_offsets = yaml.safe_load(args.config.read_text())["stt"]["partial_offsets_s"]
-    data = json.loads(args.probe.read_text())
-    enrich(data, args.probe, args.host, args.port)
+    problems = {m["idx"]: m["transcript"] for m in json.loads(items_path.read_text())}
+    cfg_offsets = yaml.safe_load(config_path.read_text())["stt"]["partial_offsets_s"]
+    data = json.loads(probe.read_text())
+    enrich(data, probe, host, port)
     recs = data["records"]
     by: dict[tuple[int, float, int], dict] = {(r["idx"], r["fraction"], r["twin"]): r for r in recs}
     items = sorted({r["idx"] for r in recs})
@@ -180,6 +207,7 @@ def main() -> None:
         f"(cap {data['max_tokens']} never binds)\n"
     )
 
+    gate_rate = float("nan")
     print("GOLD ACCURACY — the gate. Final answer = the last number in the reply.")
     print(f"  {'fraction':>9} {'correct':>9} {'n':>4} {'Wilson 95%':>18}")
     for f in fractions:
@@ -195,34 +223,44 @@ def main() -> None:
         lo, hi = wilson(k, n)
         mark = ""
         if f == 1.0:
+            gate_rate = k / n
             mark = "   <- GATE" + ("  PASS" if k / n >= GATE else "  FAIL")
         print(f"  {f:>9.2f} {k / n:>9.3f} {n:>4} {f'[{lo:.3f}, {hi:.3f}]':>18}{mark}")
     print(f"  gate is {GATE:.0%} at fraction 1.00\n")
 
-    ceiling = 0.0
-    print("SAMPLING CONTROL — two generations from the SAME full transcript.")
-    print("  This is the ceiling: at temperature 0.5 no prefix can do better.")
-    for b in BUDGETS:
-        k = n = 0
-        for i in items:
-            a, c = by.get((i, 1.0, 0)), by.get((i, 1.0, 1))
-            if a is None or c is None:
-                continue
-            n += 1
-            # SAME ORIENTATION as the p_usable table below — the twin-0
-            # generation is the draft, twin 1 the reference. is_word_prefix is
-            # not symmetric, so swapping the twins gives a different and
-            # equally arbitrary count, and the control would not line up with
-            # the 1.00 row it is meant to be identical to.
-            k += int(
-                is_word_prefix(
-                    first_chunk("".join(a["pieces"][:b]).strip()), first_chunk(clean(c["text"]))
+    ceiling = float("nan")
+    if not data.get("twins", True):
+        print("SAMPLING CONTROL: NONE, and deliberately. At temperature 0 the model")
+        print("  reproduces its own output from identical input, so a twin would")
+        print("  score 1.000 by construction and measure nothing. p_usable below is")
+        print("  the PREFIX effect with the sampler's contribution removed, which is")
+        print("  the quantity the value model needs.")
+    else:
+        print("SAMPLING CONTROL — two generations from the SAME full transcript.")
+        print(f"  This is the ceiling: at temperature {data['temperature']} no prefix")
+        print("  can do better.")
+        for b in BUDGETS:
+            k = n = 0
+            for i in items:
+                a, c = by.get((i, 1.0, 0)), by.get((i, 1.0, 1))
+                if a is None or c is None:
+                    continue
+                n += 1
+                # SAME ORIENTATION as the p_usable table below — twin 0 is the
+                # draft, twin 1 the reference. is_word_prefix is not symmetric,
+                # so swapping them gives a different and equally arbitrary
+                # count, and the control would not line up with the 1.00 row it
+                # is meant to be identical to.
+                k += int(
+                    is_word_prefix(
+                        first_chunk("".join(a["pieces"][:b]).strip()),
+                        first_chunk(clean(c["text"])),
+                    )
                 )
-            )
-        lo, hi = wilson(k, n)
-        if b == max(BUDGETS):
-            ceiling = k / n if n else float("nan")
-        print(f"  B={b:>3}: {k}/{n} = {k / n:.3f}  Wilson [{lo:.3f}, {hi:.3f}]")
+            lo, hi = wilson(k, n)
+            if b == max(BUDGETS):
+                ceiling = k / n if n else float("nan")
+            print(f"  B={b:>3}: {k}/{n} = {k / n:.3f}  Wilson [{lo:.3f}, {hi:.3f}]")
 
     chunk_tokens = []
     for r in recs:
@@ -258,6 +296,7 @@ def main() -> None:
     print(f"  {'fraction':>9} " + " ".join(f"{'B=' + str(b):>20}" for b in BUDGETS))
     matched_log: list[dict] = []
     usable_rate: dict[tuple[float, int], float] = {}
+    classes: dict[str, int] = {}
     for f in fractions:
         cells = []
         for b in BUDGETS:
@@ -273,8 +312,17 @@ def main() -> None:
                     k += 1
                     cf = content_free(dc, problems.get(i, ""))
                     kc += int(not cf)
+                    klass = number_class(dc, d["gold"], problems.get(i, ""))
+                    classes[klass] = classes.get(klass, 0) + 1
                     matched_log.append(
-                        {"idx": i, "fraction": f, "budget": b, "chunk": dc, "content_free": cf}
+                        {
+                            "idx": i,
+                            "fraction": f,
+                            "budget": b,
+                            "chunk": dc,
+                            "content_free": cf,
+                            "number_class": klass,
+                        }
                     )
             usable_rate[(f, b)] = k / n if n else float("nan")
             cells.append(f"{k}/{n}={k / n:.2f} c{kc / n:.2f}" if n else "n/a")
@@ -282,9 +330,22 @@ def main() -> None:
     print("  'c' is the same cell with content-free matches removed.")
     print(f"  stopwords ({len(STOPWORDS)}): {' '.join(sorted(STOPWORDS))}")
 
-    out = args.probe.with_name("prefix_probe_matches.json")
+    out = probe.with_name(f"{probe.stem}_matches.json")
     out.write_text(json.dumps(matched_log, indent=1) + "\n")
     print(f"\n  every matched chunk logged verbatim to {out} ({len(matched_log)} matches)")
+
+    total_matches = sum(classes.values())
+    print("\nWHAT THE MATCHED CHUNKS SAY, by the numbers they contain")
+    print("  (every match, every budget; gold wins ties):")
+    for klass, label in (
+        ("gold", "contains the GOLD number      — anticipated the answer"),
+        ("premise", "contains a PREMISE number     — restated the problem"),
+        ("other", "a number in neither           — arithmetic of its own"),
+        ("none", "no number at all              — agreement without arithmetic"),
+    ):
+        k = classes.get(klass, 0)
+        share = k / total_matches if total_matches else float("nan")
+        print(f"  {label}: {k:>4}/{total_matches} = {share:.3f}")
 
     print("\nREQUIRED PRECISION recomputed at the MEASURED p_usable.")
     print("  required = cost / (cost + p_usable x saving), cost 100.3 ms")
@@ -297,6 +358,18 @@ def main() -> None:
         print(f"  {f:>9.2f} {pu:>9.3f} {req:>19.3f} {share:>11.2f}")
     print(f"  ceiling is the sampling control, {ceiling:.3f}: two generations from")
     print("  the SAME full transcript. No prefix can beat it at temperature 0.5.")
+
+    if not data.get("twins", True):
+        pu = usable_rate.get((0.75, max(BUDGETS)), float("nan"))
+        verdict = (
+            "FALSIFIED — value side CLOSED on this corpus" if pu < BREAK_EVEN else "NOT falsified"
+        )
+        print("\nFALSIFICATION TEST (pre-registered 2026-09-22c), greedy arm only.")
+        print(
+            f"  break-even p* = {OVERLAP_COST_MS:.1f} / ({OVERLAP_COST_MS:.1f} + {SAVING_MS:.0f})"
+            f" = {BREAK_EVEN:.4f}"
+        )
+        print(f"  greedy p_usable(0.75) = {pu:.4f}   ->   {verdict}")
 
     print("\nWHERE THE LIVE PIPELINE ACTUALLY DECIDES, on these utterances.")
     print("  The partial offsets are wall-clock seconds of audio; what the probe")
@@ -322,6 +395,60 @@ def main() -> None:
         print(
             f"  {f:>9.2f}  median {vals[len(vals) // 2]:>3} words   "
             f"max {vals[-1]:>3}   n={len(vals)}"
+        )
+
+    return {
+        "gate": gate_rate,
+        "temperature": data["temperature"],
+        "twins": float(data.get("twins", True)),
+        **{f"p_usable_{f:.2f}": usable_rate[(f, max(BUDGETS))] for f in fractions},
+    }
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument(
+        "--probe",
+        type=Path,
+        nargs="+",
+        default=[Path("results/raw/spoken_mqa/prefix_probe.json")],
+        help="one or more probe logs; several are scored and then compared",
+    )
+    p.add_argument("--config", type=Path, default=Path("src/configs/reactive.yaml"))
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8093)
+    p.add_argument(
+        "--items",
+        type=Path,
+        default=Path("results/raw/spoken_mqa/multi_step_reasoning.json"),
+        help="the problem texts, needed for the content-free filter",
+    )
+    args = p.parse_args()
+    args = p.parse_args()
+
+    missing = [q for q in args.probe if not q.exists()]
+    if missing:
+        # results/raw/ is local, so a fresh clone has no probe to score.
+        print(f"no probe log at {missing[0]}; run src/scripts/prefix_probe.py first")
+        return
+    summaries = {
+        q.name: score_one(q, args.items, args.config, args.host, args.port) for q in args.probe
+    }
+    if len(summaries) < 2:
+        return
+
+    print("=" * 72)
+    print("ACROSS RUNS — the same 80 items, so these are paired on the sample")
+    print("  even though the generations are not paired token by token.")
+    keys = sorted({k for v in summaries.values() for k in v})
+    width = max(len(n) for n in summaries) + 2
+    print(f"  {'quantity':>16} " + " ".join(f"{n:>{width}}" for n in summaries))
+    for k in keys:
+        if k in ("twins",):
+            continue
+        print(
+            f"  {k:>16} "
+            + " ".join(f"{v.get(k, float('nan')):>{width}.3f}" for v in summaries.values())
         )
 
 
