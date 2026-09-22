@@ -6,13 +6,21 @@
 # first 3 s, which on a 15.4 s median utterance is the first 0.19 of it. To put
 # window(f) on the same f axis as p_usable(f), partials have to reach the end.
 #
-# CADENCE 1.0 s IS SET BY THE DECODE, NOT CHOSEN FOR ROUNDNESS. tiny's decode is
-# per CALL, not per second of audio (fitted 847 ms fixed, -21 ms/s, R^2 0.01;
-# median 759 ms) because Whisper's encoder runs on a 30 s padded window. A
-# cadence below ~0.85 s would queue decodes and the logged partial time would be
-# lock-wait, not availability. 1.0 s is the smallest round cadence above it, and
-# it keeps the first partial at the canonical 1.0 s so the two schedules agree
-# on their first point.
+# CADENCE 2.5 s, SET BY THE IN-PIPELINE DECODE — NOT THE OFFLINE ONE. The first
+# attempt used 1.0 s, derived from tiny's OFFLINE fit (847 ms fixed, median 759
+# ms, measured over saved prefixes with nothing else running). In the pipeline
+# tiny decodes in a median of 1294 ms, p95 1958, max 3081 (n=274, run
+# reactive-20260922-114950-c676ba): 1.7x the offline number, because it shares
+# cores 3-5 with VAD, the agent, TTS and the final base decode. At a 1.0 s
+# cadence the decodes never kept up (achieved cadence 1346 ms), the backlog
+# never drained, and from turn 16 the VAD was starved badly enough to fragment
+# utterances — 72 of 94 turns had no endpoint at all and the run was unusable
+# for window(f).
+#
+# 2.5 s clears the p95 with ~0.5 s of slack per partial, so a backlog drains
+# instead of accumulating. On the 15.4 s median utterance it still yields ~6
+# partials spanning f = 0.16 to 0.97, which covers every fraction the prefix
+# probe reports.
 #
 # The cost of the extra partials is the covariate: STT commit latency against
 # the canonical offsets on the same items, reported paired.
@@ -46,7 +54,7 @@ stt:
   # Two-engine STT, decided 2026-09-17 on the live comparison: tiny for
   # partials, base for the final, SHARED cores 3-5 and no pinning between them.
   # Splitting the cores cost +1089 ms of commit latency (results/NOTES.md).
-  partial_offsets_s: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0, 32.0, 33.0, 34.0, 35.0, 36.0]
+  partial_offsets_s: [2.5, 5.0, 7.5, 10.0, 12.5, 15.0, 17.5, 20.0, 22.5, 25.0, 27.5, 30.0, 32.5, 35.0]
   partial_model: "tiny"
   partial_cpu_threads: 3
 
