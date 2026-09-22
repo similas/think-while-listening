@@ -281,6 +281,16 @@ class StreamingWhisperSTT(STTService):
             if emitted:
                 await self.push_frame(InterimTranscriptionFrame(text, "", time_now_iso8601(), None))
 
+    @property
+    def decoding(self) -> bool:
+        """True while a FINAL decode holds the engine.
+
+        The turn watchdog asks this before force-closing a turn: a turn whose
+        final is still decoding is slow, not stuck, and closing it strands the
+        decode on the following turn (run 3, 2026-09-22).
+        """
+        return self._decode_lock.locked()
+
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
 

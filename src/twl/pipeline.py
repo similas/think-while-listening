@@ -19,7 +19,7 @@ from pipecat.transports.base_transport import TransportParams
 
 from twl.config import TwlConfig
 from twl.contention import ContentionDetector
-from twl.observer import StageObserver
+from twl.observer import DEFAULT_TIMEOUT_MS, StageObserver
 from twl.policy_runner import PolicyRunner
 from twl.records import RunMeta
 from twl.schedule import PlannedTurn
@@ -68,6 +68,9 @@ def build_pipeline(
     # so it can inherit a prefill's prefix. Default "chat" keeps the baseline.
     answer_mode: str = "chat",
     answer_system_prompt: str | None = None,
+    # Derived from the corpus by the caller (twl.observer.DEFAULT_TIMEOUT_MS
+    # explains why it is not a constant).
+    hard_timeout_ms: float = DEFAULT_TIMEOUT_MS,
 ) -> BuiltPipeline:
     """Assemble the REACTIVE pipeline around the given audio source."""
     turns = TurnManager(
@@ -135,6 +138,8 @@ def build_pipeline(
         speculation=speculation,
         runner=policy_runner,
         spec_onset=spec_onset,
+        hard_timeout_ms=hard_timeout_ms,
+        stt_busy=lambda: stt.decoding,
     )
     pipeline = Pipeline([transport.input(), stt, llm, tts, transport.output()])
     task = PipelineTask(

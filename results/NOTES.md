@@ -3726,3 +3726,32 @@ So the two symptoms are one fault with two parts:
 The stage decomposition in v3 §0 (STT final ~70 % of TTFA, LLM TTFT ~3 %) comes
 from 7 clean turns of THIS VOID RUN. It is an observation and is written as one
 everywhere until P1 is scored on valid runs (v3 §5.4, §8 step 2).
+
+## 2026-09-22 — §3.1 fixed: the turn timeout is derived, and it waits for the decode
+
+Two changes, both from the run-3 post-mortem above.
+
+DERIVED, NOT CONSTANT. `run_reactive.corpus_timeout_ms(wav_dir, live)` budgets
+the hard turn timeout as (longest file) + TIMEOUT_MARGIN_MS (15 s), printed at
+run start and recorded. Measured on the corpora in use:
+
+    multi_step seed 20260922   49.9 s   (was 45.0 — the constant was SHORTER
+                                         than the corpus needed)
+    dev (sixteen)              17.9 s   (was 45.0 — the dev set inherited a
+                                         budget it can never need)
+    live mic                   45.0 s   no corpus; DEFAULT_TIMEOUT_MS stands
+
+DECODE-AWARE. `StageObserver.watchdog` now asks `stt_busy()` before force-closing
+a turn past its budget. A turn whose FINAL is still decoding is slow, not stuck,
+and closing it strands the decode on the following turn — which is precisely what
+happened to turn 8 of 6a8b26. Deferrals are counted (`timeouts_deferred`) and the
+first is logged. `SttService.decoding` is the probe: the final decode lock, not
+the partial one.
+
+Note the two fixes are independent and either alone would have spared turn 8: at
+49.9 s it never reaches the budget, and at 45 s it would have been deferred while
+decoding. Both are kept — the budget is the right value, the probe is the right
+guard.
+
+Pinned by src/tests/test_turn_timeout.py (8 tests) against run 3's actual
+numbers: 34.9 s longest file, 45 089 ms age at the close.

@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import OrderedDict
+from collections.abc import Callable
 
 from pipecat.frames.frames import (
     BotStoppedSpeakingFrame,
@@ -42,11 +43,24 @@ log = logging.getLogger(__name__)
 
 # A turn closes on BotStoppedSpeaking. When that frame races the TTS lock the
 # close is deferred to the watchdog, which closes once the reply is complete
-# and no audio has entered the output transport for SETTLE_MS. HARD_TIMEOUT_MS
-# is the last resort: it closes (and invalidates) a turn that never finished,
-# so a stuck turn costs one flagged turn instead of the whole run.
+# and no audio has entered the output transport for SETTLE_MS.
 SETTLE_MS = 800.0
-HARD_TIMEOUT_MS = 45_000.0
+
+# THE HARD TIMEOUT IS CORPUS-DEPENDENT AND MUST BE DERIVED (CLAUDE.md §6).
+# 45 000 ms was a constant. On 2026-09-22 it fired on turn 8 of
+# reactive-20260922-130314-6a8b26 — a 33.7 s utterance whose base final on
+# 35.1 s of audio had ~10.6 s of budget left after the endpoint and needed
+# more. The turn was force-closed with nothing produced, its decode completed
+# 1.4 s into the NEXT turn and was recorded there, and every final afterwards
+# was one turn late. The timeout did not protect the run; it broke it.
+#
+# It is a LAST RESORT for a turn that is genuinely stuck, so it is budgeted as
+# the utterance plus what a healthy turn needs after the endpoint, and it must
+# not fire while the recognizer is legitimately still working.
+DEFAULT_TIMEOUT_MS = 45_000.0
+# Headroom over the corpus's measured p95 reply tail. A turn that needs more
+# than its audio plus this is stuck, not slow.
+TIMEOUT_MARGIN_MS = 15_000.0
 
 # Pipecat 0.0.108 emits VADUser*SpeakingFrame on the plain-VAD path and
 # User*SpeakingFrame on the (deprecated) context/interruption path; a pipeline
@@ -67,6 +81,8 @@ class StageObserver(BaseObserver):
         speculation: SpeculationDriver | None = None,
         runner: PolicyRunner | None = None,
         spec_onset: str = "vad",
+        hard_timeout_ms: float = DEFAULT_TIMEOUT_MS,
+        stt_busy: Callable[[], bool] | None = None,
     ) -> None:
         super().__init__()
         self._turns = turns
@@ -84,6 +100,12 @@ class StageObserver(BaseObserver):
         # completion so the set cannot grow without bound over a long run.
         self._decision_tasks: set[asyncio.Task[None]] = set()
         self._vad_stop_secs = vad_stop_secs
+        # Derived per corpus by the caller; see DEFAULT_TIMEOUT_MS.
+        self._hard_timeout_ms = hard_timeout_ms
+        # "Is the recognizer still working?" A turn whose final is in flight is
+        # not stuck, and closing it strands the decode on the next turn.
+        self._stt_busy = stt_busy
+        self.timeouts_deferred = 0
         self._seen: OrderedDict[int, bool] = OrderedDict()
         self._last_audio_out_ns = 0
         # Held so the task is not garbage-collected mid-flight; one per turn.
@@ -298,7 +320,21 @@ class StageObserver(BaseObserver):
                     self.closes_deferred += 1
                     log.warning("turn %d closed by watchdog after %.0f ms quiet", turn, quiet_ms)
                 self._deferred_close = None
-            elif age > HARD_TIMEOUT_MS:
+            elif age > self._hard_timeout_ms:
+                if self._stt_busy is not None and self._stt_busy():
+                    # The recognizer is mid-decode. Closing here is what broke
+                    # run 3: the decode lands on the next turn and every final
+                    # afterwards is one turn late. Wait; the run's own
+                    # invariants catch a genuinely stuck pipeline.
+                    if self.timeouts_deferred == 0:
+                        log.warning(
+                            "turn %d past %.0f ms but the recognizer is still decoding; "
+                            "not closing",
+                            turn,
+                            self._hard_timeout_ms,
+                        )
+                    self.timeouts_deferred += 1
+                    continue
                 if self._turns.close_if_current(turn, reason="timeout"):
                     self.closes_timed_out += 1
                     log.error("turn %d force-closed after %.0f ms with no reply", turn, age)
