@@ -3468,3 +3468,82 @@ first is worth a controller's budget.
 The trigger comparison on this corpus is read ONLY if the falsification test in
 RUN B fails to falsify; required precision is then recomputed from greedy
 p_usable(0.75) BEFORE any AUC is printed.
+
+## 2026-09-22 — Replication and greedy on the seeded 80. The pre-registered test FALSIFIES
+
+880 generations (480 sampled + 400 greedy), 15.3 min total. Regenerates from
+src/scripts/score_prefix_probe.py over prefix_probe_seedA.json (T=0.5) and
+prefix_probe_seedB.json (T=0). Pre-registered 2026-09-22c.
+
+                          RUN A (T=0.5)         RUN B (greedy)
+    gate (gold @ 1.00)    0.275 FAIL            0.362 PASS
+                          [0.189, 0.381]        [0.266, 0.472]
+    p_usable(0.25)        0.013                 0.013
+    p_usable(0.50)        0.025                 0.025
+    p_usable(0.75)        0.037                 0.062
+    p_usable(0.90)        0.087                 0.188
+    p_usable(1.00)        0.225                 n/a (no twin)
+    sampling ceiling      0.225                 none by construction
+
+THE PRE-REGISTERED FALSIFICATION TEST FIRES.
+
+    break-even p* = 100.3 / (100.3 + 610) = 0.1412
+    greedy p_usable(0.75)  = 0.0625  <  0.1412   ->  FALSIFIED
+
+By the rule fixed before the run, the value side is CLOSED on this corpus and
+the paper takes Shape B. The trigger comparison is therefore NOT read; at
+required precision 0.725 (f=0.75) no trigger on this pipeline qualifies, and
+reading an AUC now would be choosing what to report after seeing the result.
+
+BUT p_usable(0.90) = 0.188 CLEARS THE BREAK-EVEN, and that is the one number
+that keeps a door open. It is reported here rather than buried because the
+pre-registered test was at 0.75 and the test is what binds — but the honest
+statement is: on this corpus a greedy draft taken at 90% of the utterance is
+worth more than it costs, IF there is any window left at 90% to hide the decode
+in. That is the opposite-slope question, and it is exactly what the live run
+(step 3, window(f)) measures. Until then this is a conditional, not a result.
+
+PREDICTIONS SCORED:
+ 1. "greedy p_usable(0.75) below 0.1412" — CONFIRMED, 0.0625.
+ 2. "the gate RISES under greedy" — CONFIRMED. 0.275 -> 0.362 on the SAME 80
+    items, and it crosses the 30% gate the sampled run failed. Direction was
+    predicted, magnitude was not. The sampled run's failure was not the model
+    being unable to do the benchmark; it was temperature 0.5 spending its
+    chances on a multi-step arithmetic problem.
+ 3. "run A reproduces the shape at a lower level" — CONFIRMED. Same monotone
+    rise, every cell at or below the block sample: p_usable(0.90) 0.087 against
+    0.150, gate 0.275 against 0.300. Longer items are harder on both axes.
+
+WHAT GREEDY BOUGHT, QUANTIFIED. It roughly DOUBLES p_usable at the two
+fractions where anything happens (0.037 -> 0.062 at 0.75; 0.087 -> 0.188 at
+0.90) and it lifts the gate by 8.7 points. That is the sampler's share of the
+loss, measured rather than argued, and it settles the earlier claim that the
+0.300 ceiling was "a knob we hold": it is, and turning it is worth roughly a
+doubling — which is still not enough at 0.75.
+
+WHAT A MATCH ACTUALLY SAYS (pre-registration 2026-09-22c item c):
+
+                                   run A (T=0.5)   run B (greedy)   block 80
+    contains the GOLD number          65/95 0.684    52/70 0.743    30/132 0.227
+    restates a PREMISE number          6/95 0.063     0/70 0.000    39/132 0.295
+    a number in neither                21/95 0.221   18/70 0.257    60/132 0.455
+    no number at all                    3/95 0.032    0/70 0.000     3/132 0.023
+
+ON THE SEEDED SAMPLE A MATCH IS ALMOST ALWAYS REAL ANTICIPATION, and under
+greedy it is never a restatement. The block sample's matches were the opposite
+— 0.295 premise restatements against 0.227 gold. Its shorter problems left less
+to restate incorrectly and more chance for a boilerplate opener to agree. This
+is the check that would have caught a p_usable inflated by parroting, and on the
+representative sample it comes back clean.
+
+CORRECTION TO THE 2026-09-22 ENTRY. It said "THE BUDGET AXIS IS NOT TESTED BY
+THIS PROBE ... B never cuts the chunk". Too strong. B=16 cuts 10.0% of run A's
+generations and 11.5% of run B's; B=32 cuts 0.2% and 0.5%. The direction is also
+mechanical and was not stated: TRUNCATION CAN ONLY HELP THE PREFIX TEST, since a
+shorter draft chunk is more easily a word-prefix, so p_usable is weakly
+DECREASING in B by construction (run A at f=1.00: 0.250 at B=16, 0.225 at B=32).
+A flat column means the budget never cut anything. Neither a flat nor a
+decreasing column is evidence about the flat-in-B ASSUMPTION, which concerns
+whether a LONGER draft is more USEFUL — a question this metric cannot ask,
+because it scores only the first chunk. The script now prints the cut share per
+budget instead of the claim.

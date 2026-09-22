@@ -9,6 +9,7 @@ silently stops measuring the saving it is named after.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from scripts.score_prefix_probe import (
@@ -93,3 +94,23 @@ def test_a_matched_chunk_that_anticipates_the_answer_is_not_a_restatement() -> N
 def test_gold_wins_when_it_is_also_a_premise() -> None:
     """A gold value that also appears in the problem is still the answer."""
     assert number_class("7 fish,", ["7"], "she had 7 fish and lost some") == "gold"
+
+
+def test_the_plan_gate_estimates_from_the_audio_not_a_constant(tmp_path: Path) -> None:
+    """A flat 7 s/turn understated a 15 s-utterance corpus by 3x — and the gate
+    that understates is the one that lets a long run past the ask rule."""
+    import argparse
+    import wave as wavemod
+
+    from scripts.run_reactive import file_run_minutes
+
+    for i in range(4):
+        with wavemod.open(str(tmp_path / f"{i}.wav"), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes(b"\x00\x00" * 16000 * 15)  # 15 s each
+    a = argparse.Namespace(wav_dir=tmp_path, gap_ms=1500)
+    minutes = file_run_minutes(a, turns=4)
+    assert minutes > 4 * 7 / 60, "must exceed the old flat estimate on long audio"
+    assert 1.2 < minutes < 1.5, minutes  # 4 x (15 + 1.5 + 3.1) s

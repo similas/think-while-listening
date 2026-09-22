@@ -25,6 +25,7 @@ import sys
 import threading
 import time
 import tracemalloc
+import wave
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -693,6 +694,34 @@ async def run(args: argparse.Namespace) -> None:
             restore(baseline)
 
 
+# What a turn costs BEYOND its own audio and the inter-file gap: VAD hangover,
+# recognition commit, generation and synthesis. Backed out of the 7 s/turn
+# figure this estimator used to assume, against the dev set it was calibrated
+# on (median utterance 2.4 s, gap 1.5 s): 7 - 2.4 - 1.5 = 3.1 s.
+TURN_OVERHEAD_S = 3.1
+
+
+def file_run_minutes(a: argparse.Namespace, turns: int) -> float:
+    """Estimate a file-playback run from the AUDIO, not from a constant.
+
+    The flat 7 s/turn was calibrated on 1.6-3.8 s dev utterances and understates
+    a long corpus by 3x — on 15 s utterances it reported 9 minutes for a
+    half-hour run, which is precisely the case the >30 min ask rule exists for.
+    A gate that is wrong in the permissive direction is worse than no gate.
+    """
+    wavs = sorted(Path(a.wav_dir).glob("*.wav"))
+    audio_s = 0.0
+    for w in wavs:
+        with contextlib.suppress(Exception), wave.open(str(w)) as fh:
+            audio_s += fh.getnframes() / fh.getframerate()
+    if not audio_s:
+        return turns * 7 / 60
+    per_pass = audio_s + len(wavs) * (a.gap_ms / 1000.0 + TURN_OVERHEAD_S)
+    # `turns` counts warm-up and any interleaved repeats, so scale the measured
+    # pass by how many turns the plan actually plays.
+    return per_pass * (turns / max(1, len(wavs))) / 60.0
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--config", type=Path, default=Path("src/configs/reactive.yaml"))
@@ -865,7 +894,8 @@ def main() -> None:
         Plan(
             name="run_reactive",
             steps=steps,
-            est_minutes=(a.live_seconds / 60 if a.live else turns * 7 / 60) + a.soak_minutes,
+            est_minutes=(a.live_seconds / 60 if a.live else file_run_minutes(a, turns))
+            + a.soak_minutes,
             thresholds=(
                 {"soak ceiling": f"{a.soak_ceiling_c:g} C", "soak start max": "65 C"}
                 if a.soak_minutes

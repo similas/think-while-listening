@@ -275,20 +275,21 @@ def score_one(
             n_tok += 1
         chunk_tokens.append(n_tok)
     chunk_tokens.sort()
-    over = [b for b in BUDGETS if chunk_tokens[-1] <= b]
     print(
         f"\nFIRST-CHUNK LENGTH: median {chunk_tokens[len(chunk_tokens) // 2]} tokens, "
         f"p95 {chunk_tokens[int(0.95 * len(chunk_tokens))]}, max {chunk_tokens[-1]} "
         f"(n={len(chunk_tokens)})"
     )
-    if over:
-        print(
-            f"  Every first chunk fits inside B={min(over)}, so truncating at "
-            f"{BUDGETS} cannot change it."
-        )
-        print("  THE BUDGET AXIS IS NOT TESTED BY THIS PROBE. p_usable is flat in B")
-        print("  below because B never cuts the chunk, not because the flat-in-B")
-        print("  assumption has been checked.")
+    print("  share of generations whose first chunk is LONGER than the budget,")
+    print("  i.e. the share the budget actually cuts:")
+    for b in BUDGETS:
+        cut = sum(1 for t in chunk_tokens if t > b) / len(chunk_tokens)
+        print(f"    B={b:>3}: {cut:.3f}")
+    print("  TRUNCATION CAN ONLY HELP THE PREFIX TEST — a shorter draft chunk is")
+    print("  more easily a word-prefix of the reference's — so p_usable is weakly")
+    print("  DECREASING in B by construction, and a flat column means the budget")
+    print("  never cut anything. That is not evidence for the flat-in-B")
+    print("  assumption, which concerns whether a LONGER draft is more useful.")
 
     print("\np_usable — the draft's first TTS chunk is a word-prefix of the")
     print("  reference's first TTS chunk. 'content' removes matches with no digit")
@@ -354,10 +355,15 @@ def score_one(
     for f in fractions:
         pu = usable_rate[(f, max(BUDGETS))]
         req = OVERLAP_COST_MS / (OVERLAP_COST_MS + pu * SAVING_MS) if pu >= 0 else float("nan")
-        share = pu / ceiling if ceiling else float("nan")
+        share = pu / ceiling if ceiling == ceiling and ceiling else float("nan")
         print(f"  {f:>9.2f} {pu:>9.3f} {req:>19.3f} {share:>11.2f}")
-    print(f"  ceiling is the sampling control, {ceiling:.3f}: two generations from")
-    print("  the SAME full transcript. No prefix can beat it at temperature 0.5.")
+    if ceiling == ceiling:
+        print(f"  ceiling is the sampling control, {ceiling:.3f}: two generations")
+        print("  from the SAME full transcript. No prefix can beat it here.")
+    else:
+        print("  no ceiling column: greedy decoding has no sampling loss to bound,")
+        print("  so 'of ceiling' would be p_usable against 1.000 and says nothing")
+        print("  the p_usable column does not.")
 
     if not data.get("twins", True):
         pu = usable_rate.get((0.75, max(BUDGETS)), float("nan"))
@@ -392,6 +398,9 @@ def score_one(
                 continue
             vals.append(lcp_words(clean(d["text"]), clean(ref["text"])))
         vals.sort()
+        if not vals:
+            # A greedy run has no twin, so fraction 1.00 has no pair to score.
+            continue
         print(
             f"  {f:>9.2f}  median {vals[len(vals) // 2]:>3} words   "
             f"max {vals[-1]:>3}   n={len(vals)}"
