@@ -28,6 +28,7 @@ import tracemalloc
 import wave
 from dataclasses import asdict, replace
 from pathlib import Path
+from typing import Any
 
 from twl.adversary import BandwidthAdversary
 from twl.clock import now_ns
@@ -50,6 +51,12 @@ from twl.transport import FileFrameSource, MicFrameSource
 from twl.trigger import IsotonicCalibration, SemanticTrigger
 
 REPO = Path(__file__).resolve().parents[2]
+
+# The gate's definition of quiet, and the point at which waiting is itself a
+# fault. SETTLE_MS in the observer is 800; the gate waits a little longer so
+# the turn is closed before the next file starts, never concurrently.
+GATE_QUIET_MS = 1000.0
+GATE_TIMEOUT_S = 60.0
 
 # Teardown budget. Pipecat's cancel path waits for a CancelFrame to traverse
 # the pipeline, and a PortAudio write can block indefinitely when the device is
@@ -312,15 +319,43 @@ async def run(args: argparse.Namespace) -> None:
             capture_channel=cfg.audio.capture_channel,
         )
 
-        built_box: list[object] = []  # filled after build; the gate closes over it
+        # The gate needs the TurnManager and the observer, both built below.
+        built_box: list[Any] = []
 
         async def turn_gate(next_turn: int) -> None:
-            # A real conversation waits for the reply: file N+1 starts only
-            # after turn N's record is written (playback finished).
-            assert built_box, "gate called before pipeline was built"
-            manager = built_box[0]
-            while manager.turns_written < next_turn - 1:  # type: ignore[attr-defined]
-                await asyncio.sleep(0.1)
+            """Hold the next file until the pipeline is actually quiet.
+
+            WAITS ON THE EVENT, NOT ON A COUNT. The previous version waited for
+            ``turns_written`` to reach the file index — the very quantity the
+            failure corrupts. Once one utterance produced two turns the count
+            was already satisfied, the next file played over the reply, and the
+            split cascaded (2026-09-22, 94 turns from 80 files, 72 with no
+            endpoint). Here the gate resolves only when no turn is open AND no
+            audio has left the output transport for GATE_QUIET_MS, which a
+            miscount cannot fake.
+
+            The timeout is not a safety valve that lets the run continue: it
+            records why and lets the invariant abort, because a gate that gives
+            up silently is how the last two runs produced numbers.
+            """
+            assert len(built_box) == 2, "gate called before pipeline was built"
+            manager, observer = built_box
+            deadline = time.monotonic() + GATE_TIMEOUT_S
+            while True:
+                quiet_ms = (now_ns() - observer.last_audio_out_ns) / 1e6
+                if (
+                    not manager.turn_open
+                    and observer.last_audio_out_ns > 0
+                    and (quiet_ms > GATE_QUIET_MS)
+                ):
+                    return
+                if time.monotonic() > deadline:
+                    manager.invariant_error = (
+                        f"playback gate timed out after {GATE_TIMEOUT_S:.0f}s before file "
+                        f"{next_turn}: turn_open={manager.turn_open}, quiet={quiet_ms:.0f} ms"
+                    )
+                    return
+                await asyncio.sleep(0.05)
 
         if args.live:
             import pyaudio
@@ -449,6 +484,7 @@ async def run(args: argparse.Namespace) -> None:
                 )
             )
         built_box.append(built.turns)
+        built_box.append(built.observer)
 
         adversary = None
         if adv_cpus:
@@ -563,6 +599,34 @@ async def run(args: argparse.Namespace) -> None:
                     await asyncio.sleep(2.0)
 
         slots_task = asyncio.create_task(poll_slots())
+
+        async def abort_on_invariant() -> None:
+            """Stop the run the moment turns stop corresponding to files.
+
+            Two failure shapes, both seen on 2026-09-22 and both of which ran to
+            completion and printed a summary:
+              - a turn closed by the bot's audio with no endpoint of its own
+                (TurnManager._check_turn_invariant);
+              - more turns written than files started, which is the same
+                corruption counted a different way.
+            The run is stopped and the reason recorded. Finishing and reporting
+            would be worse than failing: the numbers would look ordinary.
+            """
+            while True:
+                await asyncio.sleep(0.2)
+                if built.turns.invariant_error is None and isinstance(source, FileFrameSource):
+                    started = source.files_started
+                    if started and built.turns.turns_written > started:
+                        built.turns.invariant_error = (
+                            f"{built.turns.turns_written} turns written but only {started} "
+                            f"files started: one utterance has produced more than one turn"
+                        )
+                if built.turns.invariant_error is not None:
+                    print(f"ABORTING: {built.turns.invariant_error}", file=sys.stderr)
+                    await built.task.cancel()
+                    return
+
+        abort_task = asyncio.create_task(abort_on_invariant())
         watchdog_task = asyncio.create_task(built.observer.watchdog())
         diag_task = (
             asyncio.create_task(
@@ -605,6 +669,9 @@ async def run(args: argparse.Namespace) -> None:
                 diag_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await diag_task
+            abort_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await abort_task
             watchdog_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await watchdog_task
@@ -625,7 +692,13 @@ async def run(args: argparse.Namespace) -> None:
                     f"adversary achieved {adv_report.total_mb_per_s:.0f} MB/s "
                     f"over {adv_report.seconds:.0f}s on cores {list(adv_report.cpus)}"
                 )
-            built.turns.close()
+            # The reason travels with the log: a reader of turns.jsonl alone
+            # must be able to see that this run is void and why.
+            built.turns.close(
+                notes=("RUN INVALID: " + built.turns.invariant_error)
+                if built.turns.invariant_error
+                else ""
+            )
             sampler.stop()
             # Report BEFORE teardown is attempted. Teardown can hang (blocked
             # pyaudio write) and the hard-exit guard would then kill the
@@ -727,7 +800,14 @@ def main() -> None:
     p.add_argument("--config", type=Path, default=Path("src/configs/reactive.yaml"))
     p.add_argument("--wav-dir", type=Path, default=Path("results/raw/audio/sixteen"))
     p.add_argument("--repeat", type=int, default=1, help="play the wav set N times")
-    p.add_argument("--gap-ms", type=int, default=1500, help="silence between files")
+    p.add_argument(
+        "--gap-ms",
+        type=int,
+        default=1000,
+        help="silence AFTER the reply has finished, before the next file. This is "
+        "NOT how files are isolated from each other — the playback gate is — and "
+        "raising it cannot fix an overlap",
+    )
     p.add_argument("--live", action="store_true", help="live mic instead of files")
     p.add_argument("--live-seconds", type=float, default=300.0)
     p.add_argument("--clocks", action="store_true", help="jetson_clocks for the run")

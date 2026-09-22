@@ -168,6 +168,9 @@ class TurnManager:
         self._tj_zone = find_thermal_zone()
         self.orphan_marks = 0
         self.turns_written = 0
+        # Set by _check_turn_invariant; the run aborts on it rather than
+        # finishing and reporting numbers that cannot mean what they say.
+        self.invariant_error: str | None = None
         self.invalid_turns = 0
 
     @property
@@ -569,6 +572,33 @@ class TurnManager:
         if invalid_reason:
             self.invalid_turns += 1
             log.warning("turn %d INVALID: %s", self._turn, invalid_reason)
+        self._check_turn_invariant(clock, close_reason)
+
+    def _check_turn_invariant(self, clock: TurnClock, close_reason: str) -> None:
+        """A turn that did not end on its OWN endpoint invalidates the run.
+
+        On 2026-09-22 two runs produced 94 turns from 80 files: the reply to
+        utterance N was still playing when N+1 began, so N+1's BotStoppedSpeaking
+        closed a turn that had never heard its own endpoint. From there every
+        mark landed one turn late and 72 of 94 turns had no endpoint at all —
+        and NOTHING IN THE RUN NOTICED. Both runs completed, printed a summary
+        and wrote 94 records. That silence is the defect this guards.
+
+        The check is deliberately narrow: a turn closed by the bot's audio that
+        carries neither its own final nor its own endpoint cannot be repaired by
+        analysis and means the turn/file correspondence is already lost.
+        """
+        if self.invariant_error is not None:
+            return
+        if close_reason != "bot_stopped":
+            return
+        if clock.first("stt_final") is None and clock.first("vad_user_stopped") is None:
+            self.invariant_error = (
+                f"turn {self._turn} closed on the bot's audio with neither its own "
+                f"stt_final nor its own vad_user_stopped: the reply to an earlier "
+                f"utterance is still playing, so turns no longer correspond to files"
+            )
+            log.error("RUN INVARIANT VIOLATED: %s", self.invariant_error)
 
     def close(self, notes: str = "") -> None:
         """Close the open turn, mark the log complete, and fsync it.

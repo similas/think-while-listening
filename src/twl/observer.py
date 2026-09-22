@@ -93,6 +93,15 @@ class StageObserver(BaseObserver):
         self.closes_timed_out = 0
         self.handler_errors = 0
 
+    @property
+    def last_audio_out_ns(self) -> int:
+        """When audio last entered the output transport — 0 if none yet.
+
+        The playback gate waits on this rather than on a turn count, so it
+        cannot be satisfied early by turns that do not correspond to files.
+        """
+        return self._last_audio_out_ns
+
     def _first_time(self, frame: Frame) -> bool:
         fid = getattr(frame, "id", None) or id(frame)
         if fid in self._seen:

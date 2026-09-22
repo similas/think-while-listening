@@ -152,7 +152,14 @@ class TurnGate(Protocol):
     """Awaited between files: resolves when the previous reply has finished.
 
     A real conversation waits for the answer; playing file N+1 over the reply
-    to file N measures barge-in, not turn latency."""
+    to file N measures barge-in, not turn latency.
+
+    IT MUST WAIT ON THE EVENT, NOT ON A COUNT. The first version waited until
+    ``turns_written`` reached the file index. That is the same quantity the
+    failure corrupts: once one utterance produced two turns, the count was
+    already satisfied and playback raced ahead of the reply, which produced
+    more split turns (2026-09-22, 94 turns from 80 files). A gate keyed on
+    observed silence cannot be satisfied early by a miscount."""
 
     async def __call__(self, next_turn: int) -> None: ...
 
@@ -160,8 +167,13 @@ class TurnGate(Protocol):
 class FileFrameSource:
     """WAV playback at 1.0x wall clock through the mic's delivery path.
 
-    Files play with ``gap_ms`` of silence after each reply (see TurnGate) and
-    ``tail_silence_ms`` at the very end, so VAD sees natural turn boundaries.
+    Files play after the previous reply has finished (see TurnGate), then
+    ``gap_ms`` of silence, then the next file; ``tail_silence_ms`` closes the
+    run. gap_ms IS NOT THE ISOLATION MECHANISM — it is the pause a speaker
+    leaves after hearing the answer. Isolation is the gate's job, because a
+    fixed pause has to be at least as long as the longest reply and nothing
+    re-derives it when the corpus changes: 1500 ms covered 2.4 s dev
+    utterances and was 5.5 s short of this corpus's 7 s reply tail.
     Within a file, chunk i is delivered at that file's t0 + i*20 ms — 1x
     wall clock, drift-corrected.
     """
@@ -170,7 +182,7 @@ class FileFrameSource:
         self,
         paths: list[Path],
         *,
-        gap_ms: int = 1500,
+        gap_ms: int = 1000,
         tail_silence_ms: int = 2000,
         turn_gate: TurnGate | None = None,
     ):
@@ -185,6 +197,10 @@ class FileFrameSource:
         # a measurement that used the pipeline's opinion of when speech ended
         # could not detect the pipeline being late.
         self.speech_end_ns: dict[int, int] = {}
+        # Files actually started. The run compares it against turns written:
+        # they must stay equal, and a divergence means turns no longer
+        # correspond to utterances.
+        self.files_started = 0
         self._task: asyncio.Task[None] | None = None
         self.finished: asyncio.Event = asyncio.Event()
         # Ground truth per file: (path, start_chunk_index, n_speech_chunks),
@@ -228,6 +244,7 @@ class FileFrameSource:
                     # Keep silence flowing while waiting so VAD/echo state
                     # stays live, exactly as a quiet room would.
                     await self._turn_gate(turn)
+                self.files_started = turn
                 self.timeline.append((str(path), chunk_index, len(pcm) // chunk_bytes))
                 chunk_index += await deliver_paced(pcm, loop.time())
                 self.speech_end_ns[turn] = now_ns()

@@ -157,6 +157,23 @@ Root-level files are allowed; no other top-level folders.
   observed, what surprised you, what is unresolved. Terse. Facts only.
 - Any run with swap activity, an OOM, or a thermal-throttle event is recorded
   and flagged invalid — never silently dropped or quietly rerun.
+- **A corpus-dependent constant in the harness is a bug waiting for a new
+  corpus.** Anything whose correct value depends on how long the utterances or
+  the replies are must be DERIVED FROM THE CORPUS at run time, or replaced by
+  waiting for the event it was standing in for. A constant calibrated on one
+  set and carried to another fails silently, because the run still completes
+  and still prints numbers. Two failed this way on 2026-09-22:
+    - `gap_ms = 1500`, the silence between files, calibrated on 1.6-3.8 s dev
+      utterances with one-sentence replies. On 15.4 s utterances the reply tail
+      is 7.0 s (p95 9.5), so the next utterance began 5.5 s before the reply
+      finished and 80 files became 94 turns. REPLACED by a gate that waits for
+      observed silence; `gap_ms` is now only the pause after the reply.
+    - the partial cadence, set from tiny's OFFLINE decode (median 759 ms)
+      when the in-pipeline figure is 1294 ms (p95 1958). DERIVED from the
+      in-pipeline measurement now, and recorded in the config with its n.
+  Where neither is possible, the run must assert the constant still holds and
+  abort if it does not.
+
 - **`results/raw/` is the only copy of every measurement** and is gitignored by
   §1, so it is backed up nightly to the Mac — storage only, never compute:
 
