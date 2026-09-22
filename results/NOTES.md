@@ -3755,3 +3755,41 @@ guard.
 
 Pinned by src/tests/test_turn_timeout.py (8 tests) against run 3's actual
 numbers: 34.9 s longest file, 45 089 ms age at the close.
+
+## CORRECTION (2026-09-22e) to the §3.1 entry. "Either alone would have spared turn 8" is WITHDRAWN
+
+Neither would. Nor would both. The timeline, reconstructed from the records
+(turn origins from each record's wall_time minus its last mark; turn 9 begins at
+45.565 s on turn 8's clock):
+
+     s      event
+     0.000  turn 8 vad_user_started
+    33.679  turn 8 speech_end_est
+    34.479  turn 8 vad_user_stopped        <- base final starts on 35.1 s of audio
+    45.089  turn 8 FORCE-CLOSED (age 45 089 ms > 45 000)
+    46.971  the final lands (12.49 s of decode) — recorded on turn 9
+    47.214  llm_first_token
+    48.297  llm_done
+    48.341  tts_first_audio
+    50.089  playback_done
+
+Counterfactuals on turn 8's clock:
+
+  - DERIVED BUDGET ALONE (49.9 s): fires at 49.900 s, which is 0.189 s BEFORE
+    playback finishes. The recognizer has been idle since 46.971 s, so the
+    decode-aware guard does not defer it. Turn 8 dies during playback instead
+    of during the decode.
+  - DECODE-AWARE GUARD ALONE (45 s + stt_busy): defers from 45.089 to 46.971,
+    then fires the moment the decode lands — 0.24 s before llm_first_token.
+    Turn 8 dies during generation.
+  - BOTH TOGETHER (49.9 s + stt_busy): fires at 49.900 s. Same as the first.
+
+The claim was wrong because I checked each fix against the moment the timeout
+DID fire rather than against the whole turn. A turn that is working is working
+in different stages, and a guard that watches only one of them is blind for the
+rest.
+
+AGE IS THE WRONG VARIABLE. A turn is stuck when NOTHING IS HAPPENING, not when
+it has lasted a while; on this corpus a healthy turn legitimately lasts 50 s.
+Replaced by a progress watchdog (next entry). TIMEOUT_MARGIN_MS and
+corpus_timeout_ms are removed with it.
