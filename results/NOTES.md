@@ -3353,3 +3353,118 @@ narrower than the split (amendment 2026-09-22), so length-dependence is
 under-resolved; the reference is one sampled generation, not a ground truth, so
 a differently-phrased good draft scores as unusable — which is the right metric
 for this system and not a measure of answer quality.
+
+## CORRECTION (2026-09-22b) to the prefix-probe result. Three rewordings and one confirmation
+
+CANONICAL partial_offsets_s IS [1.0, 2.0, 3.0] — src/configs/reactive.yaml:36,
+set in b34df76 and unchanged since; it is the only config file. The mapping in
+the entry above already used those values, so it stands as written.
+
+    [0.5, 1.5, 2.5] WAS MEASURED (2026-09-21, "Widening the window WORKED") and
+    was better on EVERY axis: window 978 ms against 591, coverage 100% against
+    94%, STT commit 370 ms FASTER. It was never made canonical. That is an open
+    thread, not a setting: the better-measured schedule is not the one the
+    config runs.
+
+On those utterances [0.5, 1.5, 2.5] maps to 0.04, 0.13 and 0.21 of the median
+15.4 s utterance of the seeded sample — still at or below the 0.25 row.
+
+"MOVES IT FURTHER OUT" IS REWORDED. The decision point does not move outward by
+itself; the SCHEDULE IS FIXED IN SECONDS while the utterance is longer, so the
+same offsets cover a smaller fraction of it. A cadence expressed as a fraction
+of expected utterance length would not have this property. Whether that is worth
+doing is a design question this probe does not answer.
+
+"TWO INDEPENDENT MECHANISMS" IS REWORDED. They are not independent; they are
+OPPOSITE-SLOPED IN f. The task's question-last structure makes p_usable rise
+with f. The window available to spend a draft falls with f — by the time the
+utterance is nearly over there is little speech left to hide a decode behind.
+Their overlap — whether any f has both usable drafts AND a window to spend them
+in — is unmeasured and is exactly what step 3's window(f) and feasible-budget(f)
+are for. Until then the claim is "opposite-sloped", not "two blockers".
+
+THE GREEDY SENTENCE IS REWORDED. Greedy decoding REMOVES THE SELF-AGREEMENT
+CEILING — at temperature 0 the model reproduces its own output from identical
+input by construction, so the 0.300 ceiling is a property of the sampler, not of
+the model. It ADDS NO INFORMATION AT LOW f: it cannot tell the model what has
+not been said, so a draft from 9% of the utterance is no better informed. Its
+effect on the GATE is UNMEASURED and is not assumed in either direction here;
+2b measures it.
+
+## 2026-09-22 — Seeded random 80 replaces the first-80 block
+
+Seed 20260922, `fetch_spoken_mqa.py --seed 20260922`: 80 of 1402 row indices,
+sorted after drawing. 43.3 MB. The block sample is kept on disk, not deleted.
+
+    sample                     duration s                       words
+                       median  IQR            width    median  IQR          width
+    full split (1402)   15.65  [12.20, 20.48]  8.29      42    [32.0, 54.0]  22.0
+    first 80            11.62  [10.20, 14.65]  4.45      32    [26.0, 36.2]  10.2
+    seeded 80           15.40  [12.89, 19.34]  6.45      42    [33.8, 56.0]  22.2
+
+The seeded draw matches the split on both medians (0.25 s and 0 words apart) and
+recovers the word spread almost exactly (IQR 22.2 against 22.0). Its duration
+IQR is still narrower than the split's (6.45 against 8.29), which is ordinary
+sampling variation at n=80 and is recorded rather than corrected.
+
+Full-split duration quartiles are interpolated from the Hub's own histogram over
+all 1402 rows; full-split word counts are exact, from every transcript.
+
+## PRE-REGISTRATION 2026-09-22c — replication and the greedy arm. Committed before code
+
+Both runs use the SEEDED 80 (seed 20260922). Everything in the 2026-09-21
+pre-registration and its 2026-09-22 amendment carries over unless changed here.
+
+RUN A — REPLICATION. Identical to today's probe: temperature 0.5, five prefix
+fractions, a second generation at 1.00 as the sampling control, max_tokens 512,
+drafts truncated at {16, 32, 96} tokens by the server's tokenizer. The purpose is
+to separate "p_usable is ~0 at low f" from "the first 80 rows were peculiar".
+
+RUN B — GREEDY. Temperature 0, same fractions, NO TWIN: at temperature 0 the
+model reproduces its own output from identical input, so a control twin would
+score 1.000 by construction and measures nothing. p_usable(f) under greedy is
+therefore the PREFIX EFFECT WITH THE SAMPLER'S CONTRIBUTION REMOVED, which is
+the quantity the value model actually needs.
+
+THE BREAK-EVEN, from the arms and not from this data:
+
+    p x 610 = (1 - p) x 100.3   =>   p* = 100.3 / 710.3 = 0.1412
+
+FALSIFICATION TEST, fixed now: if greedy p_usable(0.75) < 0.1412, the value side
+is CLOSED on this corpus and the paper takes Shape B (the precise negative). If
+it is at or above, the value side is open at 0.75 and the question becomes
+whether any f has both usable drafts and a window — step 3.
+
+PREDICTIONS, to be scored:
+ 1. Greedy p_usable(0.75) lands BELOW 0.1412 and the test falsifies the value
+    side. Reason: the sampled run gave 0.087 at 0.75 against a 0.300 ceiling,
+    i.e. 29% of what the sampler allowed. Removing the ceiling multiplies the
+    headroom but not the information, and 0.75 of a question-last problem still
+    has not stated the question.
+ 2. THE GATE RISES UNDER GREEDY. Direction predicted UP, magnitude not
+    predicted. Greedy is the standard decode for arithmetic; temperature 0.5 on
+    a multi-step problem has several chances to pick a wrong digit. Scored
+    against the sampled gate of 0.300 [0.211, 0.408] on the SAME 80 items, so
+    the comparison is paired on the sample even though the runs are not paired
+    token by token.
+ 3. Run A reproduces run B's shape but not its level: p_usable still ~0 at 0.25
+    and 0.50 on the seeded 80, because the mechanism is the task's structure and
+    the seeded items are LONGER, so 0.25 of them stops even earlier in
+    wall-clock terms.
+
+(c) WHAT THE MATCHES ACTUALLY SAY. From prefix_probe_matches.json, both runs,
+every matched chunk is classified by the numbers it contains:
+
+    contains the GOLD number                   — the draft anticipated the answer
+    contains a PREMISE number (one present in
+      the problem text) but not the gold        — the draft restated the question
+    contains neither                            — agreement without arithmetic
+
+Reported as marginals in the same table as p_usable. This is the difference
+between speculation that anticipates an answer and speculation that parrots the
+problem back; both score as "usable" under the chunk-prefix rule, and only the
+first is worth a controller's budget.
+
+The trigger comparison on this corpus is read ONLY if the falsification test in
+RUN B fails to falsify; required precision is then recomputed from greedy
+p_usable(0.75) BEFORE any AUC is printed.
