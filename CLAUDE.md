@@ -2,11 +2,14 @@
 
 You are working on Ali Salimi Sadr's M.Sc. thesis project at Concordia University:
 **resource-budgeted think-while-listening for on-device cascaded voice agents**.
-Read `RESEARCH_BRIEF_v2.md` (current positioning, competitors, metrics, benchmarks,
-hypotheses, protocol) and `RESEARCH_BRIEF.md` (v1; authoritative for the Concordia
-thesis format §9 and the presentation §10) before any design or writing decision.
-Where they disagree, v2 wins. When a brief and your instincts disagree, the brief
-wins; if a brief is wrong, say so and propose an edit rather than silently deviating.
+Read `RESEARCH_BRIEF_v3.md` (GOVERNING: the window allocator — what is being
+built, the order of work, the approval gates), `RESEARCH_BRIEF_v2.md` (§0–§5
+positioning, competitors, systems bridge, threats to novelty, metrics; v3
+supersedes its §6–§9 and §11) and `RESEARCH_BRIEF.md` (v1; authoritative for the
+Concordia thesis format §9 and the presentation §10) before any design or writing
+decision. Where they disagree: v3 > v2 > v1. When a brief and your instincts
+disagree, the brief wins; if a brief is wrong, say so and propose an edit rather
+than silently deviating.
 
 ## 1. Authorship and version control — non-negotiable
 
@@ -97,7 +100,8 @@ Write as a principal engineer whose code will be read by strangers for years.
 
 ## 4. Repository layout (exactly this; do not add top-level folders)
 
-    README.md  CLAUDE.md  RESEARCH_BRIEF.md  RESEARCH_BRIEF_v2.md  LICENSE  .gitignore  Makefile  pyproject.toml
+    README.md  CLAUDE.md  RESEARCH_BRIEF.md  RESEARCH_BRIEF_v2.md  RESEARCH_BRIEF_v3.md
+    LICENSE  .gitignore  Makefile  pyproject.toml
     src/            package `twl/`, `configs/`, `scripts/`, `tests/`
     results/        raw/ (jsonl logs, gitignored if large) · tables/ · figures/ · NOTES.md
     paper/          LaTeX (Interspeech/ISCA style + extended arXiv version) · figures symlinked from results/figures
@@ -187,6 +191,18 @@ Root-level files are allowed; no other top-level folders.
   exists for. It skips itself while `run_reactive.py` is in flight, because
   rsync competes for the SD card and the cores the recognizer is timed on.
   Nothing in the repo reads from the backup and no analysis runs on the Mac.
+- **RULES ADOPTED FROM `RESEARCH_BRIEF_v3.md` §9** (three void runs in one day,
+  three proxies):
+  - A harness waits for the **event** it depends on, never a proxy (a count, a
+    silence, a clock).
+  - Every turn is checked against the **file's ground truth**, not the
+    pipeline's opinion.
+  - The abort record is written **before** the abort.
+  - A shared-core penalty is a penalty whether or not a lock is held. Every run
+    with partials reports the in-flight-at-endpoint rate.
+  - A constant that depends on the corpus is derived at run time or asserted at
+    start.
+
 - **Never edit a script that is executing.** bash reads a script incrementally
   by byte offset, so editing the source shifts the interpreter's position and
   it will execute fragments of lines. On 2026-09-15 that restarted a thermal
