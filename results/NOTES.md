@@ -3923,3 +3923,79 @@ valid ten. P2 predicts >= 1.5x on a PAIRED comparison and is falsified if the CI
 includes 1.2. On this prior evidence P2 may well fail on its threshold while the
 mechanism it names is real and large. P2 is scored where it is specified — paired,
 on valid runs — not here, and it will be reported as it falls.
+
+## AMENDMENT 2026-09-22g to P2 (v3 §5.4). After the existing-log fit, BEFORE any Phase 5 data
+
+P2 as written predicted a RATIO: "REACTIVE turns with a partial in flight at the
+endpoint have a final >= 1.5x those without, paired; falsified if the CI includes
+1.2." The existing-log fit (previous entry, refined below) shows that measures
+the wrong thing. The penalty is ADDITIVE AND PER SECOND OF OVERLAP; a fixed
+addition is a large ratio on a 1.5 s final and a small one on a 5 s final, so a
+ratio threshold tests utterance length as much as it tests the mechanism. On the
+dev set (1.6-3.8 s of audio) the implied ratio is 1.33-1.46, which would falsify
+P2 while c is large and excludes zero.
+
+Amended now, with no Phase 5 data in hand and none collected since the fit:
+
+  P2a (PRIMARY). c, the final-decode cost per second of endpoint overlap, lies
+      in [0.5, 1.5] s per s. FALSIFIED if its CI lies entirely below 0.3 s/s.
+      Scored on Phase 5 REACTIVE runs across all five length sets.
+
+  P2b (SECONDARY). The paired final-decode ratio, overlap vs no overlap on the
+      same items, is >= 1.5 on multi-step. FALSIFIED if its CI includes 1.2.
+      NOT SCORED ON THE DEV SET: at 2.4 s of audio the ratio is a statement
+      about utterance length, not about the mechanism.
+
+REASON, recorded so the amendment cannot be read as moving a goalpost: the
+quantity that governs the system is how much final decode a second of overlap
+buys back, because that is what COMMIT-WL changes. The ratio is a presentation
+of it at one audio length. P2b is kept because a ratio is what a reader will
+look for, and it is scored where it is meaningful.
+
+## 2026-09-22 — The listener's overlap penalty, per second: c = 747 ms/s [571, 1029]
+
+src/scripts/final_decode_model.py, `make results`. Replaces the indicator fit in
+the previous entry, which is kept below as the comparison.
+
+    final_ms = a + b x audio_s + c x overlap_s
+    overlap_s = max(0, issued_ms + decode_ms - vad_user_stopped) / 1000,
+                for the LAST partial issued before the stop
+
+                                  estimate    95% CI (runs resampled)
+    a  intercept ms                 1065.5           [789.6, 1210.1]
+    b  ms per second of audio        145.7           [140.5, 154.5]
+    c  LISTENER OVERLAP ms per s     746.9           [570.8, 1029.2]
+    residual SE 282 ms;  n=465 over 13 runs;  audio 1.6-35.1 s
+
+    overlap > 0 on 392/465 = 0.843 of turns; median overlap when present 1.03 s
+
+Against the indicator fit (c flat at 693.1 [526.0, 1007.1], residual SE 349 ms),
+the per-second model is better in every audio bucket:
+
+    audio s      n    median residual, indicator    per-second
+    [1.5, 3)   276                            31            -9
+    [3, 6)     152                            18           -29
+    [6, 12)     17                           173            73
+    [12, 20)    18                           364           243
+    [20, 40)     2                           521           545
+
+The indicator's residuals grow with audio length because it charges a 0.1 s
+overlap the same as a 2 s one. Both models still under-predict above 12 s, where
+n is 18 and 2 — the long-audio behaviour is not settled by these data and is a
+Phase 5 question, not a claim.
+
+THE ESTIMATED ROWS ARE THE TREATMENT GROUP. 393/465 overlap values rest on the
+partial-decode model, and "with and without" is not available: a partial records
+a decode only by COMPLETING, and completing before the endpoint means zero
+overlap. Measured-decode rows number 72 and have overlap 0 in every case, so c
+is unidentified without the estimates. Sensitivity by moving the partial model
++/- its own residual SE (429 ms):
+
+    partial model   c ms per s        95% CI
+    -1 SE               1027.2   [825.7, 1366.5]
+    centre               746.9   [570.8, 1029.2]
+    +1 SE                552.0   [414.5, 783.1]
+
+c stays above 0.41 s/s at the worst bound of the worst shift, so P2a's
+falsification line (CI entirely below 0.3 s/s) is not approached by any of them.
+That is prior evidence, not P2a: P2a is scored on Phase 5 runs.
