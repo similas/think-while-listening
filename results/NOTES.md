@@ -3547,3 +3547,54 @@ decreasing column is evidence about the flat-in-B ASSUMPTION, which concerns
 whether a LONGER draft is more USEFUL — a question this metric cannot ask,
 because it scores only the first chunk. The script now prints the cut share per
 budget instead of the claim.
+
+## 2026-09-22 — The live run on Spoken-MQA FAILED TWICE. The cause is the gap, not the cadence
+
+Two runs, both unusable for window(f), both 94 turns out of 80 wavs:
+
+    reactive-20260922-114950-c676ba   partials every 1.0 s   22/94 turns with an endpoint
+    reactive-20260922-121855-5cd956   partials every 2.5 s   16/94 turns with an endpoint
+
+FIRST DIAGNOSIS WAS WRONG AND IS WITHDRAWN. I attributed run 1 to the partial
+cadence: 1.0 s was set from tiny's OFFLINE fit (847 ms fixed, median 759 ms,
+measured with nothing else running), and in the pipeline tiny decodes in a
+median of 1294 ms, p95 1958, max 3081 (n=274). That 1.7x is real and is worth
+keeping — an uncontended per-call cost understates the contended one by that
+much — but it is NOT why the run failed. At 2.5 s, clear of the p95, the run
+failed identically and turn-for-turn: both runs agree on every turn boundary
+through turn 19.
+
+THE ACTUAL CAUSE: THE REPLY IS STILL PLAYING WHEN THE NEXT UTTERANCE STARTS.
+
+    reply tail, speech_end_est -> playback_done:  median 7004 ms, p95 9465 (n=16)
+    inter-file gap:                               1500 ms
+    the next utterance therefore begins ~5.5 s BEFORE the reply finishes.
+
+The evidence is turn 15, closed by `bot_stopped` at 7941 ms with NO stt_final
+of its own: the BotStoppedSpeaking of turn 14's audio closed turn 15. From
+there every mark lands one turn late — turn 16's "stt_final at 2395 ms" is
+turn 15's final — endpoints go missing (`mark()` counts 2317 orphans, which is
+exactly the no-turn-open case), and 80 wavs become 94 turns.
+
+WHY IT NEVER APPEARED BEFORE. On the 16-utterance dev set the utterances are
+1.6-3.8 s and the replies are one short sentence; the 1500 ms gap covered the
+tail. On this corpus the utterance is 15.4 s and the reply takes 7 s to
+generate and speak. The gap was calibrated on a corpus whose replies were
+shorter than the silence between them, and nothing re-derived it when the
+corpus changed. Same class of error as the cadence: a constant carried from
+the set it was measured on to a set it does not fit.
+
+WHAT IS SALVAGEABLE. 14 turns in run 1 and 16 in run 2 have complete endpoints
+and full partial coverage. That is too thin for window(f) at four fractions and
+is NOT reported as a result. The in-pipeline tiny decode cost (n=274) stands on
+its own and is reported.
+
+THE FIX, NOT YET RUN: the gap must clear the reply tail, so --gap-ms >= ~10000
+(p95 9465) rather than 1500, or the file source must wait for playback_done
+before the next file. The gap is the cheaper change and needs no new code; the
+wait is the correct one and would make the harness immune to this by
+construction. Either way this is a change to how the corpus is played and it
+has not been approved, so it is recorded and stopped here.
+
+BUDGET. 26 min on run 1, 29 on run 2 = 55 of the 60 approved for step 3. The
+24-item canonical-offsets arm for the STT-commit covariate was not started.
