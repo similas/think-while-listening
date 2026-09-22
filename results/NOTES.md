@@ -3598,3 +3598,64 @@ has not been approved, so it is recorded and stopped here.
 
 BUDGET. 26 min on run 1, 29 on run 2 = 55 of the 60 approved for step 3. The
 24-item canonical-offsets arm for the STT-commit covariate was not started.
+
+## PRE-REGISTRATION 2026-09-22d — window(f), feasible budget(f), f*. Committed before run 3
+
+Predictions from the 428 in-pipeline partial decodes already recorded (the two
+failed runs of 2026-09-22 — failed for turn attribution, not for decode timing,
+which is unaffected by which turn a partial was filed under). Regenerates from
+src/scripts/predict_window.py.
+
+THE DECODE MODEL, fitted:
+
+    decode_ms = 1410 + 15.2 x audio_position_s        n=428
+    slope 95% CI [5.6, 24.8] ms per second of audio
+    residual SE 429 ms; median 1382, p95 2313
+
+THE SLOPE EXCLUDES ZERO, and that is a change of fact. The OFFLINE fit gave tiny
+-21 ms/s (R^2 0.01) and the per-call story — Whisper pads to a 30 s window, so a
+longer prefix is nearly free. In the pipeline a longer prefix costs 15.2 ms per
+second of audio on top of a 1410 ms floor. The pad is not the whole story once
+the decode competes for cores. Recorded as a correction to the B2 entry
+(2026-09-17), which stands for the offline measurement it describes.
+
+THE WINDOW MODEL:
+
+    window(f) = D(1 - f) - decode(f x D)
+
+D is the utterance's speech length. At f the partial covers f*D of audio; its
+decode takes decode(f*D); what is left to hide a speculative decode behind is
+the remaining speech minus that. A negative window means the partial lands after
+the user has already stopped.
+
+PREDICTED, at the seeded 80's median and IQR (arms (0,16,32,48,64,96), margin
+250 ms, 34 ms/token):
+
+       f     D=12.9 s (Q1)      D=15.4 s (median)    D=19.3 s (Q3)
+    0.25   8208 ms  B=96       10081 ms  B=96       13021 ms  B=96
+    0.50   4937 ms  B=96        6173 ms  B=96        8113 ms  B=96
+    0.75   1665 ms  B=32        2264 ms  B=48        3204 ms  B=64
+    0.90   -298 ms  B=0          -81 ms  B=0          259 ms  B=0
+
+f*, WHERE A 10-TOKEN CHUNK (340 ms + 250 ms margin = 590 ms of window) STOPS
+BEING FEASIBLE — 10 tokens because that is the probe's measured median first
+TTS chunk, i.e. the smallest draft that could start speech at all:
+
+    Q1 12.9 s      f* = 0.833
+    median 15.4 s  f* = 0.858
+    Q3 19.3 s      f* = 0.884
+
+FALSIFICATION, fixed now: the prediction FAILS if the measured f* on the median
+utterance is >= 0.90.
+
+WHY THAT NUMBER. Greedy p_usable clears the 0.1412 break-even only at f=0.90
+(0.188, exploratory). If a usable chunk still fits at 0.90, the two
+opposite-sloped curves overlap and there is a fraction where speculation both
+pays and is feasible. The prediction says they do not overlap: by 0.858 the
+window is already too short, so the only fraction where a draft is worth
+issuing is one where there is no longer room to issue it. If the measurement
+puts f* at or above 0.90, that reasoning is wrong and the value side reopens at
+the top of the utterance.
+
+T-SEM is logged per partial and NOT read. Nothing in run 3 licenses a trigger
+comparison; the falsification of 2026-09-22c settled that.
