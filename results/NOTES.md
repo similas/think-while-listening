@@ -3264,3 +3264,92 @@ here before that run:
 All three must hold for the corpus to be said to "scale" the decision. The third
 is the one that matters: a controller whose output does not vary has not been
 tested, which is the finding that made the dev set untestable (PHASE4_REPORT).
+
+## 2026-09-22 — Prefix probe result: p_usable is 0.00 where the pipeline decides, and 0.30 is the ceiling
+
+480 generations, 80 items of Spoken-MQA multi_step_reasoning, 6.6 min on the
+Jetson (5.0 s/item). Everything below regenerates from
+src/scripts/score_prefix_probe.py over results/raw/spoken_mqa/prefix_probe.json
+via `make results`. Pre-registered 2026-09-21, amended 2026-09-22; the order
+below is the pre-registered order.
+
+BENCHMARK GATE — gold accuracy, final answer = the last number in the reply.
+
+    fraction   correct    n   Wilson 95%
+        0.25     0.000   80   [0.000, 0.046]
+        0.50     0.000   80   [0.000, 0.046]
+        0.75     0.125   80   [0.069, 0.215]
+        0.90     0.275   80   [0.189, 0.381]
+        1.00     0.300   80   [0.211, 0.408]   <- gate, 30%
+
+PASSES ON THE POINT ESTIMATE AND ONLY THAT. 0.300 sits exactly on the 30% gate
+and the interval runs down to 0.211, so these data do not exclude a model that
+fails it. Every p_usable number below inherits that caveat.
+
+The accuracy column is itself the mechanism: 0/80 correct before half the
+problem is heard. A GSM8K problem states its question last, so there is nothing
+to answer early — not a limitation of the draft, a property of the task.
+
+SAMPLING CONTROL — TWO generations from the SAME full transcript, scored against
+each other by the same rule: 24/80 = 0.300, Wilson [0.211, 0.408].
+
+    THIS IS THE CEILING AND IT IS SET BY THE DECODING POLICY, NOT THE PREFIX.
+    At the live temperature of 0.5, the model agrees with ITSELF on the first
+    spoken chunk 30% of the time given identical input. No amount of listening
+    can push p_usable above that, and greedy decoding is a precondition for
+    speculation to pay anything at all.
+
+p_usable — the draft's first TTS chunk is a word-prefix of the reference's.
+
+    fraction   p_usable   of ceiling   required precision
+        0.25      0.000         0.00                1.000
+        0.50      0.013         0.04                0.929
+        0.75      0.087         0.29                0.653
+        0.90      0.150         0.50                0.523
+        1.00      0.300         1.00                0.354
+
+Required precision is recomputed from the MEASURED p_usable at the arm-derived
+costs (100.3 ms overlap penalty, 610 ms saving), as pre-registered.
+
+WHERE THE PIPELINE ACTUALLY LIVES. The partial offsets are [1.0, 2.0, 3.0] s of
+audio; on the median 11.7 s utterance here that is 0.09, 0.17 and 0.26 of the
+utterance. ALL THREE PARTIALS LAND AT OR BELOW THE 0.25 ROW, where p_usable is
+0.000 and required precision is 1.000. A longer corpus does not move the
+decision point into the useful region — it moves it further out, because the
+offsets are fixed in seconds while the utterance grew.
+
+THE DECISION RULE FIRES. p_usable is under 0.10 at every fraction below 0.90, so
+by the pre-registration the Spoken-MQA trigger comparison is NOT read. It cannot
+change the conclusion: at required precision 1.000 no trigger qualifies, and
+reading the AUC after seeing this would be choosing what to report.
+
+CONTENT-FREE MATCHES: 0 of 132. Every match contained a digit or a non-stopword
+from the problem text, so the filter removed nothing and the overall and content
+columns are identical. The metric is not inflated by shared boilerplate — worth
+knowing, since that was the failure mode the filter was added to catch.
+
+PRE-REGISTERED PREDICTIONS:
+ 1. "near zero at 0.25 and 0.50, rises at 0.90" — CONFIRMED (0.000, 0.013,
+    0.150).
+ 2. "p_usable falls with B" — NOT TESTABLE, and for a structural reason worth
+    recording. The first TTS chunk is a median of 10 tokens, p95 18, max 31, so
+    B in {16, 32, 96} NEVER CUTS IT: every cell is identical across budgets.
+    p_usable is flat in B here because the budget axis was never exercised, not
+    because the flat-in-B assumption has been checked. Testing it needs budgets
+    BELOW ~10 tokens, under the smallest arm, where the draft cannot finish a
+    chunk at all.
+ 3. "the control matches on well under half of items" — CONFIRMED at 0.300.
+
+WHAT THIS DOES TO THE PROJECT. The dev set's negative had one named cause: a
+588 ms decode-bound window. This corpus removes that cause — 11.7 s utterances,
+five times the speech — and the answer does not change. Two independent
+mechanisms now stand in the way, neither of which more listening fixes: the task
+puts its question last, and the decoder disagrees with itself 70% of the time at
+the temperature the pipeline runs. The first is a property of reasoning speech;
+the second is a knob we hold.
+
+CAVEATS, stated with the result: the 80 items are the first 80 rows, shorter and
+narrower than the split (amendment 2026-09-22), so length-dependence is
+under-resolved; the reference is one sampled generation, not a ground truth, so
+a differently-phrased good draft scores as unusable — which is the right metric
+for this system and not a measure of answer quality.
