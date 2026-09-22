@@ -17,7 +17,9 @@ Per item, one generation at each prefix fraction plus a second at 1.00:
                    transcript, so their disagreement is decoding noise alone,
                    and it bounds what the prefix can be blamed for.
 
-Temperature is the LIVE pipeline's 0.5 throughout. max_tokens is 512 so the
+Temperature defaults to the LIVE pipeline's 0.5; --temperature 0 with --no-twin
+is the greedy arm, where the sampler contributes nothing and p_usable is the
+prefix effect alone. max_tokens is 512 so the
 answer can finish; the 96-token draft budget is applied at SCORING time by
 truncating this same text, which is why one generation serves every budget.
 """
@@ -55,7 +57,9 @@ def word_prefix(text: str, fraction: float) -> str:
     return " ".join(words[: max(1, round(len(words) * fraction))])
 
 
-async def run(items: list[dict], cfg: dict, out: Path, limit: int) -> None:
+async def run(
+    items: list[dict], cfg: dict, out: Path, limit: int, temperature: float, twins: bool
+) -> None:
     system = cfg["llm"]["system_prompt"]
     records: list[dict] = []
     t_start = time.monotonic()
@@ -64,13 +68,13 @@ async def run(items: list[dict], cfg: dict, out: Path, limit: int) -> None:
             raise SystemExit("llama-server is not healthy on the configured port")
         for n, item in enumerate(items[:limit]):
             for fraction in FRACTIONS:
-                for twin in (0, 1) if fraction == 1.0 else (0,):
+                for twin in (0, 1) if (twins and fraction == 1.0) else (0,):
                     prefix = word_prefix(item["transcript"], fraction)
                     t = await client.completion(
                         gemma_prompt(system, prefix),
                         n_predict=MAX_TOKENS,
                         cache_prompt=True,
-                        temperature=TEMPERATURE,
+                        temperature=temperature,
                     )
                     records.append(
                         {
@@ -109,7 +113,8 @@ async def run(items: list[dict], cfg: dict, out: Path, limit: int) -> None:
                 ),
                 "fractions": list(FRACTIONS),
                 "max_tokens": MAX_TOKENS,
-                "temperature": TEMPERATURE,
+                "temperature": temperature,
+                "twins": twins,
                 "elapsed_s": time.monotonic() - t_start,
                 "records": records,
             },
@@ -130,10 +135,18 @@ def main() -> None:
     p.add_argument("--out", type=Path, default=Path("results/raw/spoken_mqa/prefix_probe.json"))
     p.add_argument("--config", type=Path, default=Path("src/configs/reactive.yaml"))
     p.add_argument("--limit", type=int, default=80)
+    p.add_argument("--temperature", type=float, default=TEMPERATURE)
+    p.add_argument(
+        "--no-twin",
+        dest="twins",
+        action="store_false",
+        help="skip the second generation at fraction 1.00 — at temperature 0 it "
+        "reproduces the first by construction and measures nothing",
+    )
     args = p.parse_args()
     items = json.loads(args.items.read_text())
     cfg = yaml.safe_load(args.config.read_text())
-    asyncio.run(run(items, cfg, args.out, args.limit))
+    asyncio.run(run(items, cfg, args.out, args.limit, args.temperature, args.twins))
 
 
 if __name__ == "__main__":
