@@ -329,6 +329,14 @@ def score_one(
             cells.append(f"{k}/{n}={k / n:.2f} c{kc / n:.2f}" if n else "n/a")
         print(f"  {f:>9.2f} " + " ".join(f"{c:>20}" for c in cells))
     print("  'c' is the same cell with content-free matches removed.")
+    print(f"\n  Wilson 95% on each fraction at B={max(BUDGETS)}:")
+    for f in fractions:
+        r = usable_rate.get((f, max(BUDGETS)))
+        if r is None or r != r:
+            continue
+        k = round(r * len(items))
+        lo, hi = wilson(k, len(items))
+        print(f"  {f:>9.2f}  {k}/{len(items)} = {r:.3f}  [{lo:.3f}, {hi:.3f}]")
     print(f"  stopwords ({len(STOPWORDS)}): {' '.join(sorted(STOPWORDS))}")
 
     out = probe.with_name(f"{probe.stem}_matches.json")
