@@ -15,7 +15,7 @@ from __future__ import annotations
 import datetime as dt
 from pathlib import Path
 
-from scripts.audit_gpu_offload import align, parse_segments
+from scripts.audit_gpu_offload import align, is_invalid, parse_segments
 
 WARNING = "warning: no usable GPU found, --gpu-layers option will be ignored"
 # mm.ss.mmm.uuu, as the server writes it.
@@ -80,3 +80,21 @@ def test_alignment_refuses_to_guess_when_several_offsets_fit() -> None:
         assert "not unique" in str(e)
     else:
         raise AssertionError("an ambiguous alignment must not be resolved silently")
+
+
+def test_a_warning_alone_does_not_invalidate_a_run() -> None:
+    """The C2b arm asks for no CUDA backend; getting none is the arm working."""
+    assert is_invalid(segment_warned=True, requested_ngl=0) is False
+
+
+def test_a_run_that_asked_for_offload_on_a_warning_server_is_invalid() -> None:
+    assert is_invalid(segment_warned=True, requested_ngl=99) is True
+
+
+def test_no_warning_is_never_invalid() -> None:
+    assert is_invalid(segment_warned=False, requested_ngl=99) is False
+
+
+def test_a_missing_request_cannot_condemn_a_run() -> None:
+    """The recorded command line is not evidence, so its absence is not either."""
+    assert is_invalid(segment_warned=True, requested_ngl=None) is False

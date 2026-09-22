@@ -3166,3 +3166,29 @@ generation, not a ground truth. A draft that is a perfectly good answer but
 phrased differently scores as unusable. That is the RIGHT metric for this system
 — a draft is only worth anything if the real answer would have started with it —
 but it is not a measure of answer quality and must not be reported as one.
+
+## CORRECTION (2026-09-22) — the invalidity rule is now a conjunction, and the start cache moved
+
+Two changes to the 2026-09-21c audit. Neither changes a number.
+
+THE RULE IS CODE, NOT PROSE. src/scripts/audit_gpu_offload.py:is_invalid() —
+
+    invalid  <=>  (the segment warned)  AND  (run_meta requested --n-gpu-layers > 0)
+
+A warning alone is not a fault; the C2b arm asks for no CUDA backend and gets
+none, which is the arm working. A run with NO recorded request is NOT flagged
+either: the audit's own finding is that the recorded command line is not
+evidence, so its absence cannot condemn a run. Those runs are covered by their
+segment's decode rate. Under this rule 0 of the 171 post-break runs are invalid,
+and both C2b runs stay valid. Pinned by four cases in
+src/tests/test_gpu_offload_audit.py.
+
+THE START CACHE moved to results/raw/llama_server_starts.json and is regenerated
+rather than merged blindly. A fresh journal reading REPLACES the cache only when
+it still covers the whole range — its earliest start at or before the cache's
+earliest. Once the journal has rotated past that point the cache is
+authoritative and the reading only ADDS starts it has not seen; the script says
+so on stdout when that happens. The file now carries the exact command and
+regex it came from, the journal's earliest start at the time of writing, and
+whether that reading covered the range. It lives under results/raw/ with the
+rest of the recorded evidence, so it is local, not committed.

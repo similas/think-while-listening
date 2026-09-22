@@ -85,32 +85,51 @@ def parse_segments(log: Path) -> list[dict]:
 
 
 def journal_starts(unit: str, cache: Path) -> list[tuple[dt.datetime, int]]:
-    """Absolute start times, from the journal, cached to the repo.
+    """Absolute start times: from the journal while it still reaches back far
+    enough, from the cache once it does not.
 
     THE JOURNAL IS VOLATILE. It rotates on size and age, so the evidence that
-    dates these segments will disappear from this machine and cannot be
-    regenerated. Every reading is therefore merged into ``cache`` and committed
-    with the results, which is what makes this audit reproducible later and on
-    another machine. The cache lives under results/ rather than results/raw/
-    because it is derived provenance — start times and a flag value, no log
-    text and no audio — and results/raw/ stays local by CLAUDE.md §1.
+    dates these segments expires and cannot be regenerated. The rule is
+    explicit rather than implicit: a fresh reading REPLACES the cache only when
+    it covers the whole range the cache already knows about — its earliest
+    start is at or before the cache's earliest. If the journal has rotated past
+    that point it no longer covers the audit, and the cache is authoritative;
+    the reading is then used only to add starts the cache has not seen.
+
+    The file carries the exact command it came from, because a bare list of
+    timestamps is not checkable a year from now.
     """
-    starts: dict[str, int] = {}
+    cached: dict[str, int] = {}
     if cache.exists():
-        starts.update(json.loads(cache.read_text()))
-    out = subprocess.run(
-        ["journalctl", "--user", "-u", unit, "--no-pager", "-o", "short-iso"],
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout
-    for line in out.splitlines():
-        m = STARTED.search(line)
-        if m:
-            starts[m.group(1)] = int(m.group(2))
+        cached = json.loads(cache.read_text()).get("starts", {})
+    cmd = ["journalctl", "--user", "-u", unit, "--no-pager", "-o", "short-iso"]
+    out = subprocess.run(cmd, capture_output=True, text=True, check=False).stdout
+    fresh = {m.group(1): int(m.group(2)) for m in map(STARTED.search, out.splitlines()) if m}
+    covers = bool(fresh) and (not cached or min(fresh) <= min(cached))
+    starts = dict(cached)
+    starts.update(fresh)
     if not starts:
         raise SystemExit(f"no starts in the journal and none cached in {cache}")
-    cache.write_text(json.dumps(dict(sorted(starts.items())), indent=1) + "\n")
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(
+        json.dumps(
+            {
+                "command": " ".join(cmd),
+                "pattern": STARTED.pattern,
+                "regenerated_from_journal": covers,
+                "journal_earliest": min(fresh) if fresh else None,
+                "written": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+                "starts": dict(sorted(starts.items())),
+            },
+            indent=1,
+        )
+        + "\n"
+    )
+    if not covers:
+        print(
+            f"note: the journal no longer reaches back to {min(cached)}; "
+            f"dates before {min(fresh) if fresh else 'now'} come from {cache}"
+        )
     return sorted((dt.datetime.fromisoformat(f"{k[:-2]}:{k[-2:]}"), v) for k, v in starts.items())
 
 
@@ -134,6 +153,24 @@ def align(segs: list[dict], starts: list[tuple[dt.datetime, int]]) -> int:
     if len(feasible) != 1:
         raise SystemExit(f"alignment is not unique: offsets {feasible} all fit")
     return feasible[0]
+
+
+def is_invalid(segment_warned: bool, requested_ngl: int | None) -> bool:
+    """A run is invalid only if BOTH hold: its server could not offload, and it
+    asked to.
+
+    Stated as a conjunction so it cannot drift back into "the server warned".
+    The C2b control arm sets LLAMA_NO_CUDA, asks for no backend and gets none;
+    the warning there is the arm working, and flagging it would delete a
+    condition. The fault case is a run that requested --n-gpu-layers > 0 and
+    landed on a server that could not provide it.
+
+    A run with no recorded request (``None``) is NOT flagged: the audit's
+    finding is that the recorded command line is not evidence either way, so
+    its absence cannot condemn a run. Those runs are covered by their segment's
+    decode rate instead.
+    """
+    return segment_warned and requested_ngl is not None and requested_ngl > 0
 
 
 def load_runs() -> list[dict]:
@@ -175,7 +212,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--log", type=Path, default=Path("results/raw/llama-server.log"))
     p.add_argument("--unit", default="twl-llama.service")
-    p.add_argument("--starts", type=Path, default=Path("results/llama_server_starts.json"))
+    p.add_argument("--starts", type=Path, default=Path("results/raw/llama_server_starts.json"))
     p.add_argument("--runs", action="store_true", help="list every post-break run")
     args = p.parse_args()
 
@@ -248,6 +285,7 @@ def main() -> None:
                 None,
             )
         r["seg"] = seg
+        r["invalid"] = seg is not None and is_invalid(segs[seg]["warning"], r["ngl"])
         if seg is None:
             unattributed.append(r)
         elif segs[seg]["warning"]:
@@ -258,10 +296,19 @@ def main() -> None:
         print(f"    {r['id']}  {r['at']:%Y-%m-%d %H:%M:%S}  {r['notes'].split(';')[-1].strip()}")
     print(f"  in a segment that warned: {len(in_warned)}")
     for r in in_warned:
-        print(f"    {r['id']}  seg {r['seg']}  {r['notes'].split(';')[-1].strip()}")
-    print("  A warning is only a fault if offload was WANTED. Compare each one")
-    print("  against the arm it was run for, above: a control arm that asked for")
-    print("  no CUDA backend and got none is doing what it was told.")
+        verdict = "INVALID" if r["invalid"] else "valid"
+        print(
+            f"    {r['id']}  seg {r['seg']}  ngl={r['ngl']}  {verdict}"
+            f"  {r['notes'].split(';')[-1].strip()}"
+        )
+    # The rule itself is is_invalid(); see its docstring.
+    print(
+        f"  INVALID (segment warned AND the run requested ngl>0): "
+        f"{sum(1 for r in post if r['invalid'])}"
+    )
+    for r in post:
+        if r["invalid"]:
+            print(f"    {r['id']}  seg {r['seg']}")
 
     # Every post-break run, through its segment. A run in a segment with no
     # generations has no decode rate because the server never decoded during
