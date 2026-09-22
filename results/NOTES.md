@@ -3192,3 +3192,75 @@ so on stdout when that happens. The file now carries the exact command and
 regex it came from, the journal's earliest start at the time of writing, and
 whether that reading covered the range. It lives under results/raw/ with the
 rest of the recorded evidence, so it is local, not committed.
+
+## AMENDMENT 2026-09-22 to the prefix-probe pre-registration. Committed before any generation
+
+The 2026-09-21 pre-registration stands except where this amends it. Written and
+committed BEFORE the probe code runs.
+
+SAMPLE CHECK, done first. The 80 items are the FIRST 80 rows of
+multi_step_reasoning. Against the full 1402-row split:
+
+    quantity     full split (n=1402)            first 80            |diff|   full IQR width
+    duration s   median 15.65  IQR [12.20, 20.48]  median 11.62      4.03     8.29
+    words        median 42     IQR [32, 54]        median 32        10.00    22.00
+
+Full-split duration comes from the Hub's column statistics (its own histogram,
+1402 rows); full-split word counts are exact, from all 1402 transcripts pulled
+as text (results/raw/spoken_mqa/multi_step_reasoning_index.json, 1.4 MB, no
+audio). Neither difference exceeds the full split's IQR width, so under the
+stated rule the first 80 stand and no reseeding is needed.
+
+RECORDED ANYWAY, because the rule passing is not the same as the sample being
+representative: the first 80 are shorter than the split on BOTH measures, and
+their own spread is half the population's (words IQR 10.2 against 22.0;
+duration IQR 4.5 against 8.3). This is a block, not a draw. It bites in one
+specific direction — the probe will see LESS variation in utterance length than
+the corpus holds, so any dependence of p_usable on length will be
+under-resolved. If that dependence is the result, it should be re-run on a
+seeded random draw before it is believed.
+
+(a) REFERENCE AND GOLD ACCURACY. One generation per (item, prefix fraction) with
+max_tokens 512 — the 96-token cap applies to DRAFTS ONLY, and a draft at budget
+B is the first B tokens of that same generation. Fractions are
+{0.25, 0.50, 0.75, 0.90, 1.00}; the 1.00 generation is the reference.
+
+    Final answer = the LAST number in the generation. Numbers are matched as
+    [-+]?\d[\d,]*(?:\.\d+)? after stripping "$" and ","; the match is exact
+    equality of the parsed float against the gold string parsed the same way.
+    A generation with no number scores as wrong, never as missing.
+
+Gold accuracy is reported at every fraction with n and a Wilson 95% CI. THE 1.00
+COLUMN IS A GATE: below 30% the model cannot do this benchmark at all, and
+p_usable measured against its own output is a statement about self-consistency,
+not about usable speculation. If the gate fails it is reported as a failed gate
+and the probe's p_usable numbers are reported as such.
+
+(b) TEMPERATURE 0.5 EVERYWHERE — drafts, reference and the control — the live
+pipeline's setting. This REPLACES the pre-registration's greedy plan. Comparing
+a greedy draft to a sampled reference would have measured the difference between
+two decoding rules on top of the prefix effect. The cost is that p_usable now
+confounds missing prefix information with sampling divergence, which is exactly
+what the two-sample control at 1.00 is for and why it is reported first.
+
+(c) MATCHED CHUNKS ARE LOGGED VERBATIM, every one, to
+results/raw/spoken_mqa/prefix_probe.json. p_usable(B) is reported twice:
+
+    overall, and with CONTENT-FREE matches removed.
+
+A match is content-free if the matched chunk contains no digit AND shares no
+non-stopword token with the problem text. "Sure, let me work that out." matching
+across two generations is agreement about phrasing, not about the answer, and it
+would inflate p_usable exactly where the drafts are least informative. The
+stopword list is fixed in the script and printed with the table.
+
+(d) SCALES THRESHOLDS for the live REACTIVE run on this corpus, pre-registered
+here before that run:
+
+    anticipation window   >= 3000 ms (median at the first emitted partial)
+    prefill span          >= 50% of the utterance's tokens
+    feasible budget       >= 48 tokens, with >= 3 DISTINCT arms chosen across turns
+
+All three must hold for the corpus to be said to "scale" the decision. The third
+is the one that matters: a controller whose output does not vary has not been
+tested, which is the finding that made the dev set untestable (PHASE4_REPORT).
