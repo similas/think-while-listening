@@ -3846,3 +3846,80 @@ not lost.
 
 Pinned by src/tests/test_progress_watchdog.py (11) and
 src/tests/test_stt_activity.py (5).
+
+## CORRECTION (2026-09-22f) to the progress-watchdog entry. STUCK_MS is a silence threshold
+
+The previous entry derived STUCK_MS from the final-decode model and reported a
+0.42 s margin over turn 8. Both are withdrawn. The derivation was a category
+error: STUCK_MS asks "has anything happened lately", and work of any length is
+covered by BEING WORK, not by a budget large enough to contain it. Tuning a
+silence threshold against one run's slowest decode is how the 45 000 ms constant
+was arrived at in the first place.
+
+    STUCK_MS = 10 000 ms, fixed. Not derived, not corpus-dependent.
+
+PROGRESS IS NOW FOUR SIGNALS, and ongoing work counts WHILE IT RUNS, not only at
+its boundaries:
+
+    a stage mark              TurnManager.last_mark_ns
+    either STT engine busy    StreamingWhisperSTT.decoding
+    the LLM generating        LlamaChatProcessor.generating
+    audio out                 StageObserver._last_audio_out_ns
+
+`_stuck_for_ms()` returns 0.0 whenever the recognizer or the language model is
+working, so turn 8's 12.5 s decode and its 1.3 s generation are not silence and
+no threshold has to be sized around them. `corpus_stuck_ms`,
+`FINAL_DECODE_INTERCEPT_MS` and `FINAL_DECODE_MS_PER_S` are deleted from the
+runner; the fit below is the final-decode MODEL, and it has nothing to do with
+the timeout any more.
+
+BUSY IS A SIGN OF LIFE ONLY WHILE THE WORK IS FINITE. A wedged engine is busy
+for ever and would satisfy the silence rule permanently — the hang the watchdog
+exists to prevent, reintroduced through its own definition of health. So a
+single decode running longer than DECODE_HANG_MS = 60 000 ms closes the turn
+with close_reason `stt_hung`, checked BEFORE the silence rule. Turn 8's real
+decode was 12.5 s, so the guard clears the worst observed case by 4.8x.
+
+Pinned by src/tests/test_progress_watchdog.py: turn 8's full 103-mark sequence
+plus its real busy intervals (decode 34.479-46.971 s, generation 46.971-48.297
+s) is swept at 10 ms resolution and the watchdog must never fire.
+
+## 2026-09-22 — The LISTENER has an overlap penalty too: +690 ms [526, 989]
+
+src/scripts/final_decode_model.py, wired into `make results`.
+
+    final_ms = a + b x audio_s + c x [a tiny partial was decoding at the endpoint]
+
+                                  estimate    95% CI (runs resampled)
+    a  intercept ms                 1154.0           [887.7, 1298.4]
+    b  ms per second of audio        135.1           [131.0, 141.5]
+    c  LISTENER OVERLAP ms           689.7           [526.0, 988.8]
+    residual SE 351 ms;  n=465 turns over 13 runs;  audio 1.6-35.1 s
+
+IN-FLIGHT RATE 393/465 = 0.845 overall; by run 0.562-0.952, no run degenerate at
+0 or 1, so every run contributes contrast (CLAUDE.md §2 marginal rates).
+
+c EXCLUDES ZERO. The thinker's overlap penalty is +100.3 ms [78, 124]. The
+LISTENER's is roughly SEVEN TIMES that, and it was never measured because the
+two-engine design was believed to have removed it: the partial holds a different
+lock and `stt_lock_wait_ms` is 0. It does hold a different lock. Both engines
+still run on cores 3-5, and a core is not a lock.
+
+SENSITIVITY, because three of the 13 runs are VOID (c676ba, 5cd956, 6a8b26).
+Turns with a mis-attributed final lack their own vad_user_stopped and are
+excluded by the fit's own filter, but the void runs supply ALL of the long-audio
+leverage, so both fits are reported:
+
+    runs            n    audio range    b                     c
+    all 13        465    1.6-35.1 s     135.1 [131.0, 141.5]  689.7 [526.0, 988.8]
+    valid 10      428    1.6- 3.8 s     129.4 [ 65.8, 195.9]  533.9 [483.9, 577.2]
+
+b agrees; on the valid runs alone it is barely identified (the dev set is 1.6-3.8
+s of audio). c is positive and excludes zero either way, at 534-690 ms.
+
+FORESIGHT FOR P2, recorded now so it cannot be quietly dropped later: the implied
+multiplier at the median 2.4 s of audio is 1.46x on all runs and 1.33x on the
+valid ten. P2 predicts >= 1.5x on a PAIRED comparison and is falsified if the CI
+includes 1.2. On this prior evidence P2 may well fail on its threshold while the
+mechanism it names is real and large. P2 is scored where it is specified — paired,
+on valid runs — not here, and it will be reported as it falls.

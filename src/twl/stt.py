@@ -112,8 +112,10 @@ class StreamingWhisperSTT(STTService):
         # Touched from the thread pool, so it needs a threading lock, not the
         # event loop's. See _decode.
         self._activity_lock = threading.Lock()
-        self._decodes_in_flight = 0
-        self._last_activity_ns = 0
+        # Start time of every decode currently in flight. A count alone cannot
+        # tell a long decode from a hung one, and a hung engine holds a core
+        # for the rest of the run.
+        self._decode_starts: list[int] = []
         # Issued = decodes started (the cost). Emitted = frames pushed while
         # the user was still speaking (the decision window). They differ, and
         # conflating them hides the cost of a partial that arrived too late.
@@ -197,15 +199,14 @@ class StreamingWhisperSTT(STTService):
         # and finishes. A counter held by the coroutine would read zero while
         # that decode is still burning cores, which is exactly the state the
         # turn watchdog and the playback gate must not mistake for idle.
+        started = now_ns()
         with self._activity_lock:
-            self._decodes_in_flight += 1
-            self._last_activity_ns = now_ns()
+            self._decode_starts.append(started)
         try:
             return self._transcribe(audio, model)
         finally:
             with self._activity_lock:
-                self._decodes_in_flight -= 1
-                self._last_activity_ns = now_ns()
+                self._decode_starts.remove(started)
 
     def _transcribe(self, audio: npt.NDArray[np.float32], model: WhisperModel | None) -> str:
         engine = model if model is not None else self._model
@@ -312,24 +313,27 @@ class StreamingWhisperSTT(STTService):
         the thread pool with no lock and no task. Both cases occupy the cores the
         recognizer is timed on, so both count as busy.
 
-        The turn watchdog asks this before force-closing a turn, and the playback
-        gate asks it before releasing the next file: a decode in flight means the
-        pipeline is working, and closing or advancing strands it on the following
-        turn (run 3, 2026-09-22).
+        The progress watchdog treats this as a sign of life and the playback gate
+        as a reason to wait: a decode in flight means the pipeline is working,
+        and closing or advancing strands it on the following turn (run 3,
+        2026-09-22).
         """
         with self._activity_lock:
-            return self._decodes_in_flight > 0
+            return bool(self._decode_starts)
 
     @property
-    def last_activity_ns(self) -> int:
-        """When a decode last started or finished, either engine. 0 if never.
+    def oldest_decode_ms(self) -> float:
+        """How long the longest in-flight decode has been running. 0.0 if none.
 
-        The progress watchdog needs decode BOUNDARIES, not just occupancy: a
-        turn whose only sign of life is a long decode is alive, and a turn that
-        has neither marked a stage nor touched an engine is stuck.
+        "Busy" is a sign of life only while the work is finite. An engine that
+        wedges is busy forever, and treating that as progress would hang the
+        run instead of flagging one turn — the failure the watchdog exists to
+        prevent, reintroduced through its own definition of health.
         """
         with self._activity_lock:
-            return self._last_activity_ns
+            if not self._decode_starts:
+                return 0.0
+            return (now_ns() - min(self._decode_starts)) / 1e6
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)

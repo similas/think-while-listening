@@ -23,13 +23,12 @@ class Probe:
 
     def __init__(self) -> None:
         self._activity_lock = threading.Lock()
-        self._decodes_in_flight = 0
-        self._last_activity_ns = 0
+        self._decode_starts: list[int] = []
         self._blocked = threading.Event()
         self._entered = threading.Event()
 
     decoding = StreamingWhisperSTT.decoding
-    last_activity_ns = StreamingWhisperSTT.last_activity_ns
+    oldest_decode_ms = StreamingWhisperSTT.oldest_decode_ms
 
     def _transcribe(self, audio: Any, model: Any) -> str:
         self._entered.set()
@@ -42,7 +41,7 @@ class Probe:
 def test_idle_before_anything_runs() -> None:
     p = Probe()
     assert p.decoding is False
-    assert p.last_activity_ns == 0
+    assert p.oldest_decode_ms == 0.0
 
 
 def test_busy_while_a_decode_runs_and_idle_after() -> None:
@@ -51,12 +50,11 @@ def test_busy_while_a_decode_runs_and_idle_after() -> None:
     t.start()
     assert p._entered.wait(timeout=5.0)
     assert p.decoding is True
-    started = p.last_activity_ns
-    assert started > 0
+    assert p.oldest_decode_ms > 0.0, "an in-flight decode must report its age"
     p._blocked.set()
     t.join(timeout=5.0)
     assert p.decoding is False
-    assert p.last_activity_ns >= started, "finishing must also count as activity"
+    assert p.oldest_decode_ms == 0.0, "no decode in flight, no age"
 
 
 def test_a_cancelled_task_does_not_make_a_running_decode_look_idle() -> None:
@@ -98,14 +96,16 @@ def test_two_engines_are_counted_together() -> None:
     for t in threads:
         t.start()
     assert p._entered.wait(timeout=5.0)
-    while p._decodes_in_flight < 2:
+    while len(p._decode_starts) < 2:
         pass
     assert p.decoding is True
+    oldest = p.oldest_decode_ms
     p._blocked.set()
     for t in threads:
         t.join(timeout=5.0)
     assert p.decoding is False
-    assert p._decodes_in_flight == 0
+    assert p._decode_starts == []
+    assert oldest > 0.0, "the age reported is the OLDEST decode's, not the newest"
 
 
 def test_a_failing_decode_still_clears_the_flag() -> None:

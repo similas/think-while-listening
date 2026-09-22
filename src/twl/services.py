@@ -82,6 +82,17 @@ class LlamaChatProcessor(FrameProcessor):
         self._task: asyncio.Task[None] | None = None
         self.dropped_transcripts = 0
 
+    @property
+    def generating(self) -> bool:
+        """True while a reply is being generated.
+
+        A sign of life for the progress watchdog and a reason for the playback
+        gate to wait. Read from OUR task rather than polled from the server:
+        polling at watchdog cadence would add a request per 100 ms to the
+        service being timed.
+        """
+        return self._task is not None and not self._task.done()
+
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
         if isinstance(frame, TranscriptionFrame) and frame.text.strip():

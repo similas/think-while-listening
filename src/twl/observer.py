@@ -54,14 +54,20 @@ SETTLE_MS = 800.0
 # later and was recorded on the NEXT turn, and every final afterwards was one
 # turn late. Deriving the budget from the corpus did not fix it either — the
 # derived 49.9 s would have fired 0.2 s before that turn's reply finished
-# playing, with the recognizer idle and the guard therefore silent (NOTES,
-# correction 2026-09-22e). On this corpus a HEALTHY turn legitimately runs 50 s.
+# playing, with the recognizer idle (NOTES, correction 2026-09-22e). On this
+# corpus a HEALTHY turn legitimately runs 50 s.
 #
-# So the watchdog watches PROGRESS: a stage mark, a decode starting or finishing
-# on either engine, or audio leaving the output transport. None of those for
-# STUCK_MS means stuck. STUCK_MS is derived at run start from the corpus, since
-# the longest legitimate gap between signs of life is one final decode.
-DEFAULT_STUCK_MS = 10_000.0
+# STUCK_MS IS A SILENCE THRESHOLD, NOT A WORK BUDGET, so it does not depend on
+# the corpus and is not derived from one. The question it asks is "has anything
+# happened lately", and the answer is yes while any stage has marked, either
+# recognizer engine is decoding, the language model is generating, or audio is
+# leaving the output transport. Work of any length is covered by being WORK.
+STUCK_MS = 10_000.0
+
+# Busy is a sign of life only while the work is finite. A wedged engine is busy
+# forever, so a single decode running longer than this closes the turn and
+# flags it — one turn lost instead of the run hanging on a held core.
+DECODE_HANG_MS = 60_000.0
 
 # Pipecat 0.0.108 emits VADUser*SpeakingFrame on the plain-VAD path and
 # User*SpeakingFrame on the (deprecated) context/interruption path; a pipeline
@@ -82,8 +88,9 @@ class StageObserver(BaseObserver):
         speculation: SpeculationDriver | None = None,
         runner: PolicyRunner | None = None,
         spec_onset: str = "vad",
-        stuck_ms: float = DEFAULT_STUCK_MS,
-        stt_activity_ns: Callable[[], int] | None = None,
+        stt_busy: Callable[[], bool] | None = None,
+        stt_oldest_decode_ms: Callable[[], float] | None = None,
+        llm_busy: Callable[[], bool] | None = None,
     ) -> None:
         super().__init__()
         self._turns = turns
@@ -101,11 +108,12 @@ class StageObserver(BaseObserver):
         # completion so the set cannot grow without bound over a long run.
         self._decision_tasks: set[asyncio.Task[None]] = set()
         self._vad_stop_secs = vad_stop_secs
-        # Derived per corpus by the caller; see DEFAULT_STUCK_MS.
-        self._stuck_ms = stuck_ms
-        # When a decode last started or finished, either engine. A long decode
-        # is a sign of life at both ends and occupies the cores in between.
-        self._stt_activity_ns = stt_activity_ns
+        # The three "something is happening" probes besides stage marks and
+        # audio out. Each is read locally — no request to any service.
+        self._stt_busy = stt_busy
+        self._stt_oldest_decode_ms = stt_oldest_decode_ms
+        self._llm_busy = llm_busy
+        self.decode_hangs = 0
         self._seen: OrderedDict[int, bool] = OrderedDict()
         self._last_audio_out_ns = 0
         # Held so the task is not garbage-collected mid-flight; one per turn.
@@ -285,23 +293,36 @@ class StageObserver(BaseObserver):
         stats = await self._speculation.end_turn()
         self._turns.set_phase2(spec=stats.as_dict())
 
+    def _working(self) -> bool:
+        """Is anything happening right now, other than a stage mark?"""
+        stt = self._stt_busy is not None and self._stt_busy()
+        llm = self._llm_busy is not None and self._llm_busy()
+        return stt or llm
+
     def _stuck_for_ms(self) -> float:
         """Milliseconds since this turn last showed ANY sign of life.
 
-        Three signals, because a turn can legitimately spend minutes in any one
-        of them: a stage mark (recognition, generation, synthesis boundaries),
-        a decode starting or finishing on either engine, and audio reaching the
-        output transport. Returns 0.0 before the turn has shown any, so a turn
-        is never declared stuck before it has had a chance to live.
+        Four signals, because a turn can legitimately spend a long time in any
+        one of them: a stage mark, either recognizer engine decoding, the
+        language model generating, and audio reaching the output transport.
+        Ongoing work counts WHILE it runs, not only at its boundaries, so a
+        12 s decode or a slow generation is never silence.
+
+        Returns 0.0 while work is in flight or before the turn has shown any
+        sign at all — a turn is never declared stuck before it has lived.
         """
-        newest = max(
-            self._turns.last_mark_ns,
-            self._last_audio_out_ns,
-            self._stt_activity_ns() if self._stt_activity_ns is not None else 0,
-        )
+        if self._working():
+            return 0.0
+        newest = max(self._turns.last_mark_ns, self._last_audio_out_ns)
         if newest == 0:
             return 0.0
         return (now_ns() - newest) / 1e6
+
+    def _hung_decode_ms(self) -> float:
+        """How long the longest in-flight decode has run. 0.0 if none."""
+        if self._stt_oldest_decode_ms is None:
+            return 0.0
+        return self._stt_oldest_decode_ms()
 
     async def watchdog(self) -> None:
         """Close turns the BotStoppedSpeaking path could not close.
@@ -338,14 +359,25 @@ class StageObserver(BaseObserver):
                     self.closes_deferred += 1
                     log.warning("turn %d closed by watchdog after %.0f ms quiet", turn, quiet_ms)
                 self._deferred_close = None
-            elif self._stuck_for_ms() > self._stuck_ms:
+            elif self._hung_decode_ms() > DECODE_HANG_MS:
+                # Checked BEFORE the silence rule, which a hung engine would
+                # otherwise satisfy forever by looking busy.
+                if self._turns.close_if_current(turn, reason="stt_hung"):
+                    self.decode_hangs += 1
+                    log.error(
+                        "turn %d force-closed: a decode has run %.0f ms (age %.0f ms)",
+                        turn,
+                        self._hung_decode_ms(),
+                        age,
+                    )
+                self._deferred_close = None
+            elif self._stuck_for_ms() > STUCK_MS:
                 if self._turns.close_if_current(turn, reason="timeout"):
                     self.closes_timed_out += 1
                     log.error(
-                        "turn %d force-closed: no stage mark, no decode and no audio "
-                        "for %.0f ms (age %.0f ms)",
+                        "turn %d force-closed: nothing happened for %.0f ms (age %.0f ms)",
                         turn,
-                        self._stuck_ms,
+                        STUCK_MS,
                         age,
                     )
                 self._deferred_close = None

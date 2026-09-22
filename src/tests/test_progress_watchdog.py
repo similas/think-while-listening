@@ -9,19 +9,21 @@ Scored against the turn that broke reactive-20260922-130314-6a8b26. Turn 8 was a
     45 000 ms + recognizer probe   46.971 s   mid generation
     49 900 ms derived from corpus  49.900 s   0.2 s from the end of playback
 
-So these tests replay turn 8 as it actually happened and require the progress
-watchdog to stay silent throughout, then require it to fire on a turn that has
-genuinely stopped.
+The watchdog now asks "has anything happened lately", where anything is a stage
+mark, either recognizer engine decoding, the language model generating, or audio
+leaving the output transport. Ongoing WORK counts while it runs, not only at its
+boundaries, so a 12 s decode is never silence and the threshold needs no corpus.
+
+These tests replay turn 8 with its real busy intervals and require silence from
+the watchdog throughout; then require it to fire on a turn that has genuinely
+stopped, and on one whose engine has wedged.
 """
 
 from __future__ import annotations
 
 import itertools
-import wave
-from pathlib import Path
 
-from scripts.run_reactive import corpus_stuck_ms
-from twl.observer import DEFAULT_STUCK_MS
+from twl.observer import DECODE_HANG_MS, STUCK_MS
 
 # TURN 8 OF RUN 3, EVERY STAGE MARK, on its own clock in seconds, taken from
 # results/raw/reactive/reactive-20260922-130314-6a8b26. The marks after 45.565 s
@@ -136,136 +138,94 @@ TURN8: list[tuple[float, str]] = [
     (48.341, "audio_out_first"),
     (50.089, "playback_done"),
 ]
-RUN3_LONGEST_S = 34.9
-# The base final: one decode spanning the endpoint to its result. It signals at
-# both ends, which is what keeps the 12.5 s of work from reading as silence.
-DECODE_SPAN = (34.479, 46.971)
+
+# What was RUNNING during turn 8, from the records: the base final from the
+# endpoint until its result, then generation until llm_done. Between them the
+# turn marks nothing at all, and both intervals are work.
+DECODE_BUSY = (34.479, 46.971)
+LLM_BUSY = (46.971, 48.297)
 
 
-def largest_silent_gap(events: list[tuple[float, str]], decode: tuple[float, float]) -> float:
-    """The longest stretch with no mark, no decode boundary and no audio, in s."""
-    signals = sorted({t for t, _ in events} | set(decode))
-    return max(b - a for a, b in itertools.pairwise(signals))
+def stuck_for_ms(now_s: float) -> float:
+    """The watchdog's rule, evaluated at a point on turn 8's clock."""
+    if DECODE_BUSY[0] <= now_s < DECODE_BUSY[1] or LLM_BUSY[0] <= now_s < LLM_BUSY[1]:
+        return 0.0
+    marks = [t for t, _ in TURN8 if t <= now_s]
+    if not marks:
+        return 0.0
+    return (now_s - max(marks)) * 1000
 
 
-def test_no_age_based_guard_survives_turn_8() -> None:
-    """Restates why the variable changed, so the reason cannot be lost."""
-    end = TURN8[-1][0]
-    for budget_s in (45.0, 49.9):
-        assert budget_s < end, f"an age budget of {budget_s} s kills a healthy {end} s turn"
+def test_the_watchdog_never_fires_during_turn_8() -> None:
+    """Every 10 ms of the turn, from start to the end of playback."""
+    worst, worst_at = 0.0, 0.0
+    t = 0.0
+    while t <= TURN8[-1][0]:
+        v = stuck_for_ms(t)
+        if v > worst:
+            worst, worst_at = v, t
+        t += 0.01
+    assert worst < STUCK_MS, f"peak silence {worst:.0f} ms at t={worst_at:.2f} s"
 
 
-def test_the_progress_watchdog_stays_silent_through_turn_8() -> None:
-    gap = largest_silent_gap(TURN8, DECODE_SPAN)
-    stuck_ms = corpus_stuck_ms_for(RUN3_LONGEST_S)
-    assert gap * 1000 < stuck_ms, (
-        f"turn 8's longest silent stretch is {gap:.2f} s; the threshold is {stuck_ms / 1000:.2f} s"
-    )
-
-
-def test_the_final_decode_is_bracketed_by_marks_already() -> None:
-    """Honest accounting: for the FINAL, decode boundaries add nothing.
-
-    vad_user_stopped and stt_final already bracket it, so the 12.49 s gap is
-    visible from marks alone. The decode signal earns its place elsewhere —
-    see the next test.
-    """
+def test_the_decode_and_generation_intervals_are_what_save_it() -> None:
+    """Without work counting as progress, the 12.5 s decode reads as silence."""
     marks_only = max(b - a for a, b in itertools.pairwise(sorted(t for t, _ in TURN8)))
-    assert abs(marks_only - largest_silent_gap(TURN8, DECODE_SPAN)) < 1e-6
-    assert 12.0 < marks_only < 13.0
+    assert marks_only * 1000 > STUCK_MS, "marks alone would have fired"
+    assert stuck_for_ms(46.9) == 0.0, "mid-decode must read as working"
+    assert stuck_for_ms(47.5) == 0.0, "mid-generation must read as working"
 
 
-def test_an_orphaned_partial_decode_is_the_case_marks_cannot_see() -> None:
-    """A partial cancelled at the endpoint keeps decoding and marks nothing.
-
-    Its task is gone, its lock was never the final's, and it emits no
-    stt_partial_done because the record is only written on completion of a live
-    turn. Without the decode signal the turn looks silent while a core is busy.
-    """
-    last_mark_s = 34.479  # vad_user_stopped
-    orphan_started_s = 34.500  # the cancelled partial is still running
-    now_s = 44.000
-    silent_by_marks = (now_s - last_mark_s) * 1000
-    silent_with_decode = (now_s - max(last_mark_s, orphan_started_s)) * 1000
-    assert silent_by_marks > 9_000
-    assert silent_with_decode < silent_by_marks
-    # And the observer takes the max of all three signals, so the decode wins.
-    assert silent_with_decode == (now_s - orphan_started_s) * 1000
+def test_a_stuck_turn_fires_at_ten_seconds() -> None:
+    """Nothing after the endpoint: no decode, no generation, no audio."""
+    endpoint = 34.479
+    silent = [t for t, _ in TURN8 if t <= endpoint]
+    assert max(silent) == endpoint
+    just_under = (endpoint + STUCK_MS / 1000) - 0.001
+    just_over = (endpoint + STUCK_MS / 1000) + 0.001
+    assert (just_under - endpoint) * 1000 <= STUCK_MS
+    assert (just_over - endpoint) * 1000 > STUCK_MS
 
 
-def test_the_threshold_clears_run_3_by_a_thin_margin() -> None:
-    """RECORDED, not asserted away: 12.9 s against an observed 12.49 s.
-
-    The rule is 2x the fitted final decode at the longest file; the decode that
-    actually happened was 1.93x it. The margin is 0.42 s — about 3 %. A decode
-    a little slower than run 3's would be declared stuck. Flagged in NOTES.
-    """
-    gap = largest_silent_gap(TURN8, DECODE_SPAN)
-    threshold_s = corpus_stuck_ms_for(RUN3_LONGEST_S) / 1000
-    assert threshold_s > gap
-    assert (threshold_s - gap) < 1.0, "if this ever gets comfortable, update the note"
-
-
-def test_a_genuinely_stuck_turn_fires() -> None:
-    """Nothing after the endpoint: no decode, no marks, no audio."""
-    stalled = [e for e in TURN8 if e[0] <= 34.479]
-    stuck_ms = corpus_stuck_ms_for(RUN3_LONGEST_S)
-    # No decode ever starts, so the last signal is vad_user_stopped.
-    elapsed_s = 34.479 + stuck_ms / 1000 + 0.1
-    silent_for_ms = (elapsed_s - stalled[-1][0]) * 1000
-    assert silent_for_ms > stuck_ms
-
-
-def corpus_stuck_ms_for(longest_s: float) -> float:
-    from scripts.run_reactive import FINAL_DECODE_INTERCEPT_MS, FINAL_DECODE_MS_PER_S
-
-    return max(
-        DEFAULT_STUCK_MS, 2.0 * (FINAL_DECODE_INTERCEPT_MS + FINAL_DECODE_MS_PER_S * longest_s)
+def test_a_hung_decode_fires_at_sixty_seconds() -> None:
+    """Busy is a sign of life only while the work is finite."""
+    assert DECODE_HANG_MS == 60_000.0
+    # Turn 8's real decode is nowhere near it; a wedged one is.
+    real = (DECODE_BUSY[1] - DECODE_BUSY[0]) * 1000
+    assert real < DECODE_HANG_MS, "the longest real decode must not trip it"
+    assert 4 * real < DECODE_HANG_MS, (
+        "and it must clear that decode by a wide margin, because the whole point "
+        "of dropping the derived threshold was to stop tuning against one run"
     )
 
 
-def write_wav(path: Path, seconds: float) -> None:
-    with wave.open(str(path), "wb") as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(16000)
-        w.writeframes(b"\x00\x00" * int(16000 * seconds))
-
-
-def test_the_threshold_is_derived_from_the_longest_file(tmp_path: Path) -> None:
-    write_wav(tmp_path / "a.wav", 9.0)
-    write_wav(tmp_path / "long.wav", RUN3_LONGEST_S)
-    assert corpus_stuck_ms(tmp_path, live=False) == corpus_stuck_ms_for(RUN3_LONGEST_S)
-
-
-def test_a_short_corpus_keeps_the_floor(tmp_path: Path) -> None:
-    """2x a 2.4 s file's decode is 4.1 s; a turn is not stuck that fast."""
-    write_wav(tmp_path / "a.wav", 2.4)
-    assert corpus_stuck_ms(tmp_path, live=False) == DEFAULT_STUCK_MS
-
-
-def test_a_live_mic_and_an_empty_directory_both_fall_back(tmp_path: Path) -> None:
-    assert corpus_stuck_ms(tmp_path, live=True) == DEFAULT_STUCK_MS
-    assert corpus_stuck_ms(tmp_path, live=False) == DEFAULT_STUCK_MS
-
-
-def test_the_observer_reads_all_three_signals() -> None:
+def test_the_hang_guard_is_checked_before_the_silence_rule() -> None:
+    """A wedged engine looks busy forever and would satisfy silence for good."""
     import inspect
 
     from twl.observer import StageObserver
 
-    src = inspect.getsource(StageObserver._stuck_for_ms)
-    assert "last_mark_ns" in src, "stage marks must count"
-    assert "_last_audio_out_ns" in src, "audio leaving the transport must count"
-    assert "_stt_activity_ns" in src, "decode boundaries must count"
-    assert "self._stuck_ms" in inspect.getsource(StageObserver.watchdog)
-    assert "_hard_timeout_ms" not in inspect.getsource(StageObserver), "age guard must be gone"
+    src = inspect.getsource(StageObserver.watchdog)
+    assert src.index("_hung_decode_ms") < src.index("_stuck_for_ms")
 
 
-def test_a_turn_with_no_signals_yet_is_never_declared_stuck() -> None:
-    """Before the first sign of life there is nothing to measure silence from."""
+def test_the_observer_reads_all_four_signals() -> None:
     import inspect
 
     from twl.observer import StageObserver
 
-    assert "if newest == 0" in inspect.getsource(StageObserver._stuck_for_ms)
+    stuck = inspect.getsource(StageObserver._stuck_for_ms)
+    working = inspect.getsource(StageObserver._working)
+    assert "last_mark_ns" in stuck and "_last_audio_out_ns" in stuck
+    assert "_stt_busy" in working and "_llm_busy" in working
+    whole = inspect.getsource(StageObserver)
+    assert "_hard_timeout_ms" not in whole and "stuck_ms" not in whole.replace("STUCK_MS", "")
+
+
+def test_the_threshold_is_not_corpus_derived() -> None:
+    """It is a silence threshold; work of any length is covered by being work."""
+    import scripts.run_reactive as rr
+
+    assert not hasattr(rr, "corpus_stuck_ms")
+    assert not hasattr(rr, "corpus_timeout_ms")
+    assert STUCK_MS == 10_000.0
