@@ -38,7 +38,7 @@ from twl.contention import ContentionDetector
 from twl.device import device_state
 from twl.llm import LlamaClient
 from twl.metrics import median
-from twl.observer import DEFAULT_TIMEOUT_MS, TIMEOUT_MARGIN_MS
+from twl.observer import DEFAULT_STUCK_MS
 from twl.pipeline import build_pipeline
 from twl.planning import Plan, add_gate_args, gate
 from twl.policies import PolicyKind, build_policy
@@ -439,8 +439,11 @@ async def run(args: argparse.Namespace) -> None:
             if args.policy == "spec_trigger"
             else None
         )
-        timeout_ms = corpus_timeout_ms(Path(args.wav_dir), args.live)
-        print(f"hard turn timeout {timeout_ms / 1000:.0f} s, derived from the corpus")
+        stuck_ms = corpus_stuck_ms(Path(args.wav_dir), args.live)
+        print(
+            f"stuck threshold {stuck_ms / 1000:.1f} s (no stage mark, no decode, "
+            f"no audio out), derived from the corpus"
+        )
         built = build_pipeline(
             cfg,
             source,
@@ -462,7 +465,7 @@ async def run(args: argparse.Namespace) -> None:
             # Only OUR policies re-route the answer. SPEC-ALWAYS-PG keeps the
             # chat path because PredGen owns its prompt, and changing it would
             # improve the baseline's numbers on our design's terms.
-            hard_timeout_ms=timeout_ms,
+            stuck_ms=stuck_ms,
             answer_mode=("completion" if args.policy == "prefill_always" else "chat"),
             answer_system_prompt=policy.system_prompt,
             speculation=speculation,
@@ -778,27 +781,35 @@ async def run(args: argparse.Namespace) -> None:
 TURN_OVERHEAD_S = 3.1
 
 
-def corpus_timeout_ms(wav_dir: Path, live: bool) -> float:
-    """The hard turn timeout, budgeted from the audio this run will play.
+# The in-pipeline FINAL decode, fitted over 465 turns of 13 runs (2026-09-21/22):
+#     final_ms = 1737 + 135.2 x audio_s     slope 95% CI [124.6, 145.8], SE 430 ms
+# This is the longest gap a HEALTHY turn can go without a sign of life, because
+# a decode marks its start and its finish and nothing else happens in between.
+FINAL_DECODE_INTERCEPT_MS = 1737.0
+FINAL_DECODE_MS_PER_S = 135.2
 
-    CLAUDE.md §6: a constant whose right value depends on the corpus is derived
-    or asserted. The old 45 000 ms was neither, and on 2026-09-22 it fired on a
-    33.7 s utterance whose recognizer was still working (run 3 post-mortem).
 
-    Budget = the LONGEST file + TIMEOUT_MARGIN_MS. The margin is headroom over
-    what a healthy turn needs after the endpoint; a turn wanting more than its
-    own audio plus that is stuck, not slow. For a live mic there is no corpus,
-    so the default stands and is recorded.
+def corpus_stuck_ms(wav_dir: Path, live: bool) -> float:
+    """How long a turn may show no sign of life before it is declared stuck.
+
+    CLAUDE.md §6: derived from the corpus, not a constant. The bound is TWICE
+    the fitted final decode at the LONGEST file — twice because the observed
+    finals run up to 1.9x the model when a partial is decoding beside them
+    (turn 8 of run 3: 12.49 s measured against 6.46 s modelled on 35.1 s of
+    audio) — floored at DEFAULT_STUCK_MS so a short corpus keeps a sane bound.
+
+    A live mic has no corpus, so the floor stands and is recorded.
     """
     if live:
-        return DEFAULT_TIMEOUT_MS
+        return DEFAULT_STUCK_MS
     longest_s = 0.0
     for w in sorted(Path(wav_dir).glob("*.wav")):
         with contextlib.suppress(Exception), wave.open(str(w)) as fh:
             longest_s = max(longest_s, fh.getnframes() / fh.getframerate())
     if longest_s <= 0.0:
-        return DEFAULT_TIMEOUT_MS
-    return longest_s * 1000.0 + TIMEOUT_MARGIN_MS
+        return DEFAULT_STUCK_MS
+    modelled = FINAL_DECODE_INTERCEPT_MS + FINAL_DECODE_MS_PER_S * longest_s
+    return max(DEFAULT_STUCK_MS, 2.0 * modelled)
 
 
 def file_run_minutes(a: argparse.Namespace, turns: int) -> float:

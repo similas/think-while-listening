@@ -3793,3 +3793,56 @@ AGE IS THE WRONG VARIABLE. A turn is stuck when NOTHING IS HAPPENING, not when
 it has lasted a while; on this corpus a healthy turn legitimately lasts 50 s.
 Replaced by a progress watchdog (next entry). TIMEOUT_MARGIN_MS and
 corpus_timeout_ms are removed with it.
+
+## 2026-09-22 — §3.1 redone: progress, not age. The recognizer probe widened
+
+AGE IS GONE. `StageObserver` no longer has a turn budget. It force-closes only
+when a turn has shown NO SIGN OF LIFE for STUCK_MS, where a sign of life is any
+of three things:
+
+    a stage mark          (TurnManager.last_mark_ns, set on every mark)
+    a decode boundary     (StreamingWhisperSTT.last_activity_ns, either engine)
+    audio out             (StageObserver._last_audio_out_ns)
+
+Before the first signal `_stuck_for_ms()` returns 0.0, so a turn is never
+declared stuck before it has had a chance to live. `HARD_TIMEOUT_MS`,
+`TIMEOUT_MARGIN_MS` and `corpus_timeout_ms` are deleted, and so are their tests.
+
+STUCK_MS IS DERIVED. `corpus_stuck_ms(wav_dir, live)` = max(10 s, 2 x the fitted
+in-pipeline FINAL decode at the longest file), because one final decode is the
+longest gap a healthy turn can have between signs of life. The fit, over every
+turn of 2026-09-21/22 with both marks:
+
+    final_ms = 1737 + 135.2 x audio_s     n=465 over 13 runs
+    slope 95% CI [124.6, 145.8], residual SE 430 ms, audio 1.6-35.1 s
+
+Derived thresholds:
+
+    multi_step seed 20260922 (longest 34.9 s)   12.9 s
+    dev sixteen (longest 3.8 s)                 10.0 s  (floor)
+    live mic                                    10.0 s  (floor, no corpus)
+
+THE MARGIN IS THIN AND IS RECORDED AS SUCH. Turn 8's silent stretch — the base
+final, 34.479 -> 46.971 s — is 12.49 s against a 12.9 s threshold: 0.42 s, about
+3 %. The factor 2 was chosen because the observed final ran 1.93x the model
+(12.49 s against 6.46 s modelled on 35.1 s of audio) when a partial decoded
+beside it. A decode slower than run 3's would be declared stuck. Pinned by a
+test that FAILS if the margin ever exceeds 1 s without the note being updated.
+Open for decision: whether the factor should be 2.5 or the threshold should key
+off the observed p95 rather than the model.
+
+THE RECOGNIZER PROBE NOW COVERS BOTH ENGINES AND ORPHANS. `decoding` was "the
+final lock is held". It is now a counter incremented and decremented INSIDE the
+worker thread, so it is true while either engine decodes, including the case
+that actually occurs: a partial whose task is cancelled at the endpoint while
+its `transcribe()` keeps running in the pool with no lock and no task. A probe
+that counted around the await reads idle there. Five tests, including a
+cancelled-task replay and a failing decode.
+
+WHAT THE DECODE SIGNAL DOES AND DOES NOT BUY. For the FINAL it adds nothing:
+vad_user_stopped and stt_final already bracket it. It earns its place on the
+orphaned partial, which marks nothing at all. Tested both ways so the reason is
+not lost.
+
+Pinned by src/tests/test_progress_watchdog.py (11) and
+src/tests/test_stt_activity.py (5).

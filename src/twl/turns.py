@@ -167,6 +167,7 @@ class TurnManager:
         self._turn_opened_ns = 0
         self._tj_zone = find_thermal_zone()
         self.orphan_marks = 0
+        self.last_mark_ns = 0
         self.turns_written = 0
         # Set by _check_turn_invariant; the run aborts on it rather than
         # finishing and reporting numbers that cannot mean what they say.
@@ -235,6 +236,11 @@ class TurnManager:
                 return
             self._marked_once.add(stage)
         m = self._clock.mark(stage, at_ns=at_ns)
+        # A stage mark is the turn's sign of life. The progress watchdog reads
+        # this instead of the turn's age: on a long corpus a healthy turn runs
+        # for 50 s, so age says nothing, while a turn that has marked nothing
+        # for a while is genuinely stuck.
+        self.last_mark_ns = now_ns()
         write_jsonl(
             self._fh, StageEvent(run_id=self._run_id, turn=self._turn, stage=stage, t_ms=m.t_ms)
         )

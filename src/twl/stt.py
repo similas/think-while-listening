@@ -109,6 +109,11 @@ class StreamingWhisperSTT(STTService):
         self._preroll_max = int(0.6 * sample_rate)
         self._partial_task: asyncio.Task[None] | None = None
         self._decode_lock = asyncio.Lock()
+        # Touched from the thread pool, so it needs a threading lock, not the
+        # event loop's. See _decode.
+        self._activity_lock = threading.Lock()
+        self._decodes_in_flight = 0
+        self._last_activity_ns = 0
         # Issued = decodes started (the cost). Emitted = frames pushed while
         # the user was still speaking (the decision window). They differ, and
         # conflating them hides the cost of a partial that arrived too late.
@@ -186,6 +191,23 @@ class StreamingWhisperSTT(STTService):
             )
 
     def _decode(self, audio: npt.NDArray[np.float32], model: WhisperModel | None = None) -> str:
+        # COUNTED IN THE WORKER THREAD, NOT AROUND THE AWAIT. Cancelling the
+        # partial task at the endpoint unwinds the coroutine but does NOT stop
+        # the transcribe() already running in the thread pool: it keeps a core
+        # and finishes. A counter held by the coroutine would read zero while
+        # that decode is still burning cores, which is exactly the state the
+        # turn watchdog and the playback gate must not mistake for idle.
+        with self._activity_lock:
+            self._decodes_in_flight += 1
+            self._last_activity_ns = now_ns()
+        try:
+            return self._transcribe(audio, model)
+        finally:
+            with self._activity_lock:
+                self._decodes_in_flight -= 1
+                self._last_activity_ns = now_ns()
+
+    def _transcribe(self, audio: npt.NDArray[np.float32], model: WhisperModel | None) -> str:
         engine = model if model is not None else self._model
         assert engine is not None
         segments, _info = engine.transcribe(
@@ -283,13 +305,31 @@ class StreamingWhisperSTT(STTService):
 
     @property
     def decoding(self) -> bool:
-        """True while a FINAL decode holds the engine.
+        """True while EITHER engine has a decode in flight.
 
-        The turn watchdog asks this before force-closing a turn: a turn whose
-        final is still decoding is slow, not stuck, and closing it strands the
-        decode on the following turn (run 3, 2026-09-22).
+        Not "the final lock is held": the partial engine holds a different lock,
+        and a partial whose task was cancelled at the endpoint keeps decoding in
+        the thread pool with no lock and no task. Both cases occupy the cores the
+        recognizer is timed on, so both count as busy.
+
+        The turn watchdog asks this before force-closing a turn, and the playback
+        gate asks it before releasing the next file: a decode in flight means the
+        pipeline is working, and closing or advancing strands it on the following
+        turn (run 3, 2026-09-22).
         """
-        return self._decode_lock.locked()
+        with self._activity_lock:
+            return self._decodes_in_flight > 0
+
+    @property
+    def last_activity_ns(self) -> int:
+        """When a decode last started or finished, either engine. 0 if never.
+
+        The progress watchdog needs decode BOUNDARIES, not just occupancy: a
+        turn whose only sign of life is a long decode is alive, and a turn that
+        has neither marked a stage nor touched an engine is stuck.
+        """
+        with self._activity_lock:
+            return self._last_activity_ns
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
