@@ -28,6 +28,7 @@ ids because llama-server exposes text; the acceptance rule is identical.
 
 from __future__ import annotations
 
+import itertools
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
@@ -407,3 +408,87 @@ SPEC_SAVING_MS = 610.0
 # different speculative consumer would change (results/SECOND_CONSUMER_DESIGN.md)
 # and the one BUDGET-L is meant to learn.
 P_DRAFT_USABLE_PRIOR = 0.02
+
+
+# The break-even usability from the measured arms: a correct spend is worth the
+# 610 ms stt_final -> tts_first_audio window, a wrong one costs the 100.3 ms
+# overlap penalty (NOTES 2026-09-21, 2026-09-22c).
+OVERLAP_COST_MS = 100.3
+SPEND_SAVING_MS = 610.0
+BREAK_EVEN_P_USABLE = OVERLAP_COST_MS / (OVERLAP_COST_MS + SPEND_SAVING_MS)
+
+
+@dataclass
+class WindowAllocator:
+    """Allocates the listening window between the two speculative consumers.
+
+    THE LISTENER ALWAYS GETS IT. COMMIT-WL runs in the recogniser under its own
+    self-paced issue rule (twl.pacing); this class decides only whether the
+    THINKER also gets a share, because that is the decision the measurements
+    say is contestable.
+
+    The thinker's branch is BudgetR's feasibility rule gated on measured
+    usability: draft only if a draft could finish before the endpoint AND the
+    measured usability curve puts it above break-even at the fraction of the
+    utterance heard so far. On Spoken-MQA the curve says never — greedy
+    p_usable is 0.013 at f=0.25 and 0.062 at 0.75 against a break-even of 0.141
+    — so the branch emits B=0 on every turn BY MEASUREMENT, and the decision log
+    says why. That is the result, not a defect: the listener's output still
+    varies, so the controller is not degenerate.
+
+    p_usable_curve is supplied per SET, because it is a property of the task,
+    not of the device. A corpus of short questions and long answers would flip
+    it, and the rule would then spend without being changed.
+    """
+
+    budget: BudgetR = field(default_factory=BudgetR)
+    # fraction of utterance heard -> measured greedy p_usable at that fraction.
+    p_usable_curve: tuple[tuple[float, float], ...] = ()
+    # The set's median speech duration, a PRIOR and stated as one: the turn's
+    # own length is not knowable while it is still being spoken.
+    expected_duration_s: float = 15.4
+    break_even: float = BREAK_EVEN_P_USABLE
+
+    def p_usable_hat(self, f: float) -> float:
+        """Measured usability at fraction ``f``, by linear interpolation.
+
+        Outside the measured range it is clamped rather than extrapolated: the
+        curve is four points from one probe and an extrapolation off its end is
+        an invention, which is what a spend decision would then rest on.
+        """
+        if not self.p_usable_curve:
+            return 0.0
+        pts = sorted(self.p_usable_curve)
+        if f <= pts[0][0]:
+            return pts[0][1]
+        if f >= pts[-1][0]:
+            return pts[-1][1]
+        for (x0, y0), (x1, y1) in itertools.pairwise(pts):
+            if x0 <= f <= x1:
+                span = x1 - x0
+                return y0 if span <= 0 else y0 + (y1 - y0) * (f - x0) / span
+        return pts[-1][1]
+
+    def decide(
+        self, *, elapsed_s: float, remaining_ms: float, ms_per_token: float
+    ) -> dict[str, float | str]:
+        """Whether the thinker gets the window, with every input that decided it."""
+        f_hat = elapsed_s / self.expected_duration_s if self.expected_duration_s > 0 else 0.0
+        p_hat = self.p_usable_hat(f_hat)
+        feasible = self.budget.feasible_budget(remaining_ms, ms_per_token)
+        if p_hat < self.break_even:
+            budget, reason = 0, "below_break_even"
+        elif feasible == 0:
+            budget, reason = 0, "infeasible"
+        else:
+            budget, reason = feasible, "spend"
+        return {
+            "budget_tokens": float(budget),
+            "reason": reason,
+            "f_hat": round(f_hat, 3),
+            "p_usable_hat": round(p_hat, 4),
+            "break_even": round(self.break_even, 4),
+            "feasible_budget": float(feasible),
+            "remaining_ms": round(remaining_ms, 1),
+            "ms_per_token": round(ms_per_token, 2),
+        }
