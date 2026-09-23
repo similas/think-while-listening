@@ -4575,3 +4575,57 @@ SPEC-CONTINUE (pass 7) runs with energy capture on, as does every other Phase 5
 pass — the sampler integrates VDD_IN for all of them now. It is called out
 because P7 compares COMMIT-WL against REACTIVE and the thinker-side arm is the
 only one whose energy has never been measured at all.
+
+## 2026-09-23h — DECISION: agreement_n 2, tail_guard 0.3 s, SEGMENT granularity
+
+Selection sweep on single_step_reasoning (16 items, median 10.6 s), disjoint
+from every scored set. Baseline WER 0.044, baseline final 1986 ms.
+
+    config                   dWER    final sees   tail ms   saving
+    a=2 g=0.3 words        +0.038 F        37 %      1595    391 ms
+    a=2 g=0.3 SEGMENTS     +0.009 P        60 %      1742    244 ms
+    a=2 g=0.6 words        +0.054 F        36 %      1586    376 ms
+    a=2 g=0.6 segments     +0.068 F        59 %      1657    305 ms
+    a=3 g=0.3 words        +0.042 F        73 %      1811    170 ms
+    a=3 g=0.3 segments     +0.009 P        64 %      1748    233 ms
+    a=3 g=0.6 words        +0.017 P        70 %      1859    157 ms
+    a=3 g=0.6 segments     +0.005 P        66 %      1846    170 ms
+
+THE TRADE-OFF IS THE RESULT, not a tuning nuisance: every configuration that
+commits aggressively fails the WER bar, and every configuration that passes it
+leaves the final 60-66 % of the audio. The one that spares the final most
+(37 %) is the worst transcriber (+0.038).
+
+ALTERNATIVES CONSIDERED: (a) a=2 g=0.3 segments; (b) a=3 g=0.6 segments;
+(c) a=3 g=0.6 words; (d) keep a=2 g=0.3 words and accept the WER.
+CHOSEN: (a). Among the four that pass it has the largest saving (244 ms) and
+the lowest commit latency — agreement 2 commits one hypothesis sooner than
+agreement 3, which matters for a mechanism whose whole value is committing
+before the endpoint. (b) buys 0.004 of WER, which is noise at n=16, for 74 ms
+of saving and an extra hypothesis of lag. (c) is dominated by (b). (d) trades a
+stated acceptance bar for latency, which P4 exists to forbid.
+
+g=0.6 IS UNSTABLE AT AGREEMENT 2 (+0.068) and fine at agreement 3 (+0.005).
+With only two agreeing hypotheses a longer guard defers so much that the
+committed text ends mid-phrase more often. Not pursued further: the chosen
+configuration does not use it.
+
+WORD GRANULARITY IS OFF, reversing 2026-09-23's decision a second time. It is
+cheap (+2.1 to +4.3 % of the decode) but it transcribes worse at every
+configuration measured. A word committed from inside a segment leaves the tail
+decode starting mid-phrase with no left context beyond the initial_prompt.
+
+## PRIOR EVIDENCE AGAINST P3, recorded before the grid
+
+P3 predicts a median TTFA reduction >= 1000 ms on multi_step. The chosen
+configuration saves 244 ms OF FINAL DECODE at 10.6 s median audio. The saving
+scales with the audio the final is spared, so at 15.4 s it should be larger,
+but the passing configurations leave the final 60-66 % of the audio, not 27 %.
+
+The 594 ms saving reported from the first long smoke came from the a=2 g=0.3
+WORD configuration, WHICH FAILS THE WER BAR. It is not evidence for P3 under
+the configuration that will actually be run.
+
+P3 stands as pre-registered. This is recorded so that if it fails, the failure
+is not a surprise dressed up as an insight — and so that if it passes, the
+margin is read against a prior that said it might not.

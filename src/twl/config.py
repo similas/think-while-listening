@@ -80,7 +80,11 @@ class CommitConfig:
     agreement_n: int = 2
     tail_guard_s: float = 0.3
     min_uncommitted_s: float = 1.0
-    word_timestamps: bool = True
+    # SEGMENT granularity, chosen on the selection set (NOTES 2026-09-23h).
+    # Word-level commits transcribe worse at every configuration measured
+    # (+0.038 against +0.009 dWER at agreement 2), because a word committed
+    # from inside a segment leaves the tail decode starting mid-phrase.
+    word_timestamps: bool = False
     use_initial_prompt: bool = True
     # "controlled": self-paced to duty_max (twl.pacing). "naive": a fixed tick,
     # the ablation P5 tests against.
