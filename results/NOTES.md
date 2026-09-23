@@ -4354,3 +4354,51 @@ CONTROLLED no longer has a cadence, so the comparison is respecified:
     project has refused to report that as a result since Phase 4. If the
     achieved cadence is constant to within the logging resolution, P5 is
     reported as not testable rather than as passing.
+
+## 2026-09-23 — §2 built. COMMIT-WL, the self-paced issuer, the allocator
+
+Modules: twl/commit.py (LocalAgreementCommitter, 12 tests), twl/pacing.py
+(SelfPacedIssuer + FixedTickIssuer, 12 tests), stt.commit config section,
+StreamingWhisperSTT._hypothesis_loop behind stt.commit.enabled (10 tests),
+twl.policies.WindowAllocator (9 tests). 229 tests green.
+
+ENABLED:FALSE IS THE OLD PATH, UNCHANGED. One branch at speech onset chooses
+_hypothesis_loop or _partial_loop; the partial loop is untouched and a test
+asserts it never references the committer or the issuer. Both shipped configs
+have commit.enabled false, so every arm measured so far is unaffected.
+
+NEW RECORDS. hypothesis_record per hypothesis (buffer_s, decode_ms,
+committed_words, committed_end_s, idle_ms, required_idle_ms, CADENCE_MS and
+DUTY — both derived in the TurnManager because they are properties of
+consecutive hypotheses). Turn records gain committed_words, total_words,
+committed_end_s, final_tail_s.
+
+### DECISION — word_timestamps stays on
+
+ALTERNATIVES: (a) word timestamps, (b) segment granularity, (c) decide per set.
+MEASURED on the 16 dev segments, paired: word timestamps cost +5.7 % of the
+hypothesis decode (744 ms against 704 ms). The bar in v3 §2.6 was 15 %.
+CHOSEN: (a). Word granularity is what lets the tail guard drop a single cut
+word instead of a whole segment, and at 5.7 % it is not worth trading that for.
+(c) would make the commit granularity a per-set variable in an experiment about
+utterance length.
+
+### The dev-set smoke PASSES AND IS DEGENERATE, and that is reported not hidden
+
+    baseline WER   0.000      COMMIT-WL WER  0.000      dWER +0.000 (bar +0.020)
+    final decoded 1.59 s of 1.59 s = 100 % of the audio
+
+NOTHING WAS COMMITTED ON ANY OF THE 16 DEV SEGMENTS. They are 1.0-2.9 s; the
+issuer needs 1.0 s of uncommitted audio, then a 1.4 s decode, then the duty gap
+— so the first hypothesis lands around 2.4 s and LocalAgreement-2 needs a
+SECOND one to agree with. Most turns got one hypothesis, several got none. The
+acceptance bar passes because the transcript IS the baseline's, not because the
+mechanism worked.
+
+So the dev-set smoke validates the plumbing and nothing else, and the §2.6
+acceptance is recorded that way. The mechanism is exercised on a 16-item
+long-audio smoke drawn from the seeded Spoken-MQA pull (median 15.4 s), whose
+numbers set at_endpoint. This is consistent with P3, which predicts only
+>= 200 ms on the dev set against >= 1000 ms on multi-step — but it means the
+dev set cannot be the acceptance gate for anything but "it does not break the
+baseline".
