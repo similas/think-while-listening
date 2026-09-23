@@ -468,6 +468,8 @@ async def run(args: argparse.Namespace) -> None:
             segment_dir=run_dir / "segments",
             detector=detector,
             temps_fn=sampler.temps_since,
+            energy_fn=sampler.energy_j,
+            idle_fn=sampler.idle_mw,
             warmup_turns=(
                 args.warmup_turns if (schedule is not None or policy_schedule is not None) else 0
             ),

@@ -125,6 +125,8 @@ class TurnManager:
         pressure_pids: Callable[[], dict[str, int]] | None = None,
         detector: ContentionDetector | None = None,
         temps_fn: Callable[[int], dict[str, float]] | None = None,
+        energy_fn: Callable[[int, int], float] | None = None,
+        idle_fn: Callable[[int], float] | None = None,
         warmup_turns: int = 0,
         plan: list[PlannedTurn] | None = None,
     ):
@@ -142,6 +144,8 @@ class TurnManager:
         self._detector = detector
         # Median temps over the turn, from the telemetry stream (see records).
         self._temps_fn = temps_fn
+        self._energy_fn = energy_fn
+        self._idle_fn = idle_fn
         self._warmup_turns = warmup_turns
         self._plan = plan
         # Partials buffered until the endpoint (their label) is known.
@@ -193,6 +197,7 @@ class TurnManager:
         self.endpoint_divergences: list[tuple[int, float]] = []
         self._force_invalid: dict[int, str] = {}
         self._closed = False
+        self._idle_mw = -1.0
         # How the last turn ended. The playback gate refuses to release on an
         # abnormal close, because the pipeline may still be finishing work the
         # turn did not wait for.
@@ -251,6 +256,7 @@ class TurnManager:
         self._ctxt_at_start = read_ctxt_switches(os.getpid())
         self._turn_opened_ns = at_ns
         self._origin_by_turn[self._turn] = self._clock.origin_ns
+        self._idle_mw = self._idle_fn(at_ns) if self._idle_fn is not None else -1.0
         self._contention = {}
         if self._detector is not None:
             self._detector.begin_turn()
@@ -376,6 +382,21 @@ class TurnManager:
                 rec.done_ms = round((done_ns - self._clock.origin_ns) / 1e6, 1)
                 rec.emitted = emitted
                 return
+
+    def _turn_energy_j(self, clock: TurnClock) -> float:
+        """Joules over [turn opened, first audio out]. -1.0 when unmeasured.
+
+        The window ends at the sound the user hears, because that is what the
+        latency metric ends at too. `energy_j` was -1.0 in every record ever
+        written: the field existed and the integration was never wired.
+        """
+        if self._energy_fn is None:
+            return self._energy_j
+        first_audio_ms = clock.first("audio_out_first")
+        if first_audio_ms is None:
+            return -1.0
+        end_ns = clock.origin_ns + int(first_audio_ms * 1e6)
+        return self._energy_fn(clock.origin_ns, end_ns)
 
     def _endpoint_drift_ms(self) -> float | None:
         """Detected endpoint minus the FILE's, in ms. None when unknown.
@@ -683,7 +704,8 @@ class TurnManager:
             wer=round(self._wer, 4),
             reference=self._reference,
             adversary_mb_per_s=round(self._adversary_mb_per_s, 1),
-            energy_j=round(self._energy_j, 4),
+            energy_j=round(self._turn_energy_j(clock), 4),
+            idle_power_mw=round(self._idle_mw, 1),
             rss_before_mb=self._rss_before_mb,
             rss_after_mb=self._rss_after_mb,
             anon_huge_before_mb=self._anon_huge_before_mb,

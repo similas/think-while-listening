@@ -25,6 +25,9 @@ results:
 	PYTHONPATH=src $(BIN)/python src/scripts/audit_gpu_offload.py
 	PYTHONPATH=src $(BIN)/python src/scripts/score_prefix_probe.py
 	PYTHONPATH=src $(BIN)/python src/scripts/final_decode_model.py
+	PYTHONPATH=src $(BIN)/python src/scripts/stage_decomposition.py
+	PYTHONPATH=src $(BIN)/python src/scripts/energy_per_turn.py
+	PYTHONPATH=src $(BIN)/python src/scripts/wer_by_arm.py
 
 figures:
 	PYTHONPATH=src $(BIN)/python src/scripts/make_figures.py

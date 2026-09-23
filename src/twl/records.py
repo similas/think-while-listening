@@ -152,6 +152,9 @@ class TurnRecord:
     reference: str = ""
     adversary_mb_per_s: float = -1.0
     energy_j: float = -1.0
+    # Board draw just before the turn opened, so energy can be reported net of
+    # idle in analysis rather than baked in here.
+    idle_power_mw: float = -1.0
     # Swap attribution (rule of 2026-09-16): per-process VmSwap decides
     # validity; system zram growth is the applied-pressure covariate.
     # DVFS state at the turn boundary. A resident CUDA context can hold the

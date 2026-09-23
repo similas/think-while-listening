@@ -4172,3 +4172,80 @@ PHASES 2-4 WERE RUN AT [1.0, 2.0, 3.0] AND THEIR NUMBERS STAND AT THAT SETTING;
 they are not re-run for this change. Noted here once.
 
 Pinned by src/tests/test_playback_gate.py (5) and test_run_invariants.py (6).
+
+## 2026-09-23 — §4 analyses wired. P1 and P2 scored on existing logs, or declared untestable
+
+Three new scripts in `make results`: stage_decomposition.py, energy_per_turn.py,
+wer_by_arm.py (final_decode_model.py already covers §4.4).
+
+### Stage decomposition, REACTIVE only, every valid turn ever logged
+
+    audio s      n    TTFA ms                vad settle   stt final    llm ttft   tts first
+    [0, 3)    1372    3181 [3125, 3247]      800 (25%)   1828 (57%)   130 (4%)   408 (13%)
+    [3, 6)     821    3594 [3559, 3636]      800 (22%)   2303 (64%)   129 (4%)   430 (12%)
+
+3126 turns excluded: invalid, warm-up, washout, missing marks, or a speculative
+decode (this is the REACTIVE baseline). Shares are of the bucket's median TTFA
+and do not sum to 100 %: each stage is its own median and medians are not
+additive. CIs are percentile bootstrap over turns.
+
+From the VOID runs, OBSERVATION ONLY and labelled so in the script's output:
+[6,12) n=15 stt 69 %, [12,20) n=18 stt 72 %, [20,40) n=2 stt 83 %. This is the
+source of v3 §0's table.
+
+P1 IS NOT SCORED. It predicts the STT share at EVERY length with a monotone
+rise; the valid rows are one length point (0-6 s, two buckets, both >= 57 %).
+Recording it as "not testable on existing logs" rather than scoring it on two
+buckets and a void run. Phase 5 scores it.
+
+P2 IS NOT SCORED EITHER, for the reason already recorded (2026-09-23): every
+overlap in the existing logs is MODELLED, and the amended P2a admits only
+measured overlap. The existing-log fit stands as prior evidence.
+
+### WER by arm, dev set, paired on the utterance
+
+    arm                      items  turns   median WER   mean     p95
+    REACTIVE                    16    416   0.000        0.051   0.667
+    SPEC_ALWAYS_PG              16    159   0.000        0.040   0.667
+    SPEC_CONTINUE               16    159   0.000        0.045   0.667
+    SPEC (arm not recorded)     16    726   0.000        0.044   0.667
+
+    dWER vs REACTIVE, common support (16/16 items):
+    SPEC_ALWAYS_PG   median +0.000   mean -0.008 [-0.023, +0.000]
+    SPEC_CONTINUE    median +0.000   mean -0.008 [-0.023, +0.000]
+
+THE MEDIAN IS DEGENERATE AND IS FLAGGED, NOT REPORTED AS A RESULT (CLAUDE.md
+§2): most items transcribe exactly, so every arm's median WER is 0.000 and every
+median delta is 0.000 by construction. The mean carries what signal there is and
+it is small and negative — speculation did not damage the transcript — with CIs
+touching zero. The p95 of 0.667 in every arm is one hard item, not a tail.
+
+`wer` was -1.0 in every record; unlike energy it WAS recoverable, because the
+transcripts and the manifest were both already written down.
+
+### DECISION — how an arm is identified in the existing logs
+
+ALTERNATIVES: (a) read it from run_meta.notes; (b) add a per-turn policy field
+and re-run; (c) derive it from what the turn did. CHOSEN: (c), with (a) as the
+fallback it turned out not to be. run_meta.notes begins "REACTIVE file-playback
+run" for ALL 204 runs including the policy grids, so (a) is unusable and (b)
+cannot reach data already collected. The decision records DO carry `arm`, so
+`arm_of_turn` reads that first and falls back to the speculation counters,
+labelling the result "SPEC (arm not recorded)" rather than guessing which
+policy. 726 turns land in that bucket. Phase 5 records the policy per run.
+
+### DECISION — energy cannot be recovered, so it is instrumented instead
+
+ALTERNATIVES: (a) align telemetry.jsonl to turns post-hoc; (b) integrate in the
+sampler from Phase 5 on; (c) drop the energy axis. CHOSEN: (b), and (a) is
+recorded as impossible rather than attempted. telemetry t_ms is an offset from a
+sampler origin that was never written down, and turn records carry only
+second-resolution wall clocks; aligning a 10 Hz stream to a 5 s window through a
+1 s anchor puts the error on the order of the measurement. (c) would drop a
+stated contribution. The sampler now keeps (absolute ns, VDD_IN) and exposes
+`energy_j(start, end)` and `idle_mw(before)`; each turn records `energy_j` over
+[turn opened, first audio out] — the same window TTFA ends at — and
+`idle_power_mw` from the 2 s before it opened. THE NETTING IS DONE IN ANALYSIS,
+not in the record, so the choice of baseline stays visible and changeable
+without a re-run. energy_per_turn.py prints the missing-measurement notice until
+Phase 5 data exists; it printed it for all 5463 existing turns.

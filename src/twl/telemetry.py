@@ -16,6 +16,7 @@ Invariants:
 
 from __future__ import annotations
 
+import itertools
 import re
 import subprocess
 import threading
@@ -109,6 +110,11 @@ class TegrastatsSampler:
         # (absolute ns, temps by zone) for the per-turn thermal covariate.
         # 4096 samples at 10 Hz is ~7 minutes, far longer than any turn.
         self._recent_temps: deque[tuple[int, dict[str, float]]] = deque(maxlen=4096)
+        # (absolute ns, VDD_IN mW). Energy per turn is the integral of this
+        # over the turn's window, and it cannot be recovered afterwards from
+        # the JSONL: t_ms is an offset from a sampler origin that was never
+        # written down (see NOTES, DECISION 2026-09-23).
+        self._recent_power: deque[tuple[int, float]] = deque(maxlen=4096)
         self._out_path = out_path
         self._run_id = run_id
         self._interval_ms = interval_ms
@@ -146,7 +152,11 @@ class TegrastatsSampler:
                 soc = sample.power_mw.get("VDD_SOC")
                 if soc is not None:
                     self._recent_soc.append(float(soc))
-                self._recent_temps.append((self._origin_ns + int(t_ms * 1e6), sample.temps_c))
+                at_ns = self._origin_ns + int(t_ms * 1e6)
+                self._recent_temps.append((at_ns, sample.temps_c))
+                vdd_in = sample.power_mw.get("VDD_IN")
+                if vdd_in is not None:
+                    self._recent_power.append((at_ns, float(vdd_in)))
                 write_jsonl(fh, sample)
                 self.samples_written += 1
 
@@ -158,6 +168,32 @@ class TegrastatsSampler:
         mW), so thresholds derived from one apply to the other.
         """
         return list(self._recent_soc)[-n:]
+
+    def energy_j(self, start_ns: int, end_ns: int) -> float:
+        """Integral of VDD_IN over [start, end], in joules. -1.0 if unmeasurable.
+
+        Trapezoidal over the samples in the window, which at 10 Hz is tens of
+        points across a turn. RAW, not net of idle: the baseline is recorded
+        separately by ``idle_mw`` so the netting is done in analysis, where the
+        choice of baseline is visible and can be changed without a re-run.
+        """
+        rows = [(ns, mw) for ns, mw in self._recent_power if start_ns <= ns <= end_ns]
+        if len(rows) < 2:
+            return -1.0
+        joules = 0.0
+        for (t0, p0), (t1, p1) in itertools.pairwise(rows):
+            joules += (p0 + p1) / 2.0 * (t1 - t0) / 1e9 / 1000.0
+        return joules
+
+    def idle_mw(self, before_ns: int, window_s: float = 2.0) -> float:
+        """Median VDD_IN over the window ENDING at ``before_ns``. -1.0 if none.
+
+        Measured between turns, where the pipeline is quiet, so per-turn energy
+        can be reported net of the board's own draw.
+        """
+        lo = before_ns - int(window_s * 1e9)
+        vals = sorted(mw for ns, mw in self._recent_power if lo <= ns < before_ns)
+        return vals[len(vals) // 2] if vals else -1.0
 
     def temps_since(self, start_ns: int) -> dict[str, float]:
         """Median temperature per zone over the samples since ``start_ns``.
