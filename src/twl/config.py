@@ -12,7 +12,7 @@ Invariants:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -66,6 +66,36 @@ class VadConfig:
 
 
 @dataclass(frozen=True)
+class CommitConfig:
+    """COMMIT-WL: commit while listening, decode only the tail at the endpoint.
+
+    Disabled by default, and with ``enabled=False`` the recognizer behaves
+    byte-identically to the REACTIVE baseline — asserted by the smoke test on
+    the dev set, because an arm that quietly changes the baseline it is
+    compared against is not an arm.
+    """
+
+    enabled: bool = False
+    hypothesis_model: str = "tiny"
+    agreement_n: int = 2
+    tail_guard_s: float = 0.3
+    min_uncommitted_s: float = 1.0
+    word_timestamps: bool = True
+    use_initial_prompt: bool = True
+    # "controlled": self-paced to duty_max (twl.pacing). "naive": a fixed tick,
+    # the ablation P5 tests against.
+    issue_rule: str = "controlled"
+    # Cited to the two measured runs: duty 0.64 held, 0.96 starved the VAD
+    # (NOTES 2026-09-23d). Cadence is an OUTPUT of this, not a parameter.
+    duty_max: float = 0.6
+    naive_tick_s: float = 1.0
+    # "race": start the tail final immediately and discard any hypothesis still
+    # decoding. "wait": let it finish and commit it first. Chosen from the
+    # smoke and recorded there.
+    at_endpoint: str = "race"
+
+
+@dataclass(frozen=True)
 class SttConfig:
     """Streaming faster-whisper parameters (CPU; CTranslate2)."""
 
@@ -93,6 +123,7 @@ class SttConfig:
     # make it a different configuration from every run measured before.
     final_cpus: tuple[int, ...] = ()
     partial_cpus: tuple[int, ...] = ()
+    commit: CommitConfig = field(default_factory=CommitConfig)
 
 
 @dataclass(frozen=True)
@@ -153,6 +184,12 @@ class TwlConfig:
 VALID_LLM_BACKENDS = ("llama_server", "stub")
 
 
+# Sections that nest inside another section, by (owner, field). Explicit
+# rather than reflected off annotations: `from __future__ import annotations`
+# makes f.type a string, and resolving it would mean eval at config load.
+NESTED: dict[tuple[type, str], type] = {}
+
+
 def _build(cls: type[T], data: dict[str, Any], section: str) -> T:
     """Construct a section dataclass, rejecting unknown keys loudly."""
     known = {f.name for f in fields(cls)}
@@ -161,9 +198,22 @@ def _build(cls: type[T], data: dict[str, Any], section: str) -> T:
         raise ValueError(f"config section {section!r} has unknown keys: {sorted(unknown)}")
     coerced: dict[str, Any] = dict(data)
     for f in fields(cls):
-        if f.name in coerced and isinstance(coerced[f.name], list):
-            coerced[f.name] = tuple(coerced[f.name])
+        if f.name not in coerced:
+            continue
+        value = coerced[f.name]
+        if isinstance(value, list):
+            coerced[f.name] = tuple(value)
+        elif isinstance(value, dict):
+            # A nested section (stt.commit). Built through _build so its own
+            # unknown keys are rejected as loudly as a top-level section's.
+            nested = NESTED.get((cls, f.name))
+            if nested is None:
+                raise ValueError(f"config section {section!r} key {f.name!r} is not a section")
+            coerced[f.name] = _build(nested, value, f"{section}.{f.name}")
     return cls(**coerced)
+
+
+NESTED[(SttConfig, "commit")] = CommitConfig
 
 
 def load_config(path: Path) -> TwlConfig:
@@ -195,4 +245,10 @@ def load_config(path: Path) -> TwlConfig:
     cfg = TwlConfig(**kwargs)
     if cfg.llm.backend not in VALID_LLM_BACKENDS:
         raise ValueError(f"{path}: llm.backend must be one of {VALID_LLM_BACKENDS}")
+    if cfg.stt.commit.issue_rule not in ("controlled", "naive"):
+        raise ValueError(f"{path}: stt.commit.issue_rule must be controlled or naive")
+    if cfg.stt.commit.at_endpoint not in ("race", "wait"):
+        raise ValueError(f"{path}: stt.commit.at_endpoint must be race or wait")
+    if not 0.0 < cfg.stt.commit.duty_max <= 1.0:
+        raise ValueError(f"{path}: stt.commit.duty_max must be in (0, 1]")
     return cfg
