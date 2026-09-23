@@ -4629,3 +4629,31 @@ the configuration that will actually be run.
 P3 stands as pre-registered. This is recorded so that if it fails, the failure
 is not a surprise dressed up as an insight — and so that if it passes, the
 margin is read against a prior that said it might not.
+
+## 2026-09-23 — LIVE ACCEPTANCE: reactive-20260923-155717-5fa1a8. All invariants green
+
+32 turns (16 dev utterances x2), commit_wl.yaml, watchdog armed.
+
+    turns 32, files 32, invalid 0, orphan_marks 0, timeouts 0,
+    endpoint divergences 0, run_complete present
+    TTFA median 3646 ms (n=32); transcripts non-empty 32/32
+    COMMIT-WL dev WER median 0.000 — identical to the baseline's, and for the
+    same reason it was offline: nothing committed.
+
+    committed_words 0 on every turn; final_tail_s 2.44 s against audio 2.44 s
+    12 hypotheses over 32 turns, all at buffer 1.58 s, decode 912-1001 ms
+    cadence_ms -1 on all of them: one hypothesis per turn, so there is no
+    consecutive pair to derive a cadence from
+
+WHAT THIS ACCEPTS AND WHAT IT DOES NOT. It accepts the plumbing: the commit
+path runs live, turns correspond to files, the gate and the invariants hold, and
+the recogniser still produces a correct transcript. It does NOT accept the
+mechanism, because the mechanism does not engage on 2.4 s utterances — the same
+degeneracy the offline dev smoke showed, now confirmed live and for the same
+reason. THE CONTROLLER-VARIES CHECK CANNOT BE RUN HERE EITHER: with one
+hypothesis per turn there is no cadence to vary. It is a P5 check on the long
+subset, where it belongs.
+
+ENERGY IS MEASURED FOR THE FIRST TIME. energy_j is non-negative on 32 of 32
+turns: median 31.72 J raw, idle 5191 mW, 7.84 J net of idle over a 4.6 s
+window. Every previous record in the project carries -1.0. P7 is now scoreable.

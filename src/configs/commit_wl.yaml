@@ -1,0 +1,84 @@
+# COMMIT-WL acceptance: the dev set through the commit path.
+#
+# Identical to reactive.yaml except stt.commit.enabled. The settings below are
+# the sweep's choice (NOTES 2026-09-23h), measured on single_step_reasoning,
+# which is disjoint from every scored set.
+audio:
+  sample_rate: 16000
+  channels: 1
+  input_device_substr: "reSpeaker"
+  # The array delivers 2 DSP-processed channels; pick one EXPLICITLY. Measured
+  # 2026-09-15 (results/raw/capture_channels/): mean WER ch1 0.025, ch0 0.050,
+  # downmix 0.250. Channel 1 is also ~3x the level of channel 0.
+  device_channels: 2
+  capture_channel: 1
+  # Playback goes to the PortAudio 'pulse' device; PULSE_SINK picks the node.
+  # Headless default twl_null (created by run scripts); set pulse_sink to
+  # "alsa_output.usb-Jieli..." to hear replies on the room speaker.
+  output_device_substr: "pulse"
+  pulse_sink: "twl_null"
+
+vad:
+  confidence: 0.7
+  start_secs: 0.2
+  stop_secs: 0.8
+  min_volume: 0.6
+
+stt:
+  model: "base"
+  compute_type: "int8"
+  language: "en"
+  cpu_threads: 3
+  cpu_affinity: [3, 4, 5]
+  # Two-engine STT, decided 2026-09-17 on the live comparison: tiny for
+  # partials, base for the final, SHARED cores 3-5 and no pinning between them.
+  # Splitting the cores cost +1089 ms of commit latency (results/NOTES.md).
+  # CANONICAL as of 2026-09-23. Measured 2026-09-21 against [1.0, 2.0, 3.0] on
+  # the dev set: window at the first partial 978 ms against 591, decision-window
+  # coverage 32/32 against 30/32, STT commit 1670 ms [1602, 1863] against
+  # 2040 [2008, 2115] — better on every axis, and never adopted until now.
+  # Phases 2-4 were run at [1.0, 2.0, 3.0] and their numbers stand at that
+  # setting; they are not re-run for this change.
+  partial_offsets_s: [0.5, 1.5, 2.5]
+  partial_model: "tiny"
+  commit:
+    enabled: true
+    agreement_n: 2
+    tail_guard_s: 0.3
+    min_uncommitted_s: 1.0
+    word_timestamps: false
+    use_initial_prompt: true
+    issue_rule: controlled
+    duty_max: 0.6
+    at_endpoint: race
+  partial_cpu_threads: 3
+
+llm:
+  host: "127.0.0.1"
+  port: 8093
+  model_path: "/home/ali/voice-companion/models/gemma-4-E2B-q4_0.gguf"
+  ctx_size: 2048
+  threads: 3
+  cpu_affinity: [0, 1, 2]
+  n_gpu_layers: 99
+  parallel: 1
+  cache_reuse: 0
+  memory_max_mb: 3500
+  system_prompt: "You are a concise voice assistant. Answer in one or two short sentences."
+  max_tokens: 150
+  temperature: 0.5
+  # HTTP client timeout for the answer request. 30 s, not httpx's 120 s
+  # default: max_tokens 150 at the measured 31.8 ms/token (n=7062 generations,
+  # NOTES 2026-09-22) is ~4.8 s, plus prefill. 30 s is ~6x the worst expected
+  # reply and still bounds the progress watchdog, which otherwise treats
+  # "generating" as a sign of life for as long as the client will wait.
+  request_timeout_s: 30.0
+
+tts:
+  voice_path: "/home/ali/voice-companion/models/en_US-lessac-medium.onnx"
+  cpu_threads: 2
+
+telemetry:
+  interval_ms: 100
+
+results_dir: "results/raw"
