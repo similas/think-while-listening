@@ -4249,3 +4249,50 @@ stated contribution. The sampler now keeps (absolute ns, VDD_IN) and exposes
 not in the record, so the choice of baseline stays visible and changeable
 without a re-run. energy_per_turn.py prints the missing-measurement notice until
 Phase 5 data exists; it printed it for all 5463 existing turns.
+
+## 2026-09-23 — §3.5 offline: the VAD filter costs 82 ms, and the padded-encoder story is incomplete
+
+src/scripts/vad_filter_cost.py over 24 saved segments, 12.4-16.4 s, tiny int8,
+3 threads, SOLO (nothing else running), paired on byte-identical audio.
+
+VAD FILTER COST, paired:
+
+    with vad_filter     median 1123 ms
+    without             median 1044 ms
+    delta               median  +82 ms  [+63, +105]   (bootstrap over segments)
+    transcripts identical on 19/24
+
+IT IS NOT A FREE SPEED-UP. Turning it off changes the text on 5 of 24 segments
+— 21 % — so the 82 ms is bought with a transcript change, not with nothing.
+
+WHAT THE SLOPE IS, decode_ms = a + b x audio_s + c x words:
+
+    configuration        a ms    b ms/s   c ms/word   SE
+    with vad_filter       694      15.1         6.3   53
+    without vad_filter    636       9.7         7.6   51
+
+    audio-only slopes, for comparability: 31.6 ms/s with, 29.9 ms/s without
+
+THE "PADDED ENCODER IS FLAT" EXPLANATION IS INCOMPLETE AND THE B2 CORRECTION IS
+REWORDED. If the 30 s pad were the whole story, b would collapse toward zero
+once words are in the model. It does not: 15.1 ms/s with the filter, and still
+9.7 ms/s without it. The difference between the two, ~5.4 ms/s, IS the VAD
+filter — Silero runs over the whole buffer, so it is linear in audio. What
+remains, ~10 ms/s, is neither the encoder nor the words, and is unexplained.
+It is recorded as unexplained rather than attributed.
+
+This does not restore the earlier claim about the in-pipeline slope: that one
+(145.7 ms/s for the FINAL) is confounded with modelled overlap and stays
+withdrawn (2026-09-23b). These are solo decodes and give the SHAPE of the cost,
+not its in-pipeline level.
+
+### DECISION — vad_filter stays True
+
+ALTERNATIVES: (a) turn it off and keep 82 ms per decode; (b) keep it; (c) make
+it a config key and sweep it in Phase 5. CHOSEN: (b). 82 ms on a 1123 ms decode
+is 7 %, and it is not free — 21 % of segments transcribe differently without it,
+so (a) trades a small, certain speed-up for an uncontrolled change in the
+quantity P4 is about. (c) spends grid time on a 7 % effect while COMMIT-WL is
+aiming at the 57-83 % the final decode takes; the same 82 ms is saved many times
+over by decoding less audio, which is the thesis. Revisit only if P3 lands and
+the remaining TTFA is dominated by per-decode fixed cost.
