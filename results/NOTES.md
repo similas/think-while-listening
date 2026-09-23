@@ -4465,3 +4465,71 @@ The sweep therefore runs on a 16-item set from SINGLE_STEP_REASONING (median
 10.6 s, range 7.6-12.7), a different split of the same corpus, used for nothing
 else and for nothing afterwards. Whatever configuration it picks is then
 measured on multi_step without further tuning.
+
+## PRE-REGISTRATION 2026-09-23g — P3 to P8, before any Phase 5 run
+
+v3 §5.4, with P2 as amended (2026-09-22g, 2026-09-23) and P5 as amended
+(2026-09-23e). Committed before the grid. Every prediction names what would
+falsify it; where the design cannot produce the result, it is marked NOT
+TESTABLE rather than scored.
+
+SETS, five length points, one corpus:
+
+    dev (sixteen)               16 items   2.4 s median    6 words
+    short_digit                 20         4.8 s           4
+    long_digit                  20         5.4 s           4
+    single_step_reasoning       20        10.6 s          25   <- SELECTION ONLY
+    multi_step (seed 20260922)  80        15.4 s          42
+
+single_step_reasoning is the configuration-selection set (2026-09-23f) and is
+EXCLUDED from every scored comparison. Four length points remain.
+
+P1 STAGE SHARE. REACTIVE's stt_final share of TTFA >= 50 % at every length,
+   rising monotonically with duration. FALSIFIED if any set is < 40 % or the
+   order breaks. Prior evidence: 57 % and 64 % on the two valid buckets.
+
+P2a LISTENER OVERLAP. c, the final-decode cost per second of endpoint overlap,
+   in [0.5, 1.5] s/s. FALSIFIED if its CI lies entirely below 0.3 s/s.
+   Population: every Phase 5 turn with a partial in flight at the endpoint, arm
+   as covariate, overlap MEASURED from decode_done_ms and never modelled.
+P2b PAIRED RATIO. Final-decode ratio, overlap vs no overlap on the same items,
+   >= 1.5 on multi_step. FALSIFIED if the CI includes 1.2. NOT scored on dev.
+
+P3 COMMIT-WL TTFA. Median reduction against REACTIVE >= 1000 ms on multi_step
+   and >= 200 ms on dev, monotone in duration. FALSIFIED if the multi_step CI
+   includes 0. Prior evidence: the offline smoke saved 594 ms on the FINAL
+   DECODE alone at 13.6 s median; TTFA is the final plus the stages after it,
+   so the live number can differ in either direction.
+
+P4 COMMIT-WL WER. dWER <= +2.0 points on every split. FALSIFIED if > +5 on any.
+   PRIOR EVIDENCE SAYS THIS IS AT RISK: the offline smoke measured +2.7 points
+   at agreement_n 2, tail_guard 0.3, word granularity — over the bar before the
+   grid has run. The selection sweep is choosing a configuration on
+   single_step_reasoning; whatever it picks is scored here untouched. If P4
+   fails, P3 is reported as "a TTFA win at a WER cost", never as a win.
+
+P5 THE ISSUE RULE. NAIVE-1.0, CONTROLLED-0.6, CONTROLLED-0.8 on a 20-item
+   long-utterance multi_step subset, one rep each. NAIVE starves on >= 20 % of
+   turns (turns != files, or endpoint delay > 2x REACTIVE); both CONTROLLED
+   arms hold. If 0.8 starves, the boundary is reported as the bracket (0.6,
+   0.8). CONTROLLER-VARIES: CONTROLLED's ACHIEVED cadence must vary across
+   turns, or P5 is reported NOT TESTABLE rather than passing.
+
+P6 BOUNDED FINAL. Under COMMIT-WL the final decode is <= 1.3x the offline model
+   of its own tail, whatever was in flight. FALSIFIED if > 1.6x.
+
+P7 ENERGY. COMMIT-WL J/turn <= REACTIVE on multi_step, net of idle. FALSIFIED
+   if higher with a CI excluding 0. First Phase 5 run with energy wired; no
+   prior evidence exists, because the integration was never wired before
+   2026-09-23.
+
+P8 WHERE TO SPECULATE (descriptive, not falsifiable). On the same items, the
+   listener commits >= 60 % of words before the endpoint while the thinker's
+   draft is usable <= 10 % of the time. Prior evidence: the offline smoke
+   committed 73 % of the AUDIO (final saw 27 %); greedy p_usable is 0.062 at
+   f=0.75. Reported as a table, with the word fraction measured rather than the
+   audio fraction substituted for it.
+
+SCORING ORDER IS FIXED: P1 and P2 from REACTIVE runs, then P3/P4/P6/P7 from the
+COMMIT-WL comparison, then P5 from the three issue-rule arms, then P8 as a
+table. No prediction is read before the ones above it are scored.
