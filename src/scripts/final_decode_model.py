@@ -118,23 +118,52 @@ PARTIAL_MS_PER_S = 15.2
 PARTIAL_RESIDUAL_SE_MS = 429.0
 
 
-def overlap_seconds(partials: list[dict], stop_ms: float) -> tuple[float, bool]:
+def overlap_seconds(partials: list[dict], stop_ms: float) -> tuple[float, bool, bool]:
     """Seconds the last pre-endpoint partial kept decoding past the endpoint.
 
-    Returns (overlap_s, estimated). ``estimated`` is True when the partial was
-    cancelled and its decode had to be modelled.
+    DECODES QUEUE, SO A PARTIAL DOES NOT START WHEN IT IS ISSUED. The partial
+    loop awaits a lock, so a partial issued while its predecessor is still
+    decoding begins when that one finishes:
+
+        decode_start = max(issued_ms, previous decode_done)
+
+    ON THIS DATA THE CHAIN IS A NO-OP, and that is a fact about the loop, not a
+    shortcut: `_partial_loop` awaits each decode before advancing to the next
+    offset, so issue N+1 already happens after completion N and
+    max(issued, prev_done) == issued on 476/476 turns. Kept because it is the
+    correct expression of the quantity, because COMMIT-WL's issue rule will
+    change when partials are issued, and because it documents that the 1.0 s
+    cadence failure was the LOOP FALLING BEHIND ITS SCHEDULE, not decodes
+    running concurrently — a distinction the 2026-09-22 entry blurred.
+
+    A partial that RECORDED a completion supplies its own decode_done; only an
+    orphan (cancelled at the endpoint, no record) is modelled. Using the
+    measured value where it exists is a deviation from
+    "decode_start + decode_model" and is the more accurate of the two.
+
+    Returns (overlap_s, estimated, queued).
     """
-    before = [p for p in partials if p["issued_ms"] < stop_ms]
-    if not before:
-        return 0.0, False
-    last = max(before, key=lambda p: p["issued_ms"])
-    if last["done_ms"] > 0:
-        decode_ms = last["done_ms"] - last["issued_ms"]
-        estimated = False
-    else:
-        decode_ms = PARTIAL_INTERCEPT_MS + PARTIAL_MS_PER_S * float(last["offset_s"])
-        estimated = True
-    return max(0.0, last["issued_ms"] + decode_ms - stop_ms) / 1000.0, estimated
+    if not partials:
+        return 0.0, False, False
+    ordered = sorted(partials, key=lambda p: p["issued_ms"])
+    prev_done = 0.0
+    queued = False
+    last_before: tuple[float, bool, bool] | None = None
+    for p in ordered:
+        start = max(float(p["issued_ms"]), prev_done)
+        queued = queued or start > float(p["issued_ms"]) + 1e-9
+        if p["done_ms"] > 0:
+            done, est = float(p["done_ms"]), False
+        else:
+            done = start + PARTIAL_INTERCEPT_MS + PARTIAL_MS_PER_S * float(p["offset_s"])
+            est = True
+        prev_done = done
+        if p["issued_ms"] < stop_ms:
+            last_before = (done, est, queued)
+    if last_before is None:
+        return 0.0, False, False
+    done, est, queued = last_before
+    return max(0.0, done - stop_ms) / 1000.0, est, queued
 
 
 def load(pattern: str) -> tuple[list[dict], dict[str, list[float]]]:
@@ -163,7 +192,7 @@ def load(pattern: str) -> tuple[list[dict], dict[str, list[float]]]:
             final_ms = st["stt_final"] - st["vad_user_stopped"] - (t.get("stt_lock_wait_ms") or 0.0)
             if final_ms <= 0:
                 continue
-            ov, est = overlap_seconds(partials.get(t["turn"], []), st["vad_user_stopped"])
+            ov, est, queued = overlap_seconds(partials.get(t["turn"], []), st["vad_user_stopped"])
             rows.append(
                 {
                     "run": run,
@@ -172,6 +201,7 @@ def load(pattern: str) -> tuple[list[dict], dict[str, list[float]]]:
                     "in_flight": float(ov > 0.0),
                     "final_ms": final_ms,
                     "estimated": est,
+                    "queued": queued,
                 }
             )
             overlap_by_run[run].append(ov)
@@ -244,6 +274,11 @@ def main() -> None:
     print(
         f"  decode ESTIMATED (partial cancelled at the endpoint) on "
         f"{n_est}/{len(rows)} = {n_est / len(rows):.3f}"
+    )
+    n_q = sum(1 for r in rows if r["queued"])
+    print(
+        f"  decode started LATER than issued (queued) on {n_q}/{len(rows)}: the "
+        f"partial loop awaits each decode, so issue already follows completion"
     )
 
     a, b, c = report(rows, "PRIMARY: c per SECOND of overlap", args.reps, args.seed)

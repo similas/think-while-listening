@@ -186,6 +186,17 @@ class PartialRecord:
     done_ms: float
     emitted: bool
     speech_end_ms: float = -1.0
+    # When the WORKER THREAD actually began and ended this decode, on the
+    # turn's clock. issued_ms is when the loop asked for it; these are when it
+    # happened, and for an orphan they are the only record that it happened at
+    # all. -1.0 until the callback lands.
+    decode_start_ms: float = -1.0
+    decode_done_ms: float = -1.0
+    # The decode outlived its turn's endpoint, so it overlapped the final. This
+    # is the listener's overlap, MEASURED rather than modelled (NOTES
+    # 2026-09-22: every overlap in the existing logs had to be estimated,
+    # because a partial only recorded a completion by finishing in time).
+    orphaned: bool = False
 
     kind: str = field(default="partial_record", init=False)
 

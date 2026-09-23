@@ -3999,3 +3999,75 @@ is unidentified without the estimates. Sensitivity by moving the partial model
 c stays above 0.41 s/s at the worst bound of the worst shift, so P2a's
 falsification line (CI entirely below 0.3 s/s) is not approached by any of them.
 That is prior evidence, not P2a: P2a is scored on Phase 5 runs.
+
+## 2026-09-23 — Overlap refit with queued decode starts: NO CHANGE, and that is the finding
+
+decode_start = max(issued_ms, previous partial's decode_done) was added so a
+partial that begins late is not credited with an early start.
+
+    changed on 0 of 476 turns. b UNMOVED at 145.7 [140.5, 154.5];
+    a 1065.5, c 746.9 [570.8, 1029.2]; residual table identical.
+
+WHY IT IS A NO-OP HERE: `_partial_loop` awaits each decode before advancing to
+the next offset, so ISSUE N+1 ALREADY FOLLOWS COMPLETION N and
+max(issued, prev_done) == issued by construction. The code is kept — it is the
+correct expression of the quantity and COMMIT-WL's issue rule will change when
+partials are issued — and the run now prints the queued count so the assumption
+is checked rather than believed.
+
+THIS CORRECTS THE 2026-09-22 CADENCE ENTRY. It said a 1.0 s cadence made
+"decodes queue" and "the backlog never drained". Decodes never overlapped each
+other; the LOOP fell behind its schedule, which is a different thing — achieved
+cadence 1346 ms against a 1000 ms schedule because each tick waits for the
+previous decode. The VAD starvation is still real and still attributed to the
+partial load; the mechanism is duty cycle on shared cores, not a queue.
+
+b DID NOT MOVE TOWARD THE OFFLINE SLOPE. Offline, base fits 1384 ms + 74 ms/s
+(2026-09-17, B2). In the pipeline it is 145.7 ms/s — 1.97x the offline slope,
+unchanged by this refit. The gap is not an artefact of how decode starts were
+attributed.
+
+## AMENDMENT 2026-09-23 to P2a's scoring population. Before any Phase 5 data
+
+P2a (c in [0.5, 1.5] s of final decode per second of overlap; falsified if the
+CI lies entirely below 0.3) is scored as follows:
+
+  POPULATION: every Phase 5 turn with a partial in flight at the endpoint,
+  across all arms. ARM is a covariate, not a filter — the question is what a
+  second of overlap costs, and it should not depend on which arm produced the
+  overlap; if it does, that is a result.
+
+  OVERLAP IS MEASURED, NOT ESTIMATED. Phase 5 records decode_start_ms and
+  decode_done_ms for every partial including orphans, reported from the worker
+  thread and attributed to the issuing turn (twl/turns.py
+  note_partial_boundaries). overlap_ms = decode_done_ms - the turn's endpoint.
+  No row in the P2a fit may carry a modelled decode; the existing-log fit,
+  where 393 of 465 were modelled, is prior evidence only.
+
+  CANONICAL REACTIVE TURNS CONTRIBUTE ONLY TO THE overlap = 0 BASELINE. Their
+  offsets are [1.0, 2.0, 3.0], so on long audio they stop producing partials
+  early and their overlap is structurally near zero; using them as overlap
+  cases would confound overlap with utterance length.
+
+  LONG AUDIO NEEDS CONTRAST, so the dense-cadence REACTIVE window(f) run
+  (v3 §8 step 7) gets 2 REPS rather than 1. In the existing data the audio
+  buckets above 12 s hold 18 and 2 turns; both models under-predict there and
+  neither the slope nor c is settled above 12 s.
+
+## 2026-09-23 — Phase 5 instrumentation and the LLM client timeout
+
+PARTIAL RECORDS now carry decode_start_ms, decode_done_ms and orphaned. The
+boundaries are reported from the WORKER THREAD, so a decode whose task was
+cancelled at the endpoint reports too — that decode is the whole treatment
+group for the listener penalty and previously recorded nothing. A report that
+arrives after its turn has been flushed is written as its own record carrying
+THE TURN THAT ISSUED IT, counted in `late_partials`; a report for a turn the
+manager never saw increments orphan_marks rather than being attached to
+whatever turn happens to be open. Four tests, including the run-3 shape.
+
+LLM CLIENT TIMEOUT 30 s, in the config as `llm.request_timeout_s` with its
+arithmetic: max_tokens 150 at the measured 31.8 ms/token is ~4.8 s, so 30 s is
+~6x the worst expected reply. It was httpx's 120 s default, which bounded the
+progress watchdog at 120 s against STUCK_MS's 10 s. The window is now 30 s.
+Still a window: the LLM probe is a bound, not a guarantee, and the docstring
+says so.

@@ -26,7 +26,7 @@ import os
 import threading
 import wave
 from collections import deque
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -192,7 +192,12 @@ class StreamingWhisperSTT(STTService):
                 self.madvise_report.regions_marked,
             )
 
-    def _decode(self, audio: npt.NDArray[np.float32], model: WhisperModel | None = None) -> str:
+    def _decode(
+        self,
+        audio: npt.NDArray[np.float32],
+        model: WhisperModel | None = None,
+        on_boundaries: Callable[[int, int], None] | None = None,
+    ) -> str:
         # COUNTED IN THE WORKER THREAD, NOT AROUND THE AWAIT. Cancelling the
         # partial task at the endpoint unwinds the coroutine but does NOT stop
         # the transcribe() already running in the thread pool: it keeps a core
@@ -205,8 +210,15 @@ class StreamingWhisperSTT(STTService):
         try:
             return self._transcribe(audio, model)
         finally:
+            done = now_ns()
             with self._activity_lock:
                 self._decode_starts.remove(started)
+            if on_boundaries is not None:
+                # IN THE WORKER THREAD, ON PURPOSE. A decode whose task was
+                # cancelled at the endpoint reports here and nowhere else; a
+                # callback awaited on the loop would never run for exactly the
+                # decodes whose cost is largest.
+                on_boundaries(started, done)
 
     def _transcribe(self, audio: npt.NDArray[np.float32], model: WhisperModel | None) -> str:
         engine = model if model is not None else self._model
@@ -280,8 +292,17 @@ class StreamingWhisperSTT(STTService):
                 issued_ns=issued_ns,
             )
             t0 = now_ns()
+            turn_of_this_partial = self._turns.turn
+
+            def report(
+                start_ns: int, done_ns: int, _t: int = turn_of_this_partial, _o: float = offset
+            ) -> None:
+                self._turns.note_partial_boundaries(
+                    turn=_t, offset_s=_o, start_ns=start_ns, done_ns=done_ns
+                )
+
             async with lock:
-                text = await asyncio.to_thread(self._decode, prefix, self._partial_model)
+                text = await asyncio.to_thread(self._decode, prefix, self._partial_model, report)
             done_ns = now_ns()
             decode_ms = (done_ns - t0) / 1e6
             self._turns.mark("stt_partial_done", at_ns=done_ns)

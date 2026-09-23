@@ -106,7 +106,9 @@ class LlamaChatProcessor(FrameProcessor):
 
     async def _generate(self, text: str) -> None:
         if self._client is None:
-            self._client = LlamaClient(self._cfg.host, self._cfg.port)
+            self._client = LlamaClient(
+                self._cfg.host, self._cfg.port, timeout_s=self._cfg.request_timeout_s
+            )
         await self.push_frame(LLMFullResponseStartFrame())
         first_ns: list[int] = []
         try:

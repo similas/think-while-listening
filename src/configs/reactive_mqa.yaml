@@ -72,6 +72,12 @@ llm:
   system_prompt: "You are a concise voice assistant. Answer in one or two short sentences."
   max_tokens: 150
   temperature: 0.5
+  # HTTP client timeout for the answer request. 30 s, not httpx's 120 s
+  # default: max_tokens 150 at the measured 31.8 ms/token (n=7062 generations,
+  # NOTES 2026-09-22) is ~4.8 s, plus prefill. 30 s is ~6x the worst expected
+  # reply and still bounds the progress watchdog, which otherwise treats
+  # "generating" as a sign of life for as long as the client will wait.
+  request_timeout_s: 30.0
 
 tts:
   voice_path: "/home/ali/voice-companion/models/en_US-lessac-medium.onnx"

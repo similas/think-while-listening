@@ -299,12 +299,13 @@ class StageObserver(BaseObserver):
         BOTH PROBES ARE BOUNDED, which is what makes "busy" safe to treat as
         progress. A decode is bounded by DECODE_HANG_MS above. A generation is
         bounded by the HTTP client: ``LlamaClient`` builds its
-        ``httpx.AsyncClient`` with ``timeout=timeout_s`` (120 s by default, and
-        ``LlamaChatProcessor`` takes the default), so a stalled stream raises,
+        ``httpx.AsyncClient`` with ``timeout=timeout_s``, and
+        ``LlamaChatProcessor`` passes ``llm.request_timeout_s`` (30 s, sized in
+        the config from the measured decode rate), so a stalled stream raises,
         ``_generate`` catches it, the task completes and ``generating`` goes
-        false. The worst case is therefore a turn held for the client timeout
-        rather than for ever — 120 s against STUCK_MS's 10 s, which is a real
-        window and is why the LLM probe is a bound, not a guarantee.
+        false. The worst case is a turn held for that timeout rather than for
+        ever — 30 s against STUCK_MS's 10 s, still a real window, which is why
+        the LLM probe is a bound and not a guarantee.
         """
         stt = self._stt_busy is not None and self._stt_busy()
         llm = self._llm_busy is not None and self._llm_busy()

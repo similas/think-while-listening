@@ -119,6 +119,7 @@ class LlmConfig:
     system_prompt: str = "You are a concise voice assistant. Answer in one or two short sentences."
     max_tokens: int = 150
     temperature: float = 0.5
+    request_timeout_s: float = 30.0
 
 
 @dataclass(frozen=True)

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -65,6 +66,8 @@ class _PendingPartial:
     text: str = ""
     decode_ms: float = -1.0
     done_ms: float = -1.0
+    decode_start_ms: float = -1.0
+    decode_done_ms: float = -1.0
     emitted: bool = False
 
 
@@ -168,6 +171,12 @@ class TurnManager:
         self._tj_zone = find_thermal_zone()
         self.orphan_marks = 0
         self.last_mark_ns = 0
+        self.late_partials = 0
+        # A worker thread may report a decode after its turn has closed, so
+        # both the origins and the endpoints outlive the turns themselves.
+        self._origin_by_turn: dict[int, int] = {}
+        self._stop_ns_by_turn: dict[int, int] = {}
+        self._write_lock = threading.Lock()
         self.turns_written = 0
         # Set by _check_turn_invariant; the run aborts on it rather than
         # finishing and reporting numbers that cannot mean what they say.
@@ -221,6 +230,7 @@ class TurnManager:
         self._lock_wait_ms = -1.0
         self._ctxt_at_start = read_ctxt_switches(os.getpid())
         self._turn_opened_ns = at_ns
+        self._origin_by_turn[self._turn] = self._clock.origin_ns
         self._contention = {}
         if self._detector is not None:
             self._detector.begin_turn()
@@ -236,6 +246,8 @@ class TurnManager:
                 return
             self._marked_once.add(stage)
         m = self._clock.mark(stage, at_ns=at_ns)
+        if stage == "vad_user_stopped":
+            self._stop_ns_by_turn[self._turn] = at_ns if at_ns is not None else now_ns()
         # A stage mark is the turn's sign of life. The progress watchdog reads
         # this instead of the turn's age: on a long corpus a healthy turn runs
         # for 50 s, so age says nothing, while a turn that has marked nothing
@@ -281,6 +293,56 @@ class TurnManager:
             )
         )
 
+    def note_partial_boundaries(
+        self, *, turn: int, offset_s: float, start_ns: int, done_ns: int
+    ) -> None:
+        """A decode's true start and end, reported FROM THE WORKER THREAD.
+
+        Called whether or not the decode's task survived, which is the point:
+        an orphaned partial reports here and nowhere else. It may arrive after
+        its turn has already been flushed, so a late report is written as its
+        own record carrying its own turn number rather than being dropped.
+
+        Thread safety: this runs on a thread-pool thread while the event loop
+        may also be writing, so the file handle is guarded.
+        """
+        with self._write_lock:
+            origin = self._origin_by_turn.get(turn)
+            if origin is None:
+                self.orphan_marks += 1
+                return
+            start_ms = round((start_ns - origin) / 1e6, 1)
+            done_ms = round((done_ns - origin) / 1e6, 1)
+            stop_ns = self._stop_ns_by_turn.get(turn)
+            orphaned = stop_ns is not None and done_ns > stop_ns
+            if turn == self._turn and self._clock is not None:
+                for rec in reversed(self._partials):
+                    if rec.offset_s == round(offset_s, 3) and rec.decode_done_ms < 0:
+                        rec.decode_start_ms = start_ms
+                        rec.decode_done_ms = done_ms
+                        return
+            # The turn is gone: write a standalone record so the decode is not
+            # lost. It carries the turn it belonged to, not the turn that
+            # happens to be open.
+            write_jsonl(
+                self._fh,
+                PartialRecord(
+                    run_id=self._run_id,
+                    turn=turn,
+                    offset_s=round(offset_s, 3),
+                    engine="",
+                    text="",
+                    decode_ms=round(done_ms - start_ms, 1),
+                    issued_ms=-1.0,
+                    done_ms=-1.0,
+                    emitted=False,
+                    decode_start_ms=start_ms,
+                    decode_done_ms=done_ms,
+                    orphaned=orphaned,
+                ),
+            )
+            self.late_partials += 1
+
     def note_partial_done(
         self, *, offset_s: float, text: str, decode_ms: float, done_ns: int, emitted: bool
     ) -> None:
@@ -316,6 +378,9 @@ class TurnManager:
                     done_ms=rec.done_ms,
                     emitted=rec.emitted,
                     speech_end_ms=speech_end_ms,
+                    decode_start_ms=rec.decode_start_ms,
+                    decode_done_ms=rec.decode_done_ms,
+                    orphaned=rec.decode_done_ms > speech_end_ms >= 0,
                 ),
             )
         self._partials = []
