@@ -4296,3 +4296,61 @@ quantity P4 is about. (c) spends grid time on a 7 % effect while COMMIT-WL is
 aiming at the 57-83 % the final decode takes; the same 82 ms is saved many times
 over by decoding less audio, which is the thesis. Revisit only if P3 lands and
 the remaining TTFA is dominated by per-decode fixed cost.
+
+## SPEC AMENDMENT 2026-09-23d — v3 §2.2's issue rule is SELF-PACED. Written before the code
+
+Replaces the fixed-cadence-plus-duty-skip semantics of 2026-09-23c. That rule
+skipped ticks off a fixed grid, which at a 1.0 s tick and a 1.3 s decode skips
+every tick and issues nothing — a controller with no output.
+
+CONTROLLED HAS NO CADENCE PARAMETER. It issues the next hypothesis when:
+
+    no hypothesis is in flight
+    AND uncommitted audio >= min_uncommitted_s (1.0 s)
+    AND the recognizer has been idle for >= (1/duty_max - 1) x D
+
+where D is the last hypothesis's measured decode ms, seeded for the first
+hypothesis from the in-pipeline partial model at the current buffer
+(1410 + 15.2 x buffer_s). The idle requirement is the algebra of the duty
+target: a decode of D followed by an idle gap of (1/duty_max - 1) x D gives a
+period of D/duty_max and therefore a duty of exactly duty_max.
+
+    duty_max = 0.6 (config, cited to the two measured runs: 0.64 held,
+    0.96 starved)
+
+CADENCE IS AN OUTPUT, NOT AN INPUT. Achieved cadence and achieved duty are
+logged per hypothesis. The controller paces itself off its own measured cost,
+so a slower decode widens the gap instead of dropping a tick.
+
+NAIVE: a fixed 1.0 s tick, no duty bound. The ablation.
+
+PREDICTED OPERATING POINT, recorded so the build can be checked against it: at
+duty_max 0.6 and an in-pipeline tiny decode of 1.3-1.6 s, the paced cadence is
+D/0.6 = 2.2-2.7 s; LocalAgreement-2 commits one hypothesis behind the newest, so
+the committed transcript lags the audio by about two hypotheses, 4.4-5.4 s.
+TINY'S FIXED ENCODER COST IS THE CEILING ON COMMIT RATE — the 30 s pad means a
+1 s buffer costs nearly what a 15 s one does, so no pacing rule can commit more
+often than ~1/D. That is a property of Whisper on this device, not of the
+controller, and it goes in Limitations.
+
+## AMENDMENT 2026-09-23e to P5 (v3 §5.4). Before any Phase 5 data
+
+P5 as written compared NAIVE at 1.0 s against CONTROLLED at the same cadence.
+CONTROLLED no longer has a cadence, so the comparison is respecified:
+
+    ARMS: NAIVE-1.0, CONTROLLED-0.6, CONTROLLED-0.8
+    SET:  a 20-item long-utterance subset of multi_step (seed 20260922)
+    REPS: one each
+
+    PREDICTION: NAIVE-1.0 starves (VAD starvation on >= 20 % of turns:
+    turns != files, or endpoint delay > 2x REACTIVE); CONTROLLED-0.6 holds;
+    CONTROLLED-0.8 holds.
+
+    IF 0.8 STARVES, the boundary is reported as (0.6, 0.8) — a bracket, not a
+    point, because two arms cannot locate it more finely than that.
+
+    CONTROLLER-VARIES CHECK: CONTROLLED's ACHIEVED CADENCE must vary across
+    turns. A controller whose output is constant has not been tested, and this
+    project has refused to report that as a result since Phase 4. If the
+    achieved cadence is constant to within the logging resolution, P5 is
+    reported as not testable rather than as passing.
