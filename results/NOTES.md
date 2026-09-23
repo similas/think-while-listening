@@ -4071,3 +4071,64 @@ arithmetic: max_tokens 150 at the measured 31.8 ms/token is ~4.8 s, so 30 s is
 progress watchdog at 120 s against STUCK_MS's 10 s. The window is now 30 s.
 Still a window: the LLM probe is a bound, not a guarantee, and the docstring
 says so.
+
+## CORRECTION (2026-09-23b). "b is 1.97x the offline slope" IS WITHDRAWN — it is confounded
+
+The previous entry reported b = 145.7 ms/s against the offline 74 ms/s and called
+the gap real because the queued-start refit did not move it. That does not follow.
+
+b IS CONFOUNDED WITH THE MODELLED OVERLAP AT LONG AUDIO. Overlap and audio length
+co-vary, and above 12 s of audio 16 of 20 rows carry a MODELLED overlap
+(445 rows below 12 s, 377 modelled). The partial model was fitted on decodes
+running SOLO, so it under-estimates a decode running beside a final — which is
+precisely the long-audio case. An under-estimated overlap leaves cost unexplained
+by c, and the regression puts it on the term that co-varies with it: b. The
+refit not moving b says only that decode starts were attributed correctly; it
+says nothing about this.
+
+So b = 145.7 ms/s is not a measurement of the in-pipeline slope, and nothing is
+claimed about the offline 74 ms/s until it is.
+
+RESOLUTION, in Phase 5: canonical REACTIVE identifies b with overlap = 0 at
+EVERY length. Its offsets are [1.0, 2.0, 3.0], so on long audio it stops
+producing partials well before the endpoint and its finals decode alone. b comes
+from those turns; c comes from the turns with measured overlap. Neither term is
+then carrying the other's error.
+
+## AMENDMENT 2026-09-23c to v3 §2.2's issue rule. Written before the code
+
+    issue a hypothesis only if
+        no hypothesis is in flight
+        AND uncommitted audio >= min_uncommitted_s (1.0)
+        AND expected_decode_ms <= duty_max x cadence_ms
+
+    stt.commit.duty_max: 0.6
+
+DUTY, NOT LATENESS, IS THE VARIABLE. The rule's third clause was
+"expected_decode <= cadence", which admits duty 1.0 — the configuration that
+starved the VAD. The two measured points:
+
+    cadence   decode    achieved   duty   outcome
+    1.0 s     1294 ms   1346 ms    0.96   VAD starved, 80 files -> 94 turns
+    2.5 s     1599 ms   2490 ms    0.64   held
+
+COMMIT-WL-NAIVE = fixed cadence, no duty bound. P5 is the test of duty_max.
+
+TWO PROBLEMS WITH 0.6, RECORDED NOW RATHER THAN DISCOVERED IN THE GRID:
+
+ 1. IT EXCLUDES THE ONLY CONFIGURATION OBSERVED TO HOLD. The 2.5 s run ran at
+    0.64 measured on its OWN decodes (1599 ms median). 0.55 is what the 1.0 s
+    run's decode (1294 ms) gives against a 2.5 s cadence, but that is not what
+    the 2.5 s run did — its buffers were longer. Under duty_max 0.6 that run's
+    ticks would have been skipped.
+ 2. AT A 1.0 s CADENCE IT ISSUES NOTHING. expected_decode ~1294-1599 ms against
+    0.6 x 1000 = 600 ms, so every tick is skipped. P5 compares NAIVE at 1.0 s
+    against CONTROLLED at 1.0 s; CONTROLLED would emit ZERO partials, show no
+    starvation trivially, and be a controller with no varying output — the
+    degenerate case this project has refused to report as a result since Phase 4.
+    The minimum cadence admitting any partial at duty_max 0.6 is ~2.2-2.7 s.
+
+The value is recorded as specified and is a CONFIG KEY, cited to the two runs,
+so P5 can vary it. Whether 0.6 stands, or 0.7 (admitting the run that held), or
+whether CONTROLLED's cadence must differ from NAIVE's for P5 to be non-degenerate,
+is an open decision.

@@ -173,8 +173,15 @@ Root-level files are allowed; no other top-level folders.
       finished and 80 files became 94 turns. REPLACED by a gate that waits for
       observed silence; `gap_ms` is now only the pause after the reply.
     - the partial cadence, set from tiny's OFFLINE decode (median 759 ms)
-      when the in-pipeline figure is 1294 ms (p95 1958). DERIVED from the
-      in-pipeline measurement now, and recorded in the config with its n.
+      when the in-pipeline figure is 1294 ms (p95 1958). The failure is a DUTY
+      CYCLE on shared cores, not a queue: the partial loop awaits each decode,
+      so decodes never overlap each other and nothing backs up. What varies is
+      the fraction of wall time the recognizer holds cores 3-5.
+          1.0 s cadence: decode 1294 ms / achieved 1346 ms = duty 0.96 -> the
+            VAD was starved and 80 files became 94 turns
+          2.5 s cadence: decode 1599 ms / achieved 2490 ms = duty 0.64 -> held
+      DERIVED from the in-pipeline measurement now, and recorded in the config
+      with its n.
   Where neither is possible, the run must assert the constant still holds and
   abort if it does not.
 

@@ -12,15 +12,21 @@
 # tiny decodes in a median of 1294 ms, p95 1958, max 3081 (n=274, run
 # reactive-20260922-114950-c676ba): 1.7x the offline number, because it shares
 # cores 3-5 with VAD, the agent, TTS and the final base decode. At a 1.0 s
-# cadence the decodes never kept up (achieved cadence 1346 ms), the backlog
-# never drained, and from turn 16 the VAD was starved badly enough to fragment
+# cadence the recognizer held its cores 96 % of the time (decode 1294 ms against
+# an achieved cadence of 1346 ms), and from turn 16 the VAD was starved badly
+# enough to fragment
 # utterances — 72 of 94 turns had no endpoint at all and the run was unusable
 # for window(f).
 #
-# 2.5 s clears the p95 with ~0.5 s of slack per partial, so a backlog drains
-# instead of accumulating. On the 15.4 s median utterance it still yields ~6
-# partials spanning f = 0.16 to 0.97, which covers every fraction the prefix
-# probe reports.
+# THE VARIABLE IS DUTY CYCLE, NOT A BACKLOG. The partial loop awaits each decode
+# before advancing, so decodes never overlap each other and nothing queues
+# (verified: 0 of 476 turns had a decode start later than it was issued). What
+# changes is the fraction of wall time the recognizer holds cores 3-5, which is
+# what starves the VAD:
+#     1.0 s cadence  decode 1294 ms / achieved 1346 ms = duty 0.96   starved
+#     2.5 s cadence  decode 1599 ms / achieved 2490 ms = duty 0.64   held
+# On the 15.4 s median utterance 2.5 s still yields ~6 partials spanning
+# f = 0.16 to 0.97, covering every fraction the prefix probe reports.
 #
 # The cost of the extra partials is the covariate: STT commit latency against
 # the canonical offsets on the same items, reported paired.
