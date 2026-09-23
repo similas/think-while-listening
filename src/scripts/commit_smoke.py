@@ -61,6 +61,8 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--wav-dir", type=Path, default=Path("results/raw/audio/sixteen"))
     p.add_argument("--duty-max", type=float, default=0.6)
+    p.add_argument("--agreement-n", type=int, default=2)
+    p.add_argument("--tail-guard-s", type=float, default=0.3)
     p.add_argument("--out", type=Path, default=Path("results/raw/commit_smoke.json"))
     args = p.parse_args()
 
@@ -108,7 +110,9 @@ def main() -> None:
 
         per_mode = {}
         for want_words in (True, False):
-            committer = LocalAgreementCommitter()
+            committer = LocalAgreementCommitter(
+                agreement_n=args.agreement_n, tail_guard_s=args.tail_guard_s
+            )
             issuer = SelfPacedIssuer(duty_max=args.duty_max)
             now_s, hyp_ms, n_hyp = 0.0, [], 0
             idle_ms = 1e9  # nothing has run yet
@@ -197,7 +201,10 @@ def main() -> None:
     def med(key: str) -> float:
         return statistics.median([float(r[key]) for r in rows])  # type: ignore[arg-type]
 
-    print(f"\nSMOKE on {len(rows)} dev segments, duty_max {args.duty_max}")
+    print(
+        f"\nSMOKE on {len(rows)} segments, duty_max {args.duty_max}, "
+        f"agreement_n {args.agreement_n}, tail_guard {args.tail_guard_s}"
+    )
     print(f"  baseline WER      {med('baseline_wer'):.3f}")
     print(f"  COMMIT-WL WER     {med('words_wer'):.3f}   (word timestamps)")
     print(f"  COMMIT-WL WER     {med('segments_wer'):.3f}   (segment granularity)")

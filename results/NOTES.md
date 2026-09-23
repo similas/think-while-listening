@@ -4402,3 +4402,66 @@ numbers set at_endpoint. This is consistent with P3, which predicts only
 >= 200 ms on the dev set against >= 1000 ms on multi-step — but it means the
 dev set cannot be the acceptance gate for anything but "it does not break the
 baseline".
+
+## CORRECTION (2026-09-23f) — the word_timestamps DECISION was made on degenerate data
+
+The previous entry chose word timestamps from a +5.7 % decode cost measured on
+the 16 dev segments. NOTHING WAS COMMITTED ON ANY OF THEM, so that 5.7 % was
+measured over hypotheses that never fed a commit, and the WER half of the
+comparison was vacuous — every arm's transcript was the baseline's. A choice
+made on a degenerate comparison is not a choice. Withdrawn.
+
+Re-measured on 16 long segments (median 13.6 s), where the mechanism runs:
+
+    word timestamps cost -0.9 % of the hypothesis decode (866 vs 874 ms)
+    COMMIT-WL WER  0.065 words   0.056 segments   baseline 0.038
+
+So the cost argument disappears (word timestamps are free on long audio) and
+reverses on accuracy: SEGMENT granularity transcribes better. The choice is
+reopened and settled below with the rest of the acceptance sweep.
+
+## 2026-09-23 — The long-audio smoke: the mechanism WORKS and FAILS ITS WER BAR
+
+16 segments from the seeded multi_step pull, median 13.6 s, offline replay
+through the real engines with the real self-paced issuer.
+
+    final decodes 3.71 s of 13.63 s = 27 % of the audio
+    final decode  1599 ms against a baseline 2193 ms   (-594 ms)
+    hypotheses per utterance 4-9
+
+    baseline WER    0.038
+    COMMIT-WL WER   0.065 (words)   0.056 (segments)
+    dWER            +0.027           bar is +0.020  ->  FAIL
+
+THE MECHANISM IS REAL: the final is handed a quarter of the audio and costs
+594 ms less. THE ACCEPTANCE BAR IS NOT MET, and that is reported as a failure
+rather than absorbed. A TTFA win bought with WER is not a win (P4 says so in
+advance), and §2.6's bar exists to catch exactly this.
+
+RACE vs WAIT, measured: waiting for the hypothesis in flight at the endpoint
+would add a median 523 ms (max 1468) before the tail final can start, and it
+buys a shorter tail ONLY if that hypothesis commits — which under
+LocalAgreement-2 needs a SECOND agreeing hypothesis that has not been issued.
+So wait pays 523 ms for a commit that cannot happen yet.
+
+### DECISION — at_endpoint = race
+
+ALTERNATIVES: (a) race — discard the hypothesis in flight and start the tail
+final now; (b) wait — let it finish, commit it, decode a shorter tail.
+CHOSEN: (a). Measured, wait costs a median 523 ms of dead time at the endpoint,
+which is 88 % of the 594 ms the shorter tail saves — and it buys nothing under
+agreement-2, because the hypothesis it waits for cannot commit alone. (b)
+becomes arguable only under agreement-1 (commit the newest hypothesis
+outright), which trades the whole correctness argument for latency and is not
+what LocalAgreement is. Revisit if agreement_n=1 is ever measured.
+
+### SELECTION SET, disjoint from Phase 5
+
+The WER failure needs a configuration sweep, and sweeping on the smoke set
+would be selection on the test set: Phase 5's long subset is drawn from
+multi_step seed 20260922, and the smoke above used 16 of those same 80.
+
+The sweep therefore runs on a 16-item set from SINGLE_STEP_REASONING (median
+10.6 s, range 7.6-12.7), a different split of the same corpus, used for nothing
+else and for nothing afterwards. Whatever configuration it picks is then
+measured on multi_step without further tuning.
