@@ -4533,3 +4533,45 @@ P8 WHERE TO SPECULATE (descriptive, not falsifiable). On the same items, the
 SCORING ORDER IS FIXED: P1 and P2 from REACTIVE runs, then P3/P4/P6/P7 from the
 COMMIT-WL comparison, then P5 from the three issue-rule arms, then P8 as a
 table. No prediction is read before the ones above it are scored.
+
+## 2026-09-23 — RUN PLAN for step 6, with per-pass durations
+
+Per-pass time = corpus audio + items x (7.0 s measured reply tail + 1.0 s gate
+pause). The plan gate's own estimator still uses a flat 3.1 s/turn overhead
+calibrated on the dev set and UNDERSTATES long corpora; these are the numbers to
+approve against, and the gate will report lower.
+
+    set                  items   audio min   pass min
+    dev (sixteen)           16         0.5        2.6
+    short_digit             20         1.6        4.3
+    long_digit              20         1.8        4.4
+    multi_step (seed)       80        22.5       33.2
+    P5 long subset          20         8.3       10.9   (the 20 longest of the 80)
+
+PASSES, each one run separately with --plan/--yes, watchdog, headless, clocks
+recorded, invariants armed:
+
+    #   arm              sets                       reps   min    > 30 min?
+    1   REACTIVE         dev+short+long+multi        3      134    yes, 4 passes
+    2   COMMIT-WL        dev+short+long+multi        3      134    yes, 4 passes
+    3   NAIVE-1.0        P5 subset                   1       11    no
+    4   CONTROLLED-0.6   P5 subset                   1       11    no
+    5   CONTROLLED-0.8   P5 subset                   1       11    no
+    6   ALLOCATOR        multi_step                  1       33    yes
+    7   SPEC-CONTINUE    multi_step                  1       33    yes  (energy on)
+    8   REACTIVE dense   multi_step                  2       66    yes, 2 passes
+    9   live mic         30 turns, REACTIVE + WL     -       ~15    no
+
+    total ~7.3 h of Jetson time, excluding reruns.
+
+EVERY PASS OVER 30 MINUTES IS A SEPARATE APPROVAL, and the multi_step passes are
+33 min each, so passes 1, 2, 6, 7 and 8 need one. They are listed here so the
+approvals can be given in one go rather than eight times.
+
+A pass is one arm on one set for one rep; multi_step is never combined with
+another set in a single invocation, so a void run costs at most 33 minutes.
+
+SPEC-CONTINUE (pass 7) runs with energy capture on, as does every other Phase 5
+pass — the sampler integrates VDD_IN for all of them now. It is called out
+because P7 compares COMMIT-WL against REACTIVE and the thinker-side arm is the
+only one whose energy has never been measured at all.
