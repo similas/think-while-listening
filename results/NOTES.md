@@ -4657,3 +4657,21 @@ subset, where it belongs.
 ENERGY IS MEASURED FOR THE FIRST TIME. energy_j is non-negative on 32 of 32
 turns: median 31.72 J raw, idle 5191 mW, 7.84 J net of idle over a 4.6 s
 window. Every previous record in the project carries -1.0. P7 is now scoreable.
+
+## CORRECTION (2026-09-23i) — the acceptance WER, and a reverted "fix" to wer_by_arm
+
+ACCEPTANCE WER, measured properly on reactive-20260923-155717-5fa1a8 against the
+dev manifest: median 0.000, MEAN 0.049, n=32. Errors on 4 of 32 turns, all on
+two hard utterances ("How about now?" -> "Hope out now."). Since nothing was
+committed, this is the baseline's own transcript and the acceptance bar
+(<= REACTIVE + 0.02) is met trivially, as recorded above.
+
+A REVERTED CHANGE, recorded because it nearly went in. wer_by_arm.py skips turns
+whose `utterance` index is unset, which excludes every plain (non-interleaved)
+pass — including this acceptance run. Mapping those from the turn number instead
+raised coverage from 416 to 2423 REACTIVE turns and the mean WER from 0.051 to
+0.181, p95 from 0.667 to 1.000. That is not a better measurement: a run with
+warm-up turns or a different wav directory then scores against the wrong
+reference, and the inflated WER was the mismatch, not the recogniser. Reverted.
+The script now PRINTS the skipped count so the coverage is visible rather than
+implied.

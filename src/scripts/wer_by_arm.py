@@ -79,6 +79,7 @@ def main() -> None:
     refs = references(args.manifest)
     # arm -> utterance -> list of WER
     by_arm: dict[str, dict[int, list[float]]] = defaultdict(lambda: defaultdict(list))
+    skipped = 0
     for path in sorted(glob.glob(args.glob)):
         dev_set = False
         decisions: dict[int, str] = {}
@@ -105,7 +106,14 @@ def main() -> None:
                 continue
             item = r.get("utterance")
             text = (r.get("transcript") or "").strip()
-            if item is None or not text:
+            if item is None or int(item) < 0 or not text:
+                # `utterance` is set only by an INTERLEAVED schedule; a plain
+                # pass leaves it -1. Mapping those from the turn number was
+                # tried and reverted: a run with warm-up turns or a different
+                # wav directory then scores against the wrong reference, and a
+                # WER of 0.181 came out of exactly that. Skipped and COUNTED,
+                # because a silent skip hides how little is being scored.
+                skipped += 1
                 continue
             # Utterances are 1-based turn positions in the dev manifest;
             # a run on any other corpus has no reference here.
@@ -119,6 +127,7 @@ def main() -> None:
     if not by_arm:
         print("no turns with both a transcript and a reference")
         return
+    print(f"turns skipped for want of an utterance index: {skipped}")
     print(f"{'arm':>24} {'items':>6} {'turns':>6} {'median WER':>22} {'mean':>7} {'p95':>7}")
     per_item: dict[str, dict[int, float]] = {}
     for arm, items in sorted(by_arm.items()):
