@@ -93,6 +93,9 @@ class CommitConfig:
     # decoding. "wait": let it finish and commit it first. Chosen from the
     # smoke and recorded there.
     at_endpoint: str = "race"
+    # Bound on the "wait" path. A hypothesis decodes a trimmed buffer, so it
+    # should land in ~1.5 s; this stops a wedged engine holding the endpoint.
+    wait_timeout_s: float = 5.0
 
 
 @dataclass(frozen=True)

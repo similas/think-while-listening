@@ -25,7 +25,8 @@ def to_jsonl(
     | TelemetrySample
     | RunComplete
     | PartialRecord
-    | DecisionRecord,
+    | DecisionRecord
+    | HypothesisRecord,
 ) -> str:
     """One record → one JSON line (no trailing newline)."""
     d = asdict(record)
@@ -41,7 +42,8 @@ def write_jsonl(
     | TelemetrySample
     | RunComplete
     | PartialRecord
-    | DecisionRecord,
+    | DecisionRecord
+    | HypothesisRecord,
 ) -> None:
     """Append one record to an open text file and flush (crash-safe logs)."""
     fh.write(to_jsonl(record) + "\n")
@@ -64,6 +66,29 @@ class RunMeta:
     notes: str = ""
 
     kind: str = field(default="run_meta", init=False)
+
+
+@dataclass(frozen=True)
+class HypothesisRecord:
+    """One COMMIT-WL hypothesis: what it cost and what it bought.
+
+    ``cadence_ms`` is an OUTPUT — the controller paces itself off its own
+    measured decode, so the period is what the rule produced, not what it was
+    told. ``duty`` is the same quantity the VAD starvation was traced to.
+    """
+
+    run_id: str
+    turn: int
+    buffer_s: float
+    decode_ms: float
+    committed_words: int
+    committed_end_s: float
+    idle_ms: float
+    required_idle_ms: float
+    cadence_ms: float
+    duty: float
+
+    kind: str = field(default="hypothesis_record", init=False)
 
 
 @dataclass(frozen=True)
@@ -155,6 +180,12 @@ class TurnRecord:
     # Board draw just before the turn opened, so energy can be reported net of
     # idle in analysis rather than baked in here.
     idle_power_mw: float = -1.0
+    # COMMIT-WL: how much of the transcript was already committed when the
+    # endpoint arrived, and how much audio the final was left to decode.
+    committed_words: int = 0
+    total_words: int = 0
+    committed_end_s: float = 0.0
+    final_tail_s: float = -1.0
     # Swap attribution (rule of 2026-09-16): per-process VmSwap decides
     # validity; system zram growth is the applied-pressure covariate.
     # DVFS state at the turn boundary. A resident CUDA context can hold the

@@ -28,6 +28,7 @@ from twl.clock import TurnClock, now_ns, wall_iso
 from twl.contention import ContentionDetector
 from twl.records import (
     DecisionRecord,
+    HypothesisRecord,
     PartialRecord,
     RunComplete,
     RunMeta,
@@ -185,6 +186,12 @@ class TurnManager:
         self.orphan_marks = 0
         self.last_mark_ns = 0
         self.late_partials = 0
+        self.hypotheses_written = 0
+        self._committed_words = 0
+        self._committed_end_s = 0.0
+        self._final_tail_s = -1.0
+        self._total_words = 0
+        self._last_hyp_ns = 0
         # A worker thread may report a decode after its turn has closed, so
         # both the origins and the endpoints outlive the turns themselves.
         self._origin_by_turn: dict[int, int] = {}
@@ -255,6 +262,7 @@ class TurnManager:
         self._lock_wait_ms = -1.0
         self._ctxt_at_start = read_ctxt_switches(os.getpid())
         self._turn_opened_ns = at_ns
+        self._last_hyp_ns = 0
         self._origin_by_turn[self._turn] = self._clock.origin_ns
         self._idle_mw = self._idle_fn(at_ns) if self._idle_fn is not None else -1.0
         self._contention = {}
@@ -318,6 +326,59 @@ class TurnManager:
                 issued_ms=round((issued_ns - self._clock.origin_ns) / 1e6, 1),
             )
         )
+
+    def set_commit_stats(
+        self,
+        *,
+        committed_words: int,
+        committed_end_s: float,
+        final_tail_s: float,
+        total_words: int,
+    ) -> None:
+        """What COMMIT-WL bought this turn, recorded at the final."""
+        self._committed_words = committed_words
+        self._committed_end_s = committed_end_s
+        self._final_tail_s = final_tail_s
+        self._total_words = total_words
+
+    def note_hypothesis(
+        self,
+        *,
+        buffer_s: float,
+        decode_ms: float,
+        committed_words: int,
+        committed_end_s: float,
+        idle_ms: float,
+        required_idle_ms: float,
+    ) -> None:
+        """One COMMIT-WL hypothesis, written immediately.
+
+        Cadence and duty are DERIVED HERE rather than in the recogniser,
+        because they are properties of consecutive hypotheses and the
+        recogniser only ever holds one.
+        """
+        if self._clock is None:
+            self.orphan_marks += 1
+            return
+        now = now_ns()
+        cadence_ms = (now - self._last_hyp_ns) / 1e6 if self._last_hyp_ns else -1.0
+        self._last_hyp_ns = now
+        write_jsonl(
+            self._fh,
+            HypothesisRecord(
+                run_id=self._run_id,
+                turn=self._turn,
+                buffer_s=round(buffer_s, 3),
+                decode_ms=round(decode_ms, 1),
+                committed_words=committed_words,
+                committed_end_s=round(committed_end_s, 3),
+                idle_ms=round(idle_ms, 1),
+                required_idle_ms=round(required_idle_ms, 1),
+                cadence_ms=round(cadence_ms, 1),
+                duty=round(decode_ms / cadence_ms, 3) if cadence_ms > 0 else -1.0,
+            ),
+        )
+        self.hypotheses_written += 1
 
     def note_partial_boundaries(
         self, *, turn: int, offset_s: float, start_ns: int, done_ns: int
@@ -706,6 +767,10 @@ class TurnManager:
             adversary_mb_per_s=round(self._adversary_mb_per_s, 1),
             energy_j=round(self._turn_energy_j(clock), 4),
             idle_power_mw=round(self._idle_mw, 1),
+            committed_words=self._committed_words,
+            total_words=self._total_words,
+            committed_end_s=round(self._committed_end_s, 3),
+            final_tail_s=round(self._final_tail_s, 3),
             rss_before_mb=self._rss_before_mb,
             rss_after_mb=self._rss_after_mb,
             anon_huge_before_mb=self._anon_huge_before_mb,

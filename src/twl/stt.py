@@ -21,6 +21,7 @@ Invariants:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import threading
@@ -49,7 +50,9 @@ from pipecat.services.stt_service import STTService
 from pipecat.utils.time import time_now_iso8601
 
 from twl.clock import now_ns
+from twl.commit import LocalAgreementCommitter, Word
 from twl.config import SttConfig
+from twl.pacing import FixedTickIssuer, SelfPacedIssuer
 from twl.telemetry import (
     read_faults,
     read_page_cache_mb,
@@ -116,6 +119,22 @@ class StreamingWhisperSTT(STTService):
         # tell a long decode from a hung one, and a hung engine holds a core
         # for the rest of the run.
         self._decode_starts: list[int] = []
+        # COMMIT-WL. Inert unless cfg.commit.enabled; with it off the partial
+        # loop below is the one every earlier run used, unchanged.
+        commit = cfg.commit
+        self._committer = LocalAgreementCommitter(
+            agreement_n=commit.agreement_n, tail_guard_s=commit.tail_guard_s
+        )
+        self._issuer: SelfPacedIssuer | FixedTickIssuer = (
+            SelfPacedIssuer(duty_max=commit.duty_max, min_uncommitted_s=commit.min_uncommitted_s)
+            if commit.issue_rule == "controlled"
+            else FixedTickIssuer(tick_s=commit.naive_tick_s)
+        )
+        self._hyp_task: asyncio.Task[None] | None = None
+        self._hyp_lock = asyncio.Lock()
+        self._last_decode_end_ns = 0
+        self.hypotheses_issued = 0
+        self.hypotheses_skipped = 0
         # Issued = decodes started (the cost). Emitted = frames pushed while
         # the user was still speaking (the decision window). They differ, and
         # conflating them hides the cost of a partial that arrived too late.
@@ -220,6 +239,58 @@ class StreamingWhisperSTT(STTService):
                 # decodes whose cost is largest.
                 on_boundaries(started, done)
 
+    def _transcribe_words(
+        self,
+        audio: npt.NDArray[np.float32],
+        model: WhisperModel | None,
+        *,
+        base_s: float,
+        initial_prompt: str,
+    ) -> list[Word]:
+        """Decode a TRIMMED buffer and return words timed in the TURN's audio.
+
+        The engine sees audio starting at ``base_s`` and times from zero, so
+        every timestamp is re-based here. Without that, a hypothesis on a
+        trimmed buffer cannot be compared with one decoded before the trim, and
+        LocalAgreement has nothing to agree about.
+        """
+        engine = model if model is not None else self._model
+        assert engine is not None
+        commit = self._cfg.commit
+        segments, _info = engine.transcribe(
+            audio,
+            language=self._cfg.language,
+            beam_size=1,
+            temperature=0.0,
+            condition_on_previous_text=False,
+            vad_filter=True,
+            vad_parameters={"min_silence_duration_ms": 250},
+            word_timestamps=commit.word_timestamps,
+            initial_prompt=initial_prompt or None,
+        )
+        out: list[Word] = []
+        for seg in segments:
+            if seg.no_speech_prob >= 0.6:
+                continue
+            if commit.word_timestamps and getattr(seg, "words", None):
+                out.extend(
+                    Word(text=w.word.strip(), start_s=base_s + w.start, end_s=base_s + w.end)
+                    for w in seg.words
+                    if w.word.strip()
+                )
+            elif seg.text.strip():
+                # Segment granularity: the whole segment is one "word" spanning
+                # its own time. Coarser commits, but the same algorithm — the
+                # fallback if word timestamps prove expensive (smoke, §2.6).
+                out.append(
+                    Word(
+                        text=seg.text.strip(),
+                        start_s=base_s + seg.start,
+                        end_s=base_s + seg.end,
+                    )
+                )
+        return out
+
     def _transcribe(self, audio: npt.NDArray[np.float32], model: WhisperModel | None) -> str:
         engine = model if model is not None else self._model
         assert engine is not None
@@ -235,6 +306,126 @@ class StreamingWhisperSTT(STTService):
         return " ".join(
             s.text.strip() for s in segments if s.no_speech_prob < 0.6 and s.text.strip()
         ).strip()
+
+    async def _hypothesis_loop(self) -> None:
+        """COMMIT-WL: decode the UNCOMMITTED tail, commit what two decodes agree.
+
+        The baseline decodes a growing prefix at fixed offsets and throws every
+        hypothesis away; the final then decodes the whole utterance, which is
+        57-83 % of TTFA and linear in the audio handed to it. Here each decode
+        sees only audio[committed_end : now], words two decodes agree on are
+        committed, and the endpoint hands the final only what is left.
+
+        WHEN to decode is the issuer's (twl.pacing): self-paced to a duty
+        target, because the partial engine and the VAD share cores 3-5 and a
+        1.0 s cadence at duty 0.96 starved the VAD badly enough to turn 80
+        files into 94 turns. Cadence is an OUTPUT and is logged per hypothesis.
+        """
+        commit = self._cfg.commit
+        while self._speaking:
+            await asyncio.sleep(POLL_S)
+            with self._lock:
+                have_s = len(self._audio) / self.sample_rate
+            committed_end = self._committer.committed_end_s
+            decision = self._issuer.decide(
+                in_flight=self.decoding,
+                uncommitted_s=have_s - committed_end,
+                idle_ms=(now_ns() - self._last_decode_end_ns) / 1e6,
+                buffer_s=have_s - committed_end,
+            )
+            if not decision.issue:
+                self.hypotheses_skipped += 1
+                continue
+
+            n0 = int(committed_end * self.sample_rate)
+            with self._lock:
+                buf = self._audio[n0:].copy()
+            if len(buf) < int(0.2 * self.sample_rate):
+                continue
+            buffer_end_s = committed_end + len(buf) / self.sample_rate
+            issued_ns = now_ns()
+            self._turns.mark("stt_partial", at_ns=issued_ns)
+            self.partials_issued += 1
+            self.hypotheses_issued += 1
+            self._turns.note_partial_issued(
+                offset_s=buffer_end_s,
+                engine=self._cfg.partial_model or self._cfg.model,
+                issued_ns=issued_ns,
+            )
+            turn_of_this = self._turns.turn
+
+            def report(
+                start_ns: int, done_ns: int, _t: int = turn_of_this, _o: float = buffer_end_s
+            ) -> None:
+                self._turns.note_partial_boundaries(
+                    turn=_t, offset_s=_o, start_ns=start_ns, done_ns=done_ns
+                )
+
+            prompt = self._committer.prompt() if commit.use_initial_prompt else ""
+            t0 = now_ns()
+            async with self._hyp_lock:
+                words = await asyncio.to_thread(
+                    self._decode_words, buf, committed_end, prompt, report
+                )
+            done_ns = now_ns()
+            decode_ms = (done_ns - t0) / 1e6
+            self._last_decode_end_ns = done_ns
+            self._issuer.note_decode(decode_ms)
+            self._turns.mark("stt_partial_done", at_ns=done_ns)
+            kept = self._committer.offer(words, buffer_end_s)
+            emitted = bool(words) and self._speaking
+            if emitted:
+                self._turns.mark("stt_partial_frame", at_ns=now_ns())
+                self.partials_emitted += 1
+            self._turns.note_partial_done(
+                offset_s=buffer_end_s,
+                text=" ".join(w.text for w in words),
+                decode_ms=decode_ms,
+                done_ns=done_ns,
+                emitted=emitted,
+            )
+            self._turns.note_hypothesis(
+                buffer_s=buffer_end_s - committed_end,
+                decode_ms=decode_ms,
+                committed_words=len(kept),
+                committed_end_s=self._committer.committed_end_s,
+                idle_ms=decision.idle_ms,
+                required_idle_ms=decision.required_idle_ms,
+            )
+            if emitted:
+                # Downstream sees committed text plus this hypothesis's tail,
+                # which is the same stream the baseline pushes: a growing best
+                # guess at everything said so far.
+                text = (
+                    self._committer.committed_text()
+                    + " "
+                    + " ".join(
+                        w.text for w in words if w.start_s >= self._committer.committed_end_s - 1e-9
+                    )
+                ).strip()
+                await self.push_frame(InterimTranscriptionFrame(text, "", time_now_iso8601(), None))
+
+    def _decode_words(
+        self,
+        audio: npt.NDArray[np.float32],
+        base_s: float,
+        prompt: str,
+        on_boundaries: Callable[[int, int], None] | None = None,
+    ) -> list[Word]:
+        """_decode's word-level twin, with the same in-thread bookkeeping."""
+        started = now_ns()
+        with self._activity_lock:
+            self._decode_starts.append(started)
+        try:
+            return self._transcribe_words(
+                audio, self._partial_model, base_s=base_s, initial_prompt=prompt
+            )
+        finally:
+            done = now_ns()
+            with self._activity_lock:
+                self._decode_starts.remove(started)
+            if on_boundaries is not None:
+                on_boundaries(started, done)
 
     async def _partial_loop(self) -> None:
         """Decode at FIXED OFFSETS INTO THE AUDIO, never on a wall-clock tick.
@@ -366,11 +557,23 @@ class StreamingWhisperSTT(STTService):
                 else:
                     self._audio = np.zeros(0, dtype=np.float32)
             self._speaking = True
-            if self._cfg.partial_offsets_s and self._partial_task is None:
+            if self._cfg.commit.enabled:
+                if self._hyp_task is None:
+                    self._committer.reset()
+                    self._issuer.reset()
+                    self._last_decode_end_ns = now_ns()
+                    self._hyp_task = asyncio.get_running_loop().create_task(self._hypothesis_loop())
+            elif self._cfg.partial_offsets_s and self._partial_task is None:
                 self._partial_task = asyncio.get_running_loop().create_task(self._partial_loop())
 
         elif isinstance(frame, _STOPPED):
             self._speaking = False
+            if self._hyp_task is not None and self._cfg.commit.at_endpoint == "race":
+                # RACE: the tail final starts now and any hypothesis still
+                # decoding is discarded. Its cost is already paid and its
+                # boundaries are still reported from the worker thread.
+                self._hyp_task.cancel()
+                self._hyp_task = None
             if self._partial_task is not None:
                 self._partial_task.cancel()
                 self._partial_task = None
@@ -386,17 +589,44 @@ class StreamingWhisperSTT(STTService):
             # partial is still decoding; with two it should be ~0, because the
             # partial holds a different lock. Measured from the moment the
             # speaker stopped, which is when the final became possible.
+            commit = self._cfg.commit
+            tail_from_s = 0.0
+            committed_text = ""
+            if commit.enabled:
+                if commit.at_endpoint == "wait" and self._hyp_task is not None:
+                    # WAIT: let the hypothesis in flight finish and commit it,
+                    # so the tail the final decodes is as short as possible.
+                    # It decodes a TRIMMED buffer, so the wait is bounded by
+                    # one hypothesis, not by the utterance.
+                    with contextlib.suppress(asyncio.CancelledError, TimeoutError):
+                        await asyncio.wait_for(self._hyp_task, timeout=commit.wait_timeout_s)
+                    self._hyp_task = None
+                tail_from_s = self._committer.committed_end_s
+                committed_text = self._committer.committed_text()
+                # THE FINAL DECODES ONLY WHAT IS UNCOMMITTED. This is the whole
+                # mechanism: the final is 57-83 % of TTFA and linear in the
+                # audio it is handed.
+                audio = audio[int(tail_from_s * self.sample_rate) :]
             wait_from_ns = now_ns()
             async with self._decode_lock:
                 self._turns.set_lock_wait_ms((now_ns() - wait_from_ns) / 1e6)
-                text = await asyncio.to_thread(self._decode, audio)
+                tail = await asyncio.to_thread(self._decode, audio)
+            text = f"{committed_text} {tail}".strip() if commit.enabled else tail
             at = now_ns()  # timestamp BEFORE the counters, so probing never inflates it
             faults_after = read_faults(pid)
             vm_after = read_vmstat()
             sm_after = read_smaps_summary(pid)
             self._turns.mark("stt_final", at_ns=at)
             self._turns.set_transcript(text)
+            # The audio the FINAL consumed, which under COMMIT-WL is the tail
+            # only. The full utterance is recoverable from the saved segment.
             self._turns.set_stt_audio_seconds(len(audio) / self.sample_rate)
+            self._turns.set_commit_stats(
+                committed_words=len(self._committer.committed),
+                committed_end_s=tail_from_s,
+                final_tail_s=len(audio) / self.sample_rate,
+                total_words=len(text.split()),
+            )
             self._turns.set_stt_counters(
                 minflt=faults_after[0] - faults_before[0],
                 majflt=faults_after[1] - faults_before[1],
