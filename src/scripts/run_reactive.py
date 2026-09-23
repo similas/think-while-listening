@@ -49,6 +49,7 @@ from twl.speculation import SpeculationDriver
 from twl.telemetry import TegrastatsSampler
 from twl.transport import FileFrameSource, MicFrameSource
 from twl.trigger import IsotonicCalibration, SemanticTrigger
+from twl.turns import ENDPOINT_DRIFT_MS
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -56,6 +57,9 @@ REPO = Path(__file__).resolve().parents[2]
 # fault. SETTLE_MS in the observer is 800; the gate waits a little longer so
 # the turn is closed before the next file starts, never concurrently.
 GATE_QUIET_MS = 1000.0
+# After an abnormal close the pipeline may still be finishing work the turn
+# never waited for, so idleness is required for longer before the next file.
+DRAIN_MS = 2000.0
 GATE_TIMEOUT_S = 60.0
 
 # Teardown budget. Pipecat's cancel path waits for a CancelFrame to traverse
@@ -323,36 +327,49 @@ async def run(args: argparse.Namespace) -> None:
         built_box: list[Any] = []
 
         async def turn_gate(next_turn: int) -> None:
-            """Hold the next file until the pipeline is actually quiet.
+            """Hold the next file until the pipeline is genuinely finished.
 
-            WAITS ON THE EVENT, NOT ON A COUNT. The previous version waited for
-            ``turns_written`` to reach the file index — the very quantity the
-            failure corrupts. Once one utterance produced two turns the count
-            was already satisfied, the next file played over the reply, and the
-            split cascaded (2026-09-22, 94 turns from 80 files, 72 with no
-            endpoint). Here the gate resolves only when no turn is open AND no
-            audio has left the output transport for GATE_QUIET_MS, which a
-            miscount cannot fake.
+            WAITS ON EVENTS, NEVER ON A PROXY (v3 §9). Three proxies failed in
+            one day: a turn COUNT (satisfied early by a split turn), output
+            SILENCE (trivially true when the turn produced no audio at all),
+            and a CLOCK. What it waits on now:
 
-            The timeout is not a safety valve that lets the run continue: it
-            records why and lets the invariant abort, because a gate that gives
-            up silently is how the last two runs produced numbers.
+              - turn N closed normally — `bot_stopped`, or the watchdog's
+                post-audio quiet close. A `timeout` or `stt_hung` close means
+                the turn did not finish, so the pipeline may still be working;
+              - both recognizer engines idle, read from the same in-flight
+                counter the watchdog uses, so a partial orphaned at the
+                endpoint still holds the gate;
+              - the language model idle;
+              - the post-reply pause elapsed.
+
+            AFTER AN ABNORMAL CLOSE THE GATE DRAINS instead of releasing: it
+            still requires all three idle conditions, then waits DRAIN_MS more.
+            That is exactly run 3's shape — turn 8 was force-closed while its
+            base decode ran on, the decode landed 1.9 s later and was recorded
+            on turn 9, and every final afterwards was one turn late.
             """
             assert len(built_box) == 2, "gate called before pipeline was built"
             manager, observer = built_box
+            abnormal = manager.last_close_reason in ("timeout", "stt_hung")
+            idle_since: float | None = None
             deadline = time.monotonic() + GATE_TIMEOUT_S
             while True:
-                quiet_ms = (now_ns() - observer.last_audio_out_ns) / 1e6
-                if (
-                    not manager.turn_open
-                    and observer.last_audio_out_ns > 0
-                    and (quiet_ms > GATE_QUIET_MS)
-                ):
-                    return
+                # observer.busy is the SAME predicate the turn watchdog uses:
+                # either recognizer engine decoding, or the model generating.
+                idle = not manager.turn_open and not observer.busy
+                if idle:
+                    if idle_since is None:
+                        idle_since = time.monotonic()
+                    settled = (time.monotonic() - idle_since) * 1000.0
+                    if settled >= (DRAIN_MS if abnormal else GATE_QUIET_MS):
+                        return
+                else:
+                    idle_since = None
                 if time.monotonic() > deadline:
                     manager.invariant_error = (
                         f"playback gate timed out after {GATE_TIMEOUT_S:.0f}s before file "
-                        f"{next_turn}: turn_open={manager.turn_open}, quiet={quiet_ms:.0f} ms"
+                        f"{next_turn}: turn_open={manager.turn_open}, busy={observer.busy}"
                     )
                     return
                 await asyncio.sleep(0.05)
@@ -485,6 +502,11 @@ async def run(args: argparse.Namespace) -> None:
             )
         built_box.append(built.turns)
         built_box.append(built.observer)
+        if isinstance(source, FileFrameSource):
+            # Ground truth for the endpoint check: the file source knows when
+            # each utterance actually stopped, which the pipeline's VAD does
+            # not get to define for itself.
+            built.turns.speech_end_fn = source.speech_end_ns.get
 
         adversary = None
         if adv_cpus:
@@ -622,7 +644,13 @@ async def run(args: argparse.Namespace) -> None:
                             f"files started: one utterance has produced more than one turn"
                         )
                 if built.turns.invariant_error is not None:
+                    # RECORD FIRST, CANCEL SECOND (v3 §9). All three void runs
+                    # of 2026-09-22 ended with no run_complete at all: the
+                    # reason existed only on stderr, and a hung teardown would
+                    # have lost it. close() is idempotent, so the normal path
+                    # below is unaffected.
                     print(f"ABORTING: {built.turns.invariant_error}", file=sys.stderr)
+                    built.turns.close(notes="RUN INVALID: " + built.turns.invariant_error)
                     await built.task.cancel()
                     return
 
@@ -694,6 +722,14 @@ async def run(args: argparse.Namespace) -> None:
                 )
             # The reason travels with the log: a reader of turns.jsonl alone
             # must be able to see that this run is void and why.
+            if built.turns.endpoint_divergences:
+                print(
+                    f"ENDPOINT DIVERGENCES: {len(built.turns.endpoint_divergences)} turn(s) "
+                    f"more than {ENDPOINT_DRIFT_MS:.0f} ms from the file's own endpoint "
+                    f"{built.turns.endpoint_divergences} — each flags itself and its "
+                    f"successor invalid; report before using this run's numbers",
+                    file=sys.stderr,
+                )
             built.turns.close(
                 notes=("RUN INVALID: " + built.turns.invariant_error)
                 if built.turns.invariant_error

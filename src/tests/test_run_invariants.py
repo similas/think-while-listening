@@ -1,123 +1,129 @@
-"""The run must fail loudly when turns stop corresponding to utterances.
+"""Turns are checked against the FILE's endpoint, not the pipeline's opinion.
 
-On 2026-09-22 two runs produced 94 turns from 80 files. The reply to utterance
-N was still playing when N+1 began, so N+1's BotStoppedSpeaking closed a turn
-that had never heard its own endpoint; every mark then landed one turn late and
-72 of 94 turns had no endpoint. Both runs RAN TO COMPLETION, printed an ordinary
-summary and wrote 94 records. Nothing in the harness objected.
+On 2026-09-22 three runs produced perfectly self-consistent records in which
+turns had stopped corresponding to utterances: 80 files became 94 turns, 72 of
+them with no endpoint at all, and every run completed and printed an ordinary
+summary. A check built from the pipeline's own marks cannot see that, because
+the marks are what went wrong. The file source knows when each utterance
+actually stopped, so that is the reference.
 
-These tests pin the two checks added because of that: the per-turn invariant,
-and a playback gate that waits on observed silence instead of a turn count —
-the count being the very quantity the failure corrupts.
+One divergence is tolerated and flagged — a Silero split on a 30 s utterance
+must not throw away fifty minutes. The second voids the run.
 """
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any
+import json
+from pathlib import Path
 
-from twl.clock import TurnClock
+from twl.clock import now_ns
+from twl.records import RunMeta
+from twl.turns import ENDPOINT_DRIFT_MS, MAX_ENDPOINT_DIVERGENCES, TurnManager
+
+META = RunMeta(
+    run_id="t",
+    wall_time="2026-09-23T00:00:00-0400",
+    git_commit="0",
+    config_hash="0",
+    config_path="c",
+    nvpmodel="x",
+    jetson_clocks="x",
+    software={},
+)
 
 
-class FakeManager:
-    """Just enough TurnManager for the invariant and the gate."""
-
-    def __init__(self) -> None:
-        self.invariant_error: str | None = None
-        self.turn_open = True
-        self._turn = 7
-
-    _check_turn_invariant = None  # bound below
-
-
-def make_manager() -> Any:
-    from twl.turns import TurnManager
-
-    m = FakeManager()
-    m._check_turn_invariant = TurnManager._check_turn_invariant.__get__(m)  # type: ignore[attr-defined]
+def manager(tmp_path: Path, truth: dict[int, int]) -> TurnManager:
+    m = TurnManager("t", tmp_path / "turns.jsonl", META, {})
+    m.speech_end_fn = truth.get
     return m
 
 
-def clock_with(*stages: str) -> TurnClock:
-    c = TurnClock()
-    for s in stages:
-        c.mark(s)
-    return c
+def turn_records(tmp_path: Path) -> list[dict]:
+    return [
+        json.loads(line)
+        for line in (tmp_path / "turns.jsonl").read_text().splitlines()
+        if line.strip() and json.loads(line).get("kind") == "turn_record"
+    ]
 
 
-def test_a_turn_closed_by_the_bot_with_no_endpoint_of_its_own_voids_the_run() -> None:
-    m = make_manager()
-    m._check_turn_invariant(clock_with("vad_user_started", "playback_done"), "bot_stopped")
+def play(m: TurnManager, t0: int, turn_start_s: float, stop_s: float) -> None:
+    m.turn_started(t0 + int(turn_start_s * 1e9))
+    m.mark("vad_user_stopped", at_ns=t0 + int(stop_s * 1e9))
+    m.finish_turn()
+
+
+def test_a_turn_that_matches_the_file_is_valid(tmp_path: Path) -> None:
+    t0 = now_ns()
+    truth = {1: t0 + int(10e9)}
+    m = manager(tmp_path, truth)
+    play(m, t0, 0.0, 10.4)  # 400 ms of VAD hangover
+    m.close()
+    (rec,) = turn_records(tmp_path)
+    assert rec["invalid_reason"] == ""
+    assert m.endpoint_divergences == []
+
+
+def test_a_divergent_turn_is_flagged_and_so_is_its_successor(tmp_path: Path) -> None:
+    """A turn with the wrong endpoint has usually taken its neighbour's audio."""
+    t0 = now_ns()
+    truth = {1: t0 + int(10e9), 2: t0 + int(30e9)}
+    m = manager(tmp_path, truth)
+    play(m, t0, 0.0, 14.0)  # 4 s late — the file said 10 s
+    play(m, t0, 20.0, 30.2)  # this one is on time
+    m.close()
+    a, b = turn_records(tmp_path)
+    assert "endpoint_drift:+4000ms" in a["invalid_reason"]
+    assert a["valid"] is False
+    assert "endpoint_drift_neighbour" in b["invalid_reason"]
+    assert b["valid"] is False
+    assert len(m.endpoint_divergences) == 1
+    assert m.invariant_error is None, "one divergence must not void the run"
+
+
+def test_the_second_divergence_voids_the_run(tmp_path: Path) -> None:
+    t0 = now_ns()
+    truth = {1: t0 + int(10e9), 2: t0 + int(30e9)}
+    m = manager(tmp_path, truth)
+    play(m, t0, 0.0, 14.0)
+    play(m, t0, 20.0, 35.0)
+    assert len(m.endpoint_divergences) == MAX_ENDPOINT_DIVERGENCES + 1
     assert m.invariant_error is not None
-    assert "still playing" in m.invariant_error
+    assert "no longer correspond to files" in m.invariant_error
+    m.close()
 
 
-def test_a_normal_turn_does_not_trip_it() -> None:
-    m = make_manager()
-    m._check_turn_invariant(
-        clock_with("vad_user_started", "vad_user_stopped", "stt_final"), "bot_stopped"
-    )
-    assert m.invariant_error is None
+def test_drift_within_the_hangover_is_not_a_divergence(tmp_path: Path) -> None:
+    """The VAD declares the endpoint stop_secs late by design."""
+    t0 = now_ns()
+    m = manager(tmp_path, {1: t0 + int(10e9)})
+    play(m, t0, 0.0, 10.0 + (ENDPOINT_DRIFT_MS - 100) / 1000)
+    m.close()
+    (rec,) = turn_records(tmp_path)
+    assert rec["invalid_reason"] == ""
 
 
-def test_a_turn_with_its_own_final_but_no_vad_stop_is_accepted() -> None:
-    """Short utterances legitimately commit without a separate stop mark."""
-    m = make_manager()
-    m._check_turn_invariant(clock_with("vad_user_started", "stt_final"), "bot_stopped")
-    assert m.invariant_error is None
+def test_a_live_mic_run_has_no_ground_truth_and_is_not_flagged(tmp_path: Path) -> None:
+    t0 = now_ns()
+    m = TurnManager("t", tmp_path / "turns.jsonl", META, {})  # no speech_end_fn
+    play(m, t0, 0.0, 10.0)
+    m.close()
+    (rec,) = turn_records(tmp_path)
+    assert rec["invalid_reason"] == ""
+    assert m.endpoint_divergences == []
 
 
-def test_a_watchdog_close_is_not_the_failure_shape() -> None:
-    m = make_manager()
-    m._check_turn_invariant(clock_with("vad_user_started"), "watchdog")
-    assert m.invariant_error is None
-
-
-def test_the_first_violation_wins_and_later_ones_do_not_overwrite_it() -> None:
-    m = make_manager()
-    bare = clock_with("vad_user_started")
-    m._check_turn_invariant(bare, "bot_stopped")
-    first = m.invariant_error
-    m._turn = 9
-    m._check_turn_invariant(bare, "bot_stopped")
-    assert m.invariant_error == first
-
-
-class FakeObserver:
-    def __init__(self) -> None:
-        self.last_audio_out_ns = 0
-
-
-def test_the_gate_waits_through_a_long_reply_and_does_not_advance_on_a_miscount() -> None:
-    """A reply that outlasts the old fixed gap must still hold the next file.
-
-    The old gate advanced as soon as turns_written reached the file index, so a
-    split turn released it early. This one only advances on silence.
-    """
-    from twl.clock import now_ns
-
-    obs = FakeObserver()
-    mgr = FakeManager()
-    released: list[float] = []
-
-    async def scenario() -> None:
-        async def gate() -> None:
-            while True:
-                quiet_ms = (now_ns() - obs.last_audio_out_ns) / 1e6
-                if not mgr.turn_open and obs.last_audio_out_ns > 0 and quiet_ms > 50:
-                    released.append(quiet_ms)
-                    return
-                await asyncio.sleep(0.01)
-
-        task = asyncio.create_task(gate())
-        # The bot is still speaking: audio keeps arriving for 200 ms, and the
-        # turn stays open. A count-based gate would already have advanced.
-        for _ in range(10):
-            obs.last_audio_out_ns = now_ns()
-            await asyncio.sleep(0.02)
-        assert not task.done(), "the gate released while the reply was still playing"
-        mgr.turn_open = False
-        await asyncio.wait_for(task, timeout=2.0)
-
-    asyncio.run(scenario())
-    assert released and released[0] > 50
+def test_close_is_idempotent_so_the_abort_path_can_record_first(tmp_path: Path) -> None:
+    """The reason must reach the log BEFORE the pipeline is cancelled, and the
+    normal teardown must not then write a second run_complete."""
+    t0 = now_ns()
+    m = manager(tmp_path, {1: t0 + int(10e9)})
+    play(m, t0, 0.0, 10.2)
+    m.close(notes="RUN INVALID: something")
+    m.close()
+    completes = [
+        json.loads(line)
+        for line in (tmp_path / "turns.jsonl").read_text().splitlines()
+        if line.strip() and json.loads(line).get("kind") == "run_complete"
+    ]
+    assert len(completes) == 1
+    assert completes[0]["notes"] == "RUN INVALID: something"

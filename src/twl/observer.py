@@ -293,6 +293,17 @@ class StageObserver(BaseObserver):
         stats = await self._speculation.end_turn()
         self._turns.set_phase2(spec=stats.as_dict())
 
+    @property
+    def busy(self) -> bool:
+        """Is the recognizer or the language model working right now?
+
+        ONE DEFINITION, TWO CALLERS. The turn watchdog uses it to tell a slow
+        turn from a stuck one; the playback gate uses it to decide whether the
+        pipeline has finished with the previous file. They disagreeing is how
+        a decode ends up stranded on the next turn.
+        """
+        return self._working()
+
     def _working(self) -> bool:
         """Is anything happening right now, other than a stage mark?
 

@@ -4132,3 +4132,43 @@ The value is recorded as specified and is a CONFIG KEY, cited to the two runs,
 so P5 can vary it. Whether 0.6 stands, or 0.7 (admitting the run that held), or
 whether CONTROLLED's cadence must differ from NAIVE's for P5 to be non-degenerate,
 is an open decision.
+
+## 2026-09-23 — §3.2/3.3/3.4 fixed. Step 1 of v3 §8 complete
+
+§3.2 THE GATE WAITS ON EVENTS. It releases file N+1 only when turn N closed
+NORMALLY (`bot_stopped`, or the watchdog's post-audio quiet close — never
+`timeout` or `stt_hung`), the pipeline is idle, and the pause has elapsed.
+"Idle" is `StageObserver.busy`, the SAME predicate the turn watchdog uses:
+either recognizer engine decoding, or the model generating. One definition, two
+callers; them disagreeing is how a decode ends up stranded on the next turn.
+After an abnormal close the gate DRAINS — same idle conditions, then DRAIN_MS
+(2 s) instead of GATE_QUIET_MS (1 s). The idle clock restarts if work resumes.
+A gate timeout voids the run instead of releasing.
+
+§3.3 THE ABORT RECORD IS WRITTEN FIRST. `turns.close(notes="RUN INVALID: ...")`
+before `task.cancel()`, and `close()` is now idempotent so the normal teardown
+does not write a second run_complete. All three void runs of 2026-09-22 ended
+with no run_complete at all and the reason only on stderr.
+
+§3.4 TURNS ARE CHECKED AGAINST THE FILE, NOT THE PIPELINE. `TurnManager.
+speech_end_fn` is the file source's own `speech_end_ns`. A turn whose detected
+endpoint sits more than ENDPOINT_DRIFT_MS (1500) from it is flagged
+`endpoint_drift:+Nms`, and its SUCCESSOR is flagged `endpoint_drift_neighbour`
+— a turn with the wrong endpoint has usually taken audio that belonged to its
+neighbour. One divergence is tolerated (a Silero split on a 30 s utterance must
+not throw away fifty minutes); the SECOND voids the run. Divergences print on
+their own line in the run summary with the count, and any run with more than one
+pair is reported before its numbers are used. The old shape-based check and its
+tests are DELETED, not patched: they tested a shape that never occurred.
+
+1500 ms is the VAD hangover (800 ms) plus poll granularity with room to spare;
+it is a property of the detector, not of the corpus.
+
+CANONICAL partial_offsets_s IS NOW [0.5, 1.5, 2.5]. Measured 2026-09-21 against
+[1.0, 2.0, 3.0] on the dev set: window at the first partial 978 ms against 591,
+decision-window coverage 32/32 against 30/32, STT commit 1670 ms [1602, 1863]
+against 2040 [2008, 2115] — better on every axis and never adopted until now.
+PHASES 2-4 WERE RUN AT [1.0, 2.0, 3.0] AND THEIR NUMBERS STAND AT THAT SETTING;
+they are not re-run for this change. Noted here once.
+
+Pinned by src/tests/test_playback_gate.py (5) and test_run_invariants.py (6).

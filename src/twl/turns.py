@@ -51,6 +51,15 @@ from twl.telemetry import (
 
 log = logging.getLogger(__name__)
 
+# How far a turn's detected endpoint may sit from the file's own before that
+# turn, and its successor, are flagged. 1.5 s covers the VAD hangover (0.8 s)
+# and the poll granularity with room to spare; past it the turn is not the
+# utterance the file played. A SECOND divergence voids the run: one Silero
+# split on a 30 s utterance must not throw away fifty minutes, but two means
+# turns and files have parted company.
+ENDPOINT_DRIFT_MS = 1500.0
+MAX_ENDPOINT_DIVERGENCES = 1
+
 
 @dataclass
 class _PendingPartial:
@@ -177,8 +186,19 @@ class TurnManager:
         self._origin_by_turn: dict[int, int] = {}
         self._stop_ns_by_turn: dict[int, int] = {}
         self._write_lock = threading.Lock()
+        # The FILE's own endpoint for a turn, when the audio came from a file.
+        # The pipeline's opinion of when speech ended is the thing under test,
+        # so it cannot also be the reference (v3 §9).
+        self.speech_end_fn: Callable[[int], int | None] | None = None
+        self.endpoint_divergences: list[tuple[int, float]] = []
+        self._force_invalid: dict[int, str] = {}
+        self._closed = False
+        # How the last turn ended. The playback gate refuses to release on an
+        # abnormal close, because the pipeline may still be finishing work the
+        # turn did not wait for.
+        self.last_close_reason = ""
         self.turns_written = 0
-        # Set by _check_turn_invariant; the run aborts on it rather than
+        # Set by the endpoint check below; the run aborts on it rather than
         # finishing and reporting numbers that cannot mean what they say.
         self.invariant_error: str | None = None
         self.invalid_turns = 0
@@ -356,6 +376,21 @@ class TurnManager:
                 rec.done_ms = round((done_ns - self._clock.origin_ns) / 1e6, 1)
                 rec.emitted = emitted
                 return
+
+    def _endpoint_drift_ms(self) -> float | None:
+        """Detected endpoint minus the FILE's, in ms. None when unknown.
+
+        Ground truth, not self-consistency: on 2026-09-22 three runs produced
+        perfectly self-consistent records in which turns had stopped
+        corresponding to utterances at all.
+        """
+        if self.speech_end_fn is None:
+            return None
+        truth = self.speech_end_fn(self._turn)
+        detected = self._stop_ns_by_turn.get(self._turn)
+        if truth is None or detected is None:
+            return None
+        return (detected - truth) / 1e6
 
     def _flush_partials(self, speech_end_ms: float) -> None:
         """Write the turn's partials once the endpoint is known.
@@ -575,6 +610,7 @@ class TurnManager:
             except (ProcessLookupError, ValueError):
                 pressure_swap[name] = -1.0
 
+        self.last_close_reason = close_reason
         invalid_reason = ""
         pids_in_swap = {n: mb for n, mb in own_swap.items() if mb > 0.0}
         swapfile_grew = {d: mb for d, mb in swap_grew.items() if not d.startswith("/dev/zram")}
@@ -589,8 +625,27 @@ class TurnManager:
             )
         if forced:
             invalid_reason = (invalid_reason + ";" if invalid_reason else "") + "unfinished_turn"
-        if close_reason == "timeout":
-            invalid_reason = (invalid_reason + ";" if invalid_reason else "") + "turn_timeout"
+        if close_reason in ("timeout", "stt_hung"):
+            invalid_reason = (invalid_reason + ";" if invalid_reason else "") + close_reason
+        inherited = self._force_invalid.pop(self._turn, "")
+        if inherited:
+            invalid_reason = (invalid_reason + ";" if invalid_reason else "") + inherited
+        drift = self._endpoint_drift_ms()
+        if drift is not None and abs(drift) > ENDPOINT_DRIFT_MS:
+            invalid_reason = (
+                invalid_reason + ";" if invalid_reason else ""
+            ) + f"endpoint_drift:{drift:+.0f}ms"
+            self.endpoint_divergences.append((self._turn, drift))
+            # The NEXT turn inherits the doubt: a turn whose endpoint was wrong
+            # has usually taken audio that belonged to its neighbour.
+            self._force_invalid[self._turn + 1] = "endpoint_drift_neighbour"
+            log.error("turn %d endpoint drifted %+.0f ms from the file's", self._turn, drift)
+            if len(self.endpoint_divergences) > MAX_ENDPOINT_DIVERGENCES:
+                self.invariant_error = (
+                    f"{len(self.endpoint_divergences)} turns diverged from the file's own "
+                    f"endpoint by more than {ENDPOINT_DRIFT_MS:.0f} ms "
+                    f"({self.endpoint_divergences}): turns no longer correspond to files"
+                )
 
         record = TurnRecord(
             run_id=self._run_id,
@@ -643,33 +698,6 @@ class TurnManager:
         if invalid_reason:
             self.invalid_turns += 1
             log.warning("turn %d INVALID: %s", self._turn, invalid_reason)
-        self._check_turn_invariant(clock, close_reason)
-
-    def _check_turn_invariant(self, clock: TurnClock, close_reason: str) -> None:
-        """A turn that did not end on its OWN endpoint invalidates the run.
-
-        On 2026-09-22 two runs produced 94 turns from 80 files: the reply to
-        utterance N was still playing when N+1 began, so N+1's BotStoppedSpeaking
-        closed a turn that had never heard its own endpoint. From there every
-        mark landed one turn late and 72 of 94 turns had no endpoint at all —
-        and NOTHING IN THE RUN NOTICED. Both runs completed, printed a summary
-        and wrote 94 records. That silence is the defect this guards.
-
-        The check is deliberately narrow: a turn closed by the bot's audio that
-        carries neither its own final nor its own endpoint cannot be repaired by
-        analysis and means the turn/file correspondence is already lost.
-        """
-        if self.invariant_error is not None:
-            return
-        if close_reason != "bot_stopped":
-            return
-        if clock.first("stt_final") is None and clock.first("vad_user_stopped") is None:
-            self.invariant_error = (
-                f"turn {self._turn} closed on the bot's audio with neither its own "
-                f"stt_final nor its own vad_user_stopped: the reply to an earlier "
-                f"utterance is still playing, so turns no longer correspond to files"
-            )
-            log.error("RUN INVARIANT VIOLATED: %s", self.invariant_error)
 
     def close(self, notes: str = "") -> None:
         """Close the open turn, mark the log complete, and fsync it.
@@ -680,6 +708,9 @@ class TurnManager:
         ``run_complete`` record is what lets a reader distinguish a finished
         run from a truncated one.
         """
+        if self._closed:
+            return
+        self._closed = True
         self.finish_turn()
         write_jsonl(
             self._fh,

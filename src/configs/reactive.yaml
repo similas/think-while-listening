@@ -33,7 +33,13 @@ stt:
   # Two-engine STT, decided 2026-09-17 on the live comparison: tiny for
   # partials, base for the final, SHARED cores 3-5 and no pinning between them.
   # Splitting the cores cost +1089 ms of commit latency (results/NOTES.md).
-  partial_offsets_s: [1.0, 2.0, 3.0]
+  # CANONICAL as of 2026-09-23. Measured 2026-09-21 against [1.0, 2.0, 3.0] on
+  # the dev set: window at the first partial 978 ms against 591, decision-window
+  # coverage 32/32 against 30/32, STT commit 1670 ms [1602, 1863] against
+  # 2040 [2008, 2115] — better on every axis, and never adopted until now.
+  # Phases 2-4 were run at [1.0, 2.0, 3.0] and their numbers stand at that
+  # setting; they are not re-run for this change.
+  partial_offsets_s: [0.5, 1.5, 2.5]
   partial_model: "tiny"
   partial_cpu_threads: 3
 
