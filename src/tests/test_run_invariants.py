@@ -18,7 +18,7 @@ from pathlib import Path
 
 from twl.clock import now_ns
 from twl.records import RunMeta
-from twl.turns import ENDPOINT_DRIFT_MS, MAX_ENDPOINT_DIVERGENCES, TurnManager
+from twl.turns import ENDPOINT_DRIFT_MS, TurnManager
 
 META = RunMeta(
     run_id="t",
@@ -47,8 +47,10 @@ def turn_records(tmp_path: Path) -> list[dict]:
 
 
 def play(m: TurnManager, t0: int, turn_start_s: float, stop_s: float) -> None:
+    """One well-formed turn: onset, endpoint, its own final."""
     m.turn_started(t0 + int(turn_start_s * 1e9))
     m.mark("vad_user_stopped", at_ns=t0 + int(stop_s * 1e9))
+    m.mark("stt_final", at_ns=t0 + int((stop_s + 1.0) * 1e9))
     m.finish_turn()
 
 
@@ -63,7 +65,7 @@ def test_a_turn_that_matches_the_file_is_valid(tmp_path: Path) -> None:
     assert m.endpoint_divergences == []
 
 
-def test_a_divergent_turn_is_flagged_and_so_is_its_successor(tmp_path: Path) -> None:
+def test_a_divergent_turn_flags_itself_and_its_successor(tmp_path: Path) -> None:
     """A turn with the wrong endpoint has usually taken its neighbour's audio."""
     t0 = now_ns()
     truth = {1: t0 + int(10e9), 2: t0 + int(30e9)}
@@ -77,18 +79,65 @@ def test_a_divergent_turn_is_flagged_and_so_is_its_successor(tmp_path: Path) -> 
     assert "endpoint_drift_neighbour" in b["invalid_reason"]
     assert b["valid"] is False
     assert len(m.endpoint_divergences) == 1
-    assert m.invariant_error is None, "one divergence must not void the run"
 
 
-def test_the_second_divergence_voids_the_run(tmp_path: Path) -> None:
+def test_a_divergence_outside_a_split_voids_the_run(tmp_path: Path) -> None:
+    """Splits are flagged and counted; a drifting turn that is NOT a split is
+    the cascade shape and voids the run on its own."""
     t0 = now_ns()
-    truth = {1: t0 + int(10e9), 2: t0 + int(30e9)}
-    m = manager(tmp_path, truth)
+    m = manager(tmp_path, {1: t0 + int(10e9)})
     play(m, t0, 0.0, 14.0)
-    play(m, t0, 20.0, 35.0)
-    assert len(m.endpoint_divergences) == MAX_ENDPOINT_DIVERGENCES + 1
     assert m.invariant_error is not None
     assert "no longer correspond to files" in m.invariant_error
+    m.close()
+
+
+def test_a_vad_split_flags_both_halves_and_does_not_void(tmp_path: Path) -> None:
+    """One utterance, two turns: both flagged, run survives, split counted."""
+    t0 = now_ns()
+    m = manager(tmp_path, {1: t0 + int(10e9), 2: t0 + int(30e9)})
+    m.turn_started(t0)
+    m.mark("stt_partial", at_ns=t0 + int(1e9))
+    # A second onset arrives inside the same utterance: the open turn is
+    # force-finished and both halves are flagged.
+    m.turn_started(t0 + int(5e9))
+    m.mark("vad_user_stopped", at_ns=t0 + int(9.9e9))
+    m.mark("stt_final", at_ns=t0 + int(11e9))
+    m.finish_turn()
+    m.close()
+    a, b = turn_records(tmp_path)
+    assert "vad_split" in a["invalid_reason"] and a["valid"] is False
+    assert "vad_split" in b["invalid_reason"] and b["valid"] is False
+    assert m.vad_splits == 1
+    assert m.invariant_error is None, "a split must never void the run"
+
+
+def test_unlimited_splits_never_void_the_run(tmp_path: Path) -> None:
+    """The rate is the finding; it is not a budget."""
+    t0 = now_ns()
+    truth = {i: t0 + int((i * 10) * 1e9) for i in range(1, 12)}
+    m = manager(tmp_path, truth)
+    for i in range(10):
+        m.turn_started(t0 + int(i * 1e9))
+        m.mark("stt_final", at_ns=t0 + int((i + 0.5) * 1e9))
+    m.finish_turn()
+    m.close()
+    assert m.vad_splits >= 5
+    assert m.invariant_error is None
+
+
+def test_a_turn_with_no_final_that_is_not_a_split_half_voids_the_run(
+    tmp_path: Path,
+) -> None:
+    """The 2026-09-22 shape: a turn closed before its final, whose decode then
+    landed on the next turn."""
+    t0 = now_ns()
+    m = manager(tmp_path, {1: t0 + int(10e9)})
+    m.turn_started(t0)
+    m.mark("vad_user_stopped", at_ns=t0 + int(10.2e9))
+    m.finish_turn()  # closes normally, but never produced an stt_final
+    assert m.invariant_error is not None
+    assert "no stt_final of its own" in m.invariant_error
     m.close()
 
 

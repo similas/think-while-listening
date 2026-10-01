@@ -134,7 +134,9 @@ def main() -> None:
             two = TwoTierListener()
             now_s, hyp_ms, n_hyp = 0.0, [], 0
             issue_at: list[float] = []
+            span_ms: list[float] = []
             spans_done, spans_queued = 0, 0
+            spans_before_endpoint = 0
             idle_ms = 1e9
             while now_s < dur:
                 d = issuer.decide(
@@ -171,6 +173,9 @@ def main() -> None:
                     ).strip()
                     two.complete(sp, text)
                     spans_done += 1
+                    span_ms.append(ms)
+                    if now_s + ms / 1000.0 <= dur:
+                        spans_before_endpoint += 1
                     issuer.note_decode(ms)
                     now_s += (ms + issuer.required_idle_ms(1.0)) / 1000.0
                     idle_ms = 0.0
@@ -225,6 +230,16 @@ def main() -> None:
                 "cadence_s": [b - a for a, b in itertools.pairwise(issue_at)],
                 "spans_queued": spans_queued,
                 "spans_done": spans_done,
+                "spans_before_endpoint": spans_before_endpoint,
+                "span_ms": span_ms,
+                # ACHIEVED duty over the whole listening window: every decode
+                # either engine ran, over the audio it ran during. This is the
+                # quantity the VAD starvation was traced to, and it must hold
+                # whichever engine spends it.
+                "achieved_duty": (
+                    (sum(hyp_ms) + sum(span_ms)) / (now_s * 1000.0) if now_s > 0 else -1.0
+                ),
+                "committed": committer.committed_end_s > 0,
                 "tiny_committed_end_s": committer.committed_end_s,
                 "base_covered_frac": (
                     two.base_committed_end_s / committer.committed_end_s
@@ -305,6 +320,18 @@ def main() -> None:
             f"— the controller-varies check wants this > 1"
         )
 
+    print("\n  PER-REP DETAIL (this rep):")
+    nrows = len(rows)
+    committed_on = sum(1 for r in rows if r["words"]["committed"])  # type: ignore[index]
+    duty = [float(r["words"]["achieved_duty"]) for r in rows]  # type: ignore[index]
+    print(f"    commits on {committed_on}/{nrows} items")
+    print(
+        f"    achieved duty (tiny+base) median {statistics.median(duty):.2f} "
+        f"(max {max(duty):.2f}); duty_max {args.duty_max}"
+    )
+    if args.two_tier:
+        sbe = sum(int(r["words"]["spans_before_endpoint"]) for r in rows)  # type: ignore[index]
+        print(f"    spans completed before the endpoint: {sbe}")
     if args.two_tier:
         cov = [float(r["words"]["base_covered_frac"]) for r in rows]  # type: ignore[index]
         q = sum(int(r["words"]["spans_queued"]) for r in rows)  # type: ignore[index]

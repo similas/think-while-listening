@@ -60,7 +60,6 @@ log = logging.getLogger(__name__)
 # split on a 30 s utterance must not throw away fifty minutes, but two means
 # turns and files have parted company.
 ENDPOINT_DRIFT_MS = 1500.0
-MAX_ENDPOINT_DIVERGENCES = 1
 
 
 @dataclass
@@ -205,6 +204,13 @@ class TurnManager:
         self.speech_end_fn: Callable[[int], int | None] | None = None
         self.endpoint_divergences: list[tuple[int, float]] = []
         self._force_invalid: dict[int, str] = {}
+        # Turns belonging to a VAD split: the half that was force-finished when
+        # a second onset arrived, and the half that took the rest. Both are
+        # flagged and neither is a cascade — one utterance produced two turns,
+        # which is a property of the SPEECH, measured and reported as the split
+        # rate, not a harness fault.
+        self._split_turns: set[int] = set()
+        self.vad_splits = 0
         self._closed = False
         self._idle_mw = -1.0
         # How the last turn ended. The playback gate refuses to release on an
@@ -235,8 +241,22 @@ class TurnManager:
         return (now_ns() - self._turn_opened_ns) / 1e6 if self._clock is not None else 0.0
 
     def turn_started(self, at_ns: int) -> None:
-        """VAD opened a user turn. Force-finishes an unfinished previous turn."""
+        """VAD opened a user turn. Force-finishes an unfinished previous turn.
+
+        A force-finish IS a VAD split: the previous turn never reached its own
+        endpoint because a second onset arrived inside the same utterance. Both
+        halves are flagged here, before either record is written.
+        """
         if self._clock is not None:
+            self._split_turns.add(self._turn)
+            self._split_turns.add(self._turn + 1)
+            self.vad_splits += 1
+            log.warning(
+                "turn %d split by VAD; turns %d and %d flagged",
+                self._turn,
+                self._turn,
+                self._turn + 1,
+            )
             self.finish_turn(forced=True)
         self._turn += 1
         self._clock = TurnClock(origin_ns=at_ns)
@@ -748,7 +768,23 @@ class TurnManager:
         inherited = self._force_invalid.pop(self._turn, "")
         if inherited:
             invalid_reason = (invalid_reason + ";" if invalid_reason else "") + inherited
+        if self._turn in self._split_turns:
+            invalid_reason = (invalid_reason + ";" if invalid_reason else "") + "vad_split"
+        # A TURN WITH NO FINAL OF ITS OWN IS A CASCADE unless it is the first
+        # half of a split, where having no final is the definition. That is the
+        # 2026-09-22 shape: a turn closed before its final, whose decode then
+        # landed on the next turn.
+        is_first_half = forced and self._turn in self._split_turns
+        if clock.first("stt_final") is None and not is_first_half and self.invariant_error is None:
+            self.invariant_error = (
+                f"turn {self._turn} produced no stt_final of its own and is not a VAD "
+                f"split: its decode has landed on another turn"
+            )
         drift = self._endpoint_drift_ms()
+        # The drift check does not apply inside a split pair: neither half's
+        # endpoint is the file's, by construction.
+        if self._turn in self._split_turns:
+            drift = None
         if drift is not None and abs(drift) > ENDPOINT_DRIFT_MS:
             invalid_reason = (
                 invalid_reason + ";" if invalid_reason else ""
@@ -758,11 +794,11 @@ class TurnManager:
             # has usually taken audio that belonged to its neighbour.
             self._force_invalid[self._turn + 1] = "endpoint_drift_neighbour"
             log.error("turn %d endpoint drifted %+.0f ms from the file's", self._turn, drift)
-            if len(self.endpoint_divergences) > MAX_ENDPOINT_DIVERGENCES:
+            if self.invariant_error is None:
                 self.invariant_error = (
-                    f"{len(self.endpoint_divergences)} turns diverged from the file's own "
-                    f"endpoint by more than {ENDPOINT_DRIFT_MS:.0f} ms "
-                    f"({self.endpoint_divergences}): turns no longer correspond to files"
+                    f"turn {self._turn} diverged from its file's own endpoint by "
+                    f"{drift:+.0f} ms, outside a VAD split: turns no longer correspond "
+                    f"to files"
                 )
 
         record = TurnRecord(

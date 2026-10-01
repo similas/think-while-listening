@@ -638,13 +638,9 @@ async def run(args: argparse.Namespace) -> None:
             """
             while True:
                 await asyncio.sleep(0.2)
-                if built.turns.invariant_error is None and isinstance(source, FileFrameSource):
-                    started = source.files_started
-                    if started and built.turns.turns_written > started:
-                        built.turns.invariant_error = (
-                            f"{built.turns.turns_written} turns written but only {started} "
-                            f"files started: one utterance has produced more than one turn"
-                        )
+                # Splits never void a run by COUNT: they are flagged where
+                # they happen (TurnManager.turn_started) and reported as a
+                # rate. What voids a run is a cascade, detected per turn.
                 if built.turns.invariant_error is not None:
                     # RECORD FIRST, CANCEL SECOND (v3 §9). All three void runs
                     # of 2026-09-22 ended with no run_complete at all: the
@@ -724,6 +720,16 @@ async def run(args: argparse.Namespace) -> None:
                 )
             # The reason travels with the log: a reader of turns.jsonl alone
             # must be able to see that this run is void and why.
+            if built.turns.vad_splits:
+                n_files = source.files_started if isinstance(source, FileFrameSource) else 0
+                rate = built.turns.vad_splits / n_files if n_files else float("nan")
+                print(
+                    f"VAD SPLITS: {built.turns.vad_splits} of {n_files} utterances split "
+                    f"(rate {rate:.2f}); {2 * built.turns.vad_splits} turns flagged "
+                    f"vad_split and excluded. The rate is a measurement of endpoint "
+                    f"detection on read speech and belongs in the set table.",
+                    file=sys.stderr,
+                )
             if built.turns.endpoint_divergences:
                 print(
                     f"ENDPOINT DIVERGENCES: {len(built.turns.endpoint_divergences)} turn(s) "

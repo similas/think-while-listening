@@ -4815,3 +4815,59 @@ elapsed), and spans completed before the endpoint. Three reps is enough to show
 spread and not enough to hide it — the one-tier tiny arm ranged +0.009 to +0.042
 across three reps of one configuration, and a median alone would have concealed
 that.
+
+## 2026-10-01 — PASS 1 VOID (3 runs). The cause is a VAD split, and the invariant was wrong
+
+    sixteen     rep1  OK     16 turns, 0 invalid
+    short_digit rep1  OK     20 turns, 0 invalid
+    long_digit  rep1  ABORT   3 turns from 2 files
+    multi_step  rep1  ABORT  16 turns from 15 files
+    sixteen     rep2  OK
+    short_digit rep2  OK
+    long_digit  rep2  ABORT   3 turns from 2 files   (same file, both reps)
+    multi_step  rep2  halted by hand
+
+CAUSE: ONE UTTERANCE PRODUCING TWO TURNS. On multi_step rep1, file 15 ("Jenny is
+helping at her mom's office...") was split by Silero: turn 15 heard 7.1 s and
+never reached a final, turn 16 took the rest and produced stt_final at 2071 ms.
+Turn 15 closed `bot_stopped` with stt_audio_s -1 because `turn_started`
+force-finishes an open turn when a second onset arrives. Turns 1-14 were
+one-per-file, endpoint divergences 0, orphan marks 0 — the gate and the cascade
+machinery were working.
+
+THE INVARIANT WAS STRICTER THAN v3 §3.4 SPECIFIES. The turns>files check I wrote
+in step 1 aborted on the FIRST excess turn; §3.4 says to flag the turn and its
+successor and tolerate the split. Count-based voiding is now removed entirely.
+
+THE RULE IS NOW ABOUT SHAPE, NOT COUNT:
+
+    A VAD SPLIT flags BOTH halves invalid with reason `vad_split` and NEVER
+    voids the run, however many there are. It is detected where it happens —
+    TurnManager.turn_started, when a second onset force-finishes an open turn —
+    not by polling a counter.
+
+    THE RUN VOIDS ON A CASCADE, which is two shapes:
+      - a turn whose vad_user_stopped is more than 1500 ms from its file's own
+        speech_end_ns AND which is not part of a split pair;
+      - a turn with no stt_final of its own that is not the first half of a
+        split, which is the 2026-09-22 shape exactly: a turn closed before its
+        final, whose decode then landed on the next turn.
+
+    Neither half of a split is drift-checked: by construction neither one's
+    endpoint is the file's.
+
+THE SPLIT RATE IS A MEASUREMENT, NOT A FAULT COUNT. Each run reports
+`splits / files` and the number of flagged turns, and the rate goes in the set
+table beside duration and word count: it is endpoint detection on read speech,
+which is what this corpus is. long_digit split at file 2 in both reps — 4-word
+digit strings read aloud have pauses inside them — so its rate may be high. The
+set is KEPT with the rate as a caveat even if fewer than 12 of 20 turns survive
+per rep; dropping it would hide the finding that produced it.
+
+Pinned by src/tests/test_run_invariants.py: a split flags both halves and does
+not void; unlimited splits do not void; a drift outside a split voids; a turn
+with no final that is not a split half voids. 243 tests green.
+
+The four completed runs (sixteen, short_digit, reps 1-2) are DISCARDED: they ran
+under a different harness build than the reps that follow, and mixing code
+versions inside one pass is not something this project does.

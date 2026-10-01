@@ -12,8 +12,8 @@ from __future__ import annotations
 from twl.twotier import Job, Span, TwoTierListener, choose_job
 
 
-def span(a: float, b: float, text: str = "tiny words") -> Span:
-    return Span(start_s=a, end_s=b, tiny_text=text)
+def span(a: float, b: float, tiny_text: str = "tiny words") -> Span:
+    return Span(start_s=a, end_s=b, tiny_text=tiny_text)
 
 
 def test_nothing_runs_beside_another_decode() -> None:
