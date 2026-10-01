@@ -4871,3 +4871,57 @@ with no final that is not a split half voids. 243 tests green.
 The four completed runs (sixteen, short_digit, reps 1-2) are DISCARDED: they ran
 under a different harness build than the reps that follow, and mixing code
 versions inside one pass is not something this project does.
+
+## 2026-10-01 — PASS 1 COMPLETE. P1 IS FALSIFIED
+
+12 runs, 4 sets x 3 reps, REACTIVE at canonical offsets [0.5, 1.5, 2.5].
+ZERO aborts, zero cascades, zero endpoint divergences outside splits.
+
+### Split rate — endpoint detection on read speech, identical across all 3 reps
+
+    set            splits/files   rate    valid turns per rep
+    dev                0/16       0.00            16
+    short_digit        0/20       0.00            20
+    long_digit         1/20       0.05            19
+    multi_step        11/80       0.14            73
+
+The rate is deterministic: the same files split in every rep, to three decimals.
+Same audio, same VAD, same answer — so this is a property of the RECORDINGS, not
+of load. multi_step's 14 % is the number to carry into the set table: one in
+seven GSM8K problems read aloud contains a pause Silero takes for an endpoint.
+long_digit's single split is one file, not a tendency.
+
+### P1 SCORED AND FALSIFIED
+
+P1: REACTIVE's stt_final share of TTFA >= 50 % at every length, rising
+monotonically with duration. FALSIFIED if any set < 40 % or the order breaks.
+
+    set           n    audio s   TTFA ms              stt share          llm share
+    dev          48       2.5    3595 [3545, 3660]    56.0% [54.7, 57.5]      6.5%
+    short_digit  60       4.5    3807 [3715, 3855]    47.9% [47.1, 48.4]      6.4%
+    long_digit   54       4.8    3924 [3844, 4045]    46.2% [45.4, 46.9]      6.2%
+    multi_step  213      15.3    4383 [4313, 4432]    61.5% [60.9, 62.0]      5.0%
+
+    all >= 50 % ?   NO  (short_digit 47.9, long_digit 46.2)
+    any  < 40 % ?   no
+    monotone ?      NO  — 56.0, 47.9, 46.2, 61.5: it dips and recovers
+
+THE ORDER BREAKS, SO P1 IS FALSIFIED. Written as predicted, scored as it fell.
+
+WHAT SURVIVES, stated separately so the falsification is not softened into a
+pass: stt_final is still the LARGEST SINGLE STAGE in every set (46-62 %) and the
+language model is 5.0-6.5 % everywhere. The thesis sentence — the silence
+belongs to the recognizer, not the language model — is not what failed. What
+failed is the claim that the share rises with DURATION.
+
+HYPOTHESIS, POST-HOC AND LABELLED AS SUCH: duration is the wrong x-axis. The two
+sets that dip are the digit sets, which are 4 WORDS spoken over 4.5-4.8 s —
+little text in much audio. §3.5 measured the solo decode as ~10-15 ms per second
+of audio PLUS 6.3-7.6 ms per word, so a set with few words in long audio has a
+cheap final relative to its TTFA. dev (6 words, 2.5 s) and multi_step (42 words,
+15.3 s) are both word-dense; the digit sets are not. This was not predicted and
+is not a result; it is a hypothesis the falsification suggests, and the paper's
+x-axis may need words as well as seconds. Testing it needs a set that is long in
+seconds and short in words, which is what the digit sets already are — so the
+evidence for it is the same evidence that falsified P1 and cannot also confirm
+it.
