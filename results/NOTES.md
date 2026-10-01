@@ -4925,3 +4925,52 @@ x-axis may need words as well as seconds. Testing it needs a set that is long in
 seconds and short in words, which is what the digit sets already are — so the
 evidence for it is the same evidence that falsified P1 and cannot also confirm
 it.
+
+## 2026-10-01 — The dev-set TTFA regression is a CONFIG CHANGE, and the old baseline is retired
+
+Pass 1's dev TTFA is 3595 ms [3545, 3660]; the canonical Phase-1 baseline
+reactive-20260915-222329-ae7a6f is 3095 ms. Paired by utterance over all 16,
+the delta is +659 ms [+309, +802].
+
+STAGE BY STAGE, paired on the same utterances:
+
+    stage        2026-09-15   pass 1    delta
+    settle              800      800       +0
+    stt_final          1705     2020     +315
+    llm_ttft            136      233      +97
+    tts_first           424      586     +162
+    transport             1        1       +0
+    TTFA               3095     3595     +500   (sum of stages +575)
+
+THREE STAGES GREW, NOT ONE, so no single stage explains it. The cause is the
+configuration:
+
+    2026-09-15:  0 partials over 64 turns. 0.00 in flight at the endpoint.
+    pass 1 dev:  38 partials over 16 turns = 2.38/turn, offsets [0.5, 1.5, 2.5],
+                 engine tiny. 13/16 = 0.81 IN FLIGHT AT THE ENDPOINT.
+
+The canonical baseline was measured on a pipeline that emitted NO PARTIALS AT
+ALL — single-engine, before the two-engine STT of 2026-09-17. Today's REACTIVE
+emits three per turn and four fifths of them are still decoding when the speaker
+stops. +315 ms on the final is the listener's overlap penalty arriving where it
+was measured to arrive (c ~ 747 ms per second of overlap; the overlaps here are
+fractions of a second). llm_ttft and tts_first grew because a partial cancelled
+at the endpoint KEEPS DECODING — it holds a core through generation and
+synthesis, which is the same shared-core mechanism one stage later.
+
+NOT A HARNESS FAULT, so nothing is rerun. RECORDED AS THE NEW BASELINE:
+
+    REACTIVE baseline, dev set, canonical offsets [0.5, 1.5, 2.5], two-engine:
+    TTFA 3595 ms [3545, 3660], n=48 over 3 reps (pass 1, 2026-10-01).
+
+THE 3095 ms FIGURE IS RETIRED as a comparator. It describes a pipeline that no
+longer exists and is not comparable with anything measured after 2026-09-17.
+Anywhere it appears as "the REACTIVE baseline" it needs that date attached.
+
+A NAIVE OVERLAP COMPARISON IS NOT AVAILABLE HERE and is flagged rather than
+reported: across pass 1, turns WITH measured overlap have 2.5 s of audio at the
+median and those without have 12.7 s, because the last partial at 2.5 s lands
+near the endpoint only on short utterances. Comparing their final decodes
+directly compares utterance lengths (CLAUDE.md §2, common support). The overlap
+coefficient is estimated with audio as a covariate in final_decode_model.py, and
+P2a is scored on its own pre-registered population, not here.
