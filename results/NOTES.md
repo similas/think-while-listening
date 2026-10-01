@@ -4753,3 +4753,35 @@ selected on single_step_reasoning, a different split. The multi_step smoke was
 read once, before the sweep, and the configuration it ran (a=2 g=0.3 words) was
 REJECTED by the sweep. It is disclosed because those 16 items are no longer
 naive to the experimenter, not because a choice was made on them.
+
+## CORRECTION (2026-10-01b) to the P3 amendment. The primary threshold was set wrong
+
+The amendment above set P3 primary at >= 500 ms and said "500 ms IS STILL ABOVE
+THE BRACKET, deliberately. It is a prediction, not a restatement of the
+estimate, and it can fail." That reasoning is wrong and is withdrawn.
+
+A PREDICTION STATES WHAT IS EXPECTED. Setting the threshold above the estimate
+makes it a stretch target, and failing a target one does not believe teaches
+nothing — the result would be "the number came in where I thought it would, and
+the prediction failed", which is not a finding about the mechanism. Falsifiability
+comes from the INTERVAL, not from inflating the threshold: a CI that excludes 0
+is a claim that can be wrong, and one that includes 0 refutes the mechanism's
+only claim, that committing before the endpoint recovers decode time.
+
+AMENDED, replacing the 500 ms line:
+
+  P3 PRIMARY. Median TTFA reduction >= 300 ms on multi_step, CI EXCLUDING 0.
+      The point estimate is reported against the 350-450 ms bracket derived
+      above (74 ms/s solo cost x ~6 s committed; and 244 ms at 10.6 s scaled to
+      15.4 s). A point estimate inside the bracket with a CI excluding 0 is the
+      mechanism confirmed at the size predicted; outside it, the bracket is
+      wrong and the arithmetic behind it gets revisited in the open.
+
+  P3 SECONDARY. The original >= 1000 ms, scored as it falls. Unchanged.
+
+  NOT TESTABLE on dev and short_digit, as above. Unchanged.
+
+300 ms is below the bracket on purpose: it is the smallest reduction that is
+worth a reader's attention next to a 3.2-5.6 s TTFA, so a pass means the
+mechanism does something that matters, and the bracket comparison says whether
+it did as much as the model expected.
