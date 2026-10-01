@@ -4974,3 +4974,46 @@ near the endpoint only on short utterances. Comparing their final decodes
 directly compares utterance lengths (CLAUDE.md §2, common support). The overlap
 coefficient is estimated with audio as a covariate in final_decode_model.py, and
 P2a is scored on its own pre-registered population, not here.
+
+## PRE-REGISTRATION 2026-10-01d — word density, not duration. Before the run
+
+P1 was falsified on monotonicity: the stt_final share of TTFA went 56.0, 47.9,
+46.2, 61.5 % in duration order. The post-hoc hypothesis was that DURATION is the
+wrong x-axis, because the two sets that dip are 4 words spoken over 4.5-4.8 s.
+It is tested here on a set that has not been used for anything scored.
+
+HYPOTHESIS. The stt_final share of TTFA is monotone in WORD DENSITY (words per
+second of audio), not in duration. The solo decode costs ~10-15 ms per second of
+audio PLUS 6.3-7.6 ms per word (§3.5), so a set with little text in much audio
+has a cheap final relative to its TTFA.
+
+    set           words   audio s   words/s   stt share
+    short_digit       4       4.5      0.89      47.9 %
+    long_digit        4       4.8      0.83      46.2 %
+    dev               6       2.5      2.40      56.0 %
+    multi_step       42      15.3      2.75      61.5 %
+
+In word-density order the shares are 46.2, 47.9, 56.0, 61.5 — monotone on the
+four sets already measured. That ordering is POST-HOC and is not the test.
+
+THE TEST. single_step_reasoning: 25 words, 10.6 s, 2.36 words/s — between dev
+(2.40) and multi_step (2.75) on density, and far from both on duration.
+
+    PREDICTION: its stt_final share falls between dev's 56.0 % and multi_step's
+    61.5 %. FALSIFIED if outside [50, 65] %.
+
+    A duration-ordered account predicts something else: at 10.6 s it sits
+    between long_digit (4.8 s, 46.2 %) and multi_step (15.3 s, 61.5 %), so
+    anywhere from 46 to 62 % would be consistent with duration and only
+    [56, 61.5] is consistent with density. The band [50, 65] is the
+    falsification line, not the prediction; the prediction is the narrower
+    [56.0, 61.5].
+
+DISCLOSURE. single_step_reasoning has been used as the CONFIGURATION SELECTION
+set for COMMIT-WL (2026-09-23f). No REACTIVE measurement has been taken on it,
+and the selection used only COMMIT-WL's own WER against a one-shot baseline, so
+nothing about its stt_final SHARE has been read. It stops being available as a
+naive set after this run, which is acceptable: COMMIT-WL's configuration is
+already chosen and will not be re-selected on it.
+
+3 reps, REACTIVE, canonical config, ~13 min.
