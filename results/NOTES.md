@@ -4710,3 +4710,46 @@ instead of rsync. Largest non-wav file today is 42.0 MB
 (reactive-20260922-130314-6a8b26/telemetry.jsonl), under GitHub's 50 MB warning
 but close enough that a long Phase 5 run will cross it; the script will need a
 pre-push size check before that remote exists.
+
+## AMENDMENT 2026-10-01 to P3. Before any Phase 5 run
+
+P3 predicted a median TTFA reduction >= 1000 ms on multi_step. The arithmetic
+behind that number was never written down, and when it is, it does not support
+1000 ms.
+
+WHAT IS ACTUALLY RECOVERABLE. Canonical REACTIVE's partial offsets are
+[0.5, 1.5, 2.5], so on a 15.4 s utterance it stops producing partials twelve
+seconds before the endpoint and its final decodes ALONE — overlap 0. A solo
+final costs ~74 ms per second of audio (the offline B2 fit, 1384 + 74 x s). So
+what COMMIT-WL can take back is the SOLO cost of the audio it committed, not
+the contended cost:
+
+    saving ~= 74 ms/s x (committed seconds)
+
+The chosen configuration leaves the final 60 % of the audio, i.e. it commits
+~40 % — about 6 s of a 15.4 s utterance — which is ~450 ms. The selection set
+measured 244 ms at 10.6 s median, and 244 x (15.4/10.6) = 355 ms. The two
+estimates bracket 350-450 ms.
+
+AMENDED:
+
+  P3 PRIMARY. Median TTFA reduction >= 500 ms on multi_step, CI excluding 0.
+  P3 SECONDARY. The original >= 1000 ms, scored as it falls.
+
+  NOT TESTABLE BY DESIGN on dev (2.4 s) and short_digit (4.8 s): the issuer
+  needs 1.0 s of uncommitted audio plus a ~1.0 s decode plus the duty gap, so
+  the first hypothesis lands around 2.4 s and LocalAgreement-2 needs a SECOND
+  one. Both sets still run, for P1, P4 and the baseline check, and the live
+  acceptance already confirmed the degeneracy (0 committed words on 32 turns).
+  long_digit (5.4 s) is marginal and is scored as it falls.
+
+500 ms IS STILL ABOVE THE BRACKET, deliberately. It is a prediction, not a
+restatement of the estimate, and it can fail.
+
+DISCLOSURE. The first long smoke used 16 items from multi_step seed 20260922 —
+the same pool Phase 5 draws from. NOTHING WAS TUNED ON THEM: every parameter
+(agreement_n, tail_guard, granularity, at_endpoint, hypothesis model) was
+selected on single_step_reasoning, a different split. The multi_step smoke was
+read once, before the sweep, and the configuration it ran (a=2 g=0.3 words) was
+REJECTED by the sweep. It is disclosed because those 16 items are no longer
+naive to the experimenter, not because a choice was made on them.
