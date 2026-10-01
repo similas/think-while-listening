@@ -4785,3 +4785,33 @@ AMENDED, replacing the 500 ms line:
 worth a reader's attention next to a 3.2-5.6 s TTFA, so a pass means the
 mechanism does something that matters, and the bracket comparison says whether
 it did as much as the model expected.
+
+## SELECTION RULE 2026-10-01c — an inert pass is not a pass. Committed before the two-tier reps
+
+The one-tier sweep produced a configuration that PASSED the WER bar by doing
+nothing: base a=2 held +0.005 dWER while committing on 7/16, 7/16 and 9/16 items
+with a median committed_end of 0.00 s on two reps of three. A rule that ranks on
+dWER first will pick that every time, because the surest way to not damage a
+transcript is to not touch it.
+
+The rule gains an ELIGIBILITY GATE, applied before dWER:
+
+    ELIGIBLE  <=>  commits on >= 12/16 items
+              AND  base text covers >= 50 % of tiny-committed audio by the
+                   endpoint
+              (both medians over reps)
+
+    then      dWER <= +0.020
+    then      largest saving
+
+The second clause is two-tier's own failure mode and has no one-tier analogue: a
+span tiny commits and base never re-decodes is not in the transcript, so its
+audio still goes to the final. A configuration whose spans pile up unread has
+committed on paper and saved nothing.
+
+REPORTED PER REP, not just as a median: dWER, final-sees %, saving, commits-on,
+base coverage of committed audio, ACHIEVED DUTY (tiny + base decode over
+elapsed), and spans completed before the endpoint. Three reps is enough to show
+spread and not enough to hide it — the one-tier tiny arm ranged +0.009 to +0.042
+across three reps of one configuration, and a median alone would have concealed
+that.

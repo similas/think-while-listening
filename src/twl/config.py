@@ -96,6 +96,9 @@ class CommitConfig:
     # "race": start the tail final immediately and discard any hypothesis still
     # decoding. "wait": let it finish and commit it first. Chosen from the
     # smoke and recorded there.
+    # TWO-TIER: tiny decides the commit boundaries, base re-decodes each
+    # committed span and its text IS the transcript. Off reproduces one-tier.
+    two_tier: bool = False
     at_endpoint: str = "race"
     # Bound on the "wait" path. A hypothesis decodes a trimmed buffer, so it
     # should land in ~1.5 s; this stops a wedged engine holding the endpoint.

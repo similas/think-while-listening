@@ -32,6 +32,7 @@ import numpy.typing as npt
 
 from twl.commit import LocalAgreementCommitter, Word
 from twl.pacing import SelfPacedIssuer
+from twl.twotier import Job, Span, TwoTierListener, choose_job
 from twl.wer import wer
 
 
@@ -65,6 +66,12 @@ def main() -> None:
     p.add_argument("--agreement-n", type=int, default=2)
     p.add_argument("--tail-guard-s", type=float, default=0.3)
     p.add_argument("--hypothesis-model", default="tiny", choices=("tiny", "base"))
+    p.add_argument(
+        "--two-tier",
+        action="store_true",
+        help="tiny picks the boundaries, base re-decodes each committed span "
+        "and its text is the transcript",
+    )
     p.add_argument("--out", type=Path, default=Path("results/raw/commit_smoke.json"))
     args = p.parse_args()
 
@@ -118,14 +125,17 @@ def main() -> None:
         baseline_ms = (time.perf_counter_ns() - t0) / 1e6
 
         per_mode = {}
-        for want_words in (True, False):
+        modes = (True,) if args.two_tier else (True, False)
+        for want_words in modes:
             committer = LocalAgreementCommitter(
                 agreement_n=args.agreement_n, tail_guard_s=args.tail_guard_s
             )
             issuer = SelfPacedIssuer(duty_max=args.duty_max)
+            two = TwoTierListener()
             now_s, hyp_ms, n_hyp = 0.0, [], 0
             issue_at: list[float] = []
-            idle_ms = 1e9  # nothing has run yet
+            spans_done, spans_queued = 0, 0
+            idle_ms = 1e9
             while now_s < dur:
                 d = issuer.decide(
                     in_flight=False,
@@ -133,9 +143,37 @@ def main() -> None:
                     idle_ms=idle_ms,
                     buffer_s=now_s - committer.committed_end_s,
                 )
-                if not d.issue:
+                job = (
+                    choose_job(
+                        in_flight=False,
+                        duty_satisfied=d.reason != "duty",
+                        has_pending_span=two.next_span() is not None,
+                        hypothesis_wanted=d.issue,
+                    )
+                    if args.two_tier
+                    else (Job.TINY_HYPOTHESIS if d.issue else Job.NONE)
+                )
+                if job is Job.NONE:
                     now_s += 0.05
                     idle_ms += 50
+                    continue
+                if job is Job.BASE_SPAN:
+                    sp = two.next_span()
+                    assert sp is not None
+                    seg_buf = pcm[int(sp.start_s * rate) : int(sp.end_s * rate)]
+                    t1 = time.perf_counter_ns()
+                    segs = decode(base, seg_buf, initial_prompt=two.prompt() or None)
+                    ms = (time.perf_counter_ns() - t1) / 1e6
+                    text = " ".join(
+                        x.text.strip()
+                        for x in segs
+                        if x.text.strip()  # type: ignore[union-attr]
+                    ).strip()
+                    two.complete(sp, text)
+                    spans_done += 1
+                    issuer.note_decode(ms)
+                    now_s += (ms + issuer.required_idle_ms(1.0)) / 1000.0
+                    idle_ms = 0.0
                     continue
                 start = committer.committed_end_s
                 buf = pcm[int(start * rate) : int(now_s * rate)]
@@ -148,31 +186,34 @@ def main() -> None:
                     tiny,
                     buf,
                     word_timestamps=want_words,
-                    initial_prompt=committer.prompt() or None,
+                    initial_prompt=(two.prompt() if args.two_tier else committer.prompt()) or None,
                 )
                 ms = (time.perf_counter_ns() - t1) / 1e6
                 hyp_ms.append(ms)
                 n_hyp += 1
-                committer.offer(words_of(segs, start, want_words), buffer_end_s=now_s)
+                before = committer.committed_end_s
+                kept = committer.offer(words_of(segs, start, want_words), buffer_end_s=now_s)
+                if args.two_tier and kept:
+                    two.enqueue(
+                        Span(before, committer.committed_end_s, " ".join(w.text for w in kept))
+                    )
+                    spans_queued += 1
                 issuer.note_decode(ms)
-                # The pacing gap is wall time the utterance also spends.
                 now_s += (ms + issuer.required_idle_ms(now_s - committer.committed_end_s)) / 1000.0
                 idle_ms = 0.0
-            # RACE vs WAIT. The loop above advanced wall time past each decode,
-            # so the hypothesis "in flight" at the endpoint is the one whose
-            # decode would still have been running when the audio ran out.
-            race_from = committer.committed_end_s
+            tail_from = two.base_committed_end_s if args.two_tier else committer.committed_end_s
+            race_from = tail_from
             in_flight_ms = max(0.0, (now_s - dur) * 1000.0)
-            tail_from = race_from
             t2 = time.perf_counter_ns()
             tail_segs = decode(base, pcm[int(tail_from * rate) :])
             tail_ms = (time.perf_counter_ns() - t2) / 1e6
             tail_text = " ".join(
-                s.text.strip()
-                for s in tail_segs
-                if s.text.strip()  # type: ignore[union-attr]
+                x.text.strip()
+                for x in tail_segs
+                if x.text.strip()  # type: ignore[union-attr]
             ).strip()
-            final = f"{committer.committed_text()} {tail_text}".strip()
+            committed = two.text() if args.two_tier else committer.committed_text()
+            final = f"{committed} {tail_text}".strip()
             per_mode[want_words] = {
                 "text": final,
                 "committed_end_s": tail_from,
@@ -180,13 +221,20 @@ def main() -> None:
                 "tail_ms": tail_ms,
                 "hyp_ms": hyp_ms,
                 "n_hyp": n_hyp,
-                # What WAIT would have paid: the remaining decode of the
-                # hypothesis race discards, before the tail final can start.
                 "wait_extra_ms": in_flight_ms,
-                # ACHIEVED cadence: the gap between consecutive issues, which
-                # the self-paced rule produces rather than is given.
                 "cadence_s": [b - a for a, b in itertools.pairwise(issue_at)],
+                "spans_queued": spans_queued,
+                "spans_done": spans_done,
+                "tiny_committed_end_s": committer.committed_end_s,
+                "base_covered_frac": (
+                    two.base_committed_end_s / committer.committed_end_s
+                    if committer.committed_end_s > 0
+                    else 0.0
+                ),
             }
+            del race_from
+        if args.two_tier:
+            per_mode[False] = per_mode[True]
 
         rows.append(
             {
@@ -256,6 +304,15 @@ def main() -> None:
             f"  distinct cadences to 0.1 s: {len({round(c, 1) for c in cad})} "
             f"— the controller-varies check wants this > 1"
         )
+
+    if args.two_tier:
+        cov = [float(r["words"]["base_covered_frac"]) for r in rows]  # type: ignore[index]
+        q = sum(int(r["words"]["spans_queued"]) for r in rows)  # type: ignore[index]
+        dn = sum(int(r["words"]["spans_done"]) for r in rows)  # type: ignore[index]
+        print(f"\n  TWO-TIER: {dn}/{q} spans re-decoded by base before the endpoint;")
+        print(f"  base covered {statistics.median(cov):.0%} of the audio tiny committed")
+        print("  (the rest is audio tiny committed and base never reached, which")
+        print("  the final still has to decode — it bought nothing).")
 
     tail = statistics.median([float(r["words"]["tail_s"]) for r in rows])  # type: ignore[index]
     full = statistics.median([float(r["audio_s"]) for r in rows])

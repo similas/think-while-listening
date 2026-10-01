@@ -60,6 +60,7 @@ from twl.telemetry import (
     read_vmstat,
 )
 from twl.turns import TurnManager
+from twl.twotier import Job, Span, TwoTierListener, choose_job
 
 # Pipecat 0.0.108 emits VADUser*SpeakingFrame on the plain-VAD path and
 # User*SpeakingFrame on the (deprecated) context/interruption path; a pipeline
@@ -132,9 +133,12 @@ class StreamingWhisperSTT(STTService):
         )
         self._hyp_task: asyncio.Task[None] | None = None
         self._hyp_lock = asyncio.Lock()
+        self._twotier = TwoTierListener()
+        self._span_queued_ns: dict[tuple[float, float], int] = {}
         self._last_decode_end_ns = 0
         self.hypotheses_issued = 0
         self.hypotheses_skipped = 0
+        self.spans_done = 0
         # Issued = decodes started (the cost). Emitted = frames pushed while
         # the user was still speaking (the decision window). They differ, and
         # conflating them hides the cost of a partial that arrived too late.
@@ -333,7 +337,23 @@ class StreamingWhisperSTT(STTService):
                 idle_ms=(now_ns() - self._last_decode_end_ns) / 1e6,
                 buffer_s=have_s - committed_end,
             )
-            if not decision.issue:
+            if commit.two_tier:
+                # A committed span base has not read yet is audio the final
+                # would otherwise decode again, so it outranks a new
+                # hypothesis. Duty is shared: either engine's decode pays it.
+                job = choose_job(
+                    in_flight=self.decoding,
+                    duty_satisfied=decision.reason != "duty",
+                    has_pending_span=self._twotier.next_span() is not None,
+                    hypothesis_wanted=decision.issue,
+                )
+                if job is Job.BASE_SPAN:
+                    await self._run_span()
+                    continue
+                if job is Job.NONE:
+                    self.hypotheses_skipped += 1
+                    continue
+            elif not decision.issue:
                 self.hypotheses_skipped += 1
                 continue
 
@@ -372,7 +392,16 @@ class StreamingWhisperSTT(STTService):
             self._last_decode_end_ns = done_ns
             self._issuer.note_decode(decode_ms)
             self._turns.mark("stt_partial_done", at_ns=done_ns)
+            before = self._committer.committed_end_s
             kept = self._committer.offer(words, buffer_end_s)
+            if commit.two_tier and kept:
+                span = Span(
+                    start_s=before,
+                    end_s=self._committer.committed_end_s,
+                    tiny_text=" ".join(w.text for w in kept),
+                )
+                self._span_queued_ns[(span.start_s, span.end_s)] = now_ns()
+                self._twotier.enqueue(span)
             emitted = bool(words) and self._speaking
             if emitted:
                 self._turns.mark("stt_partial_frame", at_ns=now_ns())
@@ -404,6 +433,68 @@ class StreamingWhisperSTT(STTService):
                     )
                 ).strip()
                 await self.push_frame(InterimTranscriptionFrame(text, "", time_now_iso8601(), None))
+
+    async def _run_span(self) -> None:
+        """Re-decode one committed span with base; its text becomes the record.
+
+        Tiny only ever chose where to cut. A cut in the wrong place costs a
+        worse split; a tiny WORD in the transcript costs a wrong word, which is
+        what the one-tier measurement could not afford.
+        """
+        span = self._twotier.next_span()
+        if span is None:
+            return
+        n0 = int(span.start_s * self.sample_rate)
+        n1 = int(span.end_s * self.sample_rate)
+        with self._lock:
+            buf = self._audio[n0:n1].copy()
+        if len(buf) < int(0.1 * self.sample_rate):
+            self._twotier.complete(span, span.tiny_text)
+            return
+        prompt = self._twotier.prompt() if self._cfg.commit.use_initial_prompt else ""
+        started = now_ns()
+        async with self._hyp_lock:
+            text = await asyncio.to_thread(self._decode_span, buf, prompt)
+        done = now_ns()
+        self._last_decode_end_ns = done
+        self._issuer.note_decode((done - started) / 1e6)
+        self._twotier.complete(span, text)
+        self.spans_done += 1
+        self._turns.note_span(
+            start_s=span.start_s,
+            end_s=span.end_s,
+            queued_ns=self._span_queued_ns.pop((span.start_s, span.end_s), started),
+            started_ns=started,
+            done_ns=done,
+            tiny_text=span.tiny_text,
+            base_text=text,
+            before_endpoint=self._speaking,
+        )
+
+    def _decode_span(self, audio: npt.NDArray[np.float32], prompt: str) -> str:
+        """base on one committed span, with the same in-thread bookkeeping."""
+        started = now_ns()
+        with self._activity_lock:
+            self._decode_starts.append(started)
+        try:
+            engine = self._model
+            assert engine is not None
+            segments, _info = engine.transcribe(
+                audio,
+                language=self._cfg.language,
+                beam_size=1,
+                temperature=0.0,
+                condition_on_previous_text=False,
+                vad_filter=True,
+                vad_parameters={"min_silence_duration_ms": 250},
+                initial_prompt=prompt or None,
+            )
+            return " ".join(
+                s.text.strip() for s in segments if s.no_speech_prob < 0.6 and s.text.strip()
+            ).strip()
+        finally:
+            with self._activity_lock:
+                self._decode_starts.remove(started)
 
     def _decode_words(
         self,
@@ -560,6 +651,8 @@ class StreamingWhisperSTT(STTService):
             if self._cfg.commit.enabled:
                 if self._hyp_task is None:
                     self._committer.reset()
+                    self._twotier.reset()
+                    self._span_queued_ns.clear()
                     self._issuer.reset()
                     self._last_decode_end_ns = now_ns()
                     self._hyp_task = asyncio.get_running_loop().create_task(self._hypothesis_loop())
@@ -601,8 +694,15 @@ class StreamingWhisperSTT(STTService):
                     with contextlib.suppress(asyncio.CancelledError, TimeoutError):
                         await asyncio.wait_for(self._hyp_task, timeout=commit.wait_timeout_s)
                     self._hyp_task = None
-                tail_from_s = self._committer.committed_end_s
-                committed_text = self._committer.committed_text()
+                if commit.two_tier:
+                    # THE TAIL STARTS WHERE BASE GOT TO. A span tiny committed
+                    # but base never re-decoded is not in the transcript, so
+                    # its audio still has to be read by the final.
+                    tail_from_s = self._twotier.base_committed_end_s
+                    committed_text = self._twotier.text()
+                else:
+                    tail_from_s = self._committer.committed_end_s
+                    committed_text = self._committer.committed_text()
                 # THE FINAL DECODES ONLY WHAT IS UNCOMMITTED. This is the whole
                 # mechanism: the final is 57-83 % of TTFA and linear in the
                 # audio it is handed.

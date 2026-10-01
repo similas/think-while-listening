@@ -32,6 +32,7 @@ from twl.records import (
     PartialRecord,
     RunComplete,
     RunMeta,
+    SpanRecord,
     StageEvent,
     TurnRecord,
     write_jsonl,
@@ -187,6 +188,7 @@ class TurnManager:
         self.last_mark_ns = 0
         self.late_partials = 0
         self.hypotheses_written = 0
+        self.spans_written = 0
         self._committed_words = 0
         self._committed_end_s = 0.0
         self._final_tail_s = -1.0
@@ -340,6 +342,40 @@ class TurnManager:
         self._committed_end_s = committed_end_s
         self._final_tail_s = final_tail_s
         self._total_words = total_words
+
+    def note_span(
+        self,
+        *,
+        start_s: float,
+        end_s: float,
+        queued_ns: int,
+        started_ns: int,
+        done_ns: int,
+        tiny_text: str,
+        base_text: str,
+        before_endpoint: bool,
+    ) -> None:
+        """One two-tier span, written as base finishes it."""
+        if self._clock is None:
+            self.orphan_marks += 1
+            return
+        origin = self._clock.origin_ns
+        write_jsonl(
+            self._fh,
+            SpanRecord(
+                run_id=self._run_id,
+                turn=self._turn,
+                start_s=round(start_s, 3),
+                end_s=round(end_s, 3),
+                queued_ms=round((queued_ns - origin) / 1e6, 1),
+                started_ms=round((started_ns - origin) / 1e6, 1),
+                done_ms=round((done_ns - origin) / 1e6, 1),
+                tiny_text=tiny_text,
+                base_text=base_text,
+                before_endpoint=before_endpoint,
+            ),
+        )
+        self.spans_written += 1
 
     def note_hypothesis(
         self,

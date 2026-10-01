@@ -26,7 +26,8 @@ def to_jsonl(
     | RunComplete
     | PartialRecord
     | DecisionRecord
-    | HypothesisRecord,
+    | HypothesisRecord
+    | SpanRecord,
 ) -> str:
     """One record → one JSON line (no trailing newline)."""
     d = asdict(record)
@@ -43,7 +44,8 @@ def write_jsonl(
     | RunComplete
     | PartialRecord
     | DecisionRecord
-    | HypothesisRecord,
+    | HypothesisRecord
+    | SpanRecord,
 ) -> None:
     """Append one record to an open text file and flush (crash-safe logs)."""
     fh.write(to_jsonl(record) + "\n")
@@ -89,6 +91,29 @@ class HypothesisRecord:
     duty: float
 
     kind: str = field(default="hypothesis_record", init=False)
+
+
+@dataclass(frozen=True)
+class SpanRecord:
+    """One committed span's journey from tiny's boundary to base's words.
+
+    ``before_endpoint`` is the quantity the mechanism lives or dies by: a span
+    base did not finish in time is audio the final still has to decode, so it
+    bought nothing.
+    """
+
+    run_id: str
+    turn: int
+    start_s: float
+    end_s: float
+    queued_ms: float
+    started_ms: float
+    done_ms: float
+    tiny_text: str
+    base_text: str
+    before_endpoint: bool
+
+    kind: str = field(default="span_record", init=False)
 
 
 @dataclass(frozen=True)
