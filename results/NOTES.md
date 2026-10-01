@@ -4675,3 +4675,38 @@ warm-up turns or a different wav directory then scores against the wrong
 reference, and the inflated WER was the mismatch, not the recogniser. Reverted.
 The script now PRINTS the skipped count so the coverage is visible rather than
 implied.
+
+## DECISION 2026-10-01 — the off-box backup is DEFERRED, risk accepted
+
+ALTERNATIVES: (a) rsync to the Mac; (b) a private GitHub repo holding
+results/raw minus audio; (c) defer and carry the risk.
+CHOSEN: (c), by Ali, explicitly as an accepted risk. Recorded once here and not
+raised again.
+
+WHAT THE RISK IS, stated so it is not rediscovered later. results/raw is 900 MB,
+of which 583 MB is wav and 316 MB is the logs every number in this project is
+derived from. It is gitignored by CLAUDE.md §1, so the repository does not hold
+it, and it lives on one NVMe volume in one machine. Losing it loses Phases 0-4
+outright: the analyses regenerate from the logs, and nothing regenerates the
+logs. Phase 5 adds roughly 40-60 MB per long pass.
+
+WHAT WAS BUILT BEFORE THE DEFERRAL, and is left in place:
+  - src/scripts/backup_results.sh (push-only rsync) and a nightly user timer,
+    both installed and DISABLED;
+  - results/raw is now its own git repository with a .gitignore of *.wav and
+    every other audio and weights extension, first commit "backup 2026-10-01",
+    1108 files tracked, 0 wav. Its .git is 39 MB.
+
+THAT NESTED REPOSITORY IS NOT A BACKUP and is not described as one: it is on the
+same volume as what it copies. It protects against an accidental overwrite or
+deletion of a log file, and against nothing else. The remote was never created —
+`gh` is not installed on this machine and no GitHub token is present, so the
+repository could not be made from here.
+
+TO FINISH IT LATER: create a private repo, then
+  git -C results/raw remote add origin <ssh-url> && git -C results/raw push -u origin main
+and point backup_results.sh at `git -C results/raw add -A && commit && push`
+instead of rsync. Largest non-wav file today is 42.0 MB
+(reactive-20260922-130314-6a8b26/telemetry.jsonl), under GitHub's 50 MB warning
+but close enough that a long Phase 5 run will cross it; the script will need a
+pre-push size check before that remote exists.

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import itertools
 import json
 import statistics
 import time
@@ -63,6 +64,7 @@ def main() -> None:
     p.add_argument("--duty-max", type=float, default=0.6)
     p.add_argument("--agreement-n", type=int, default=2)
     p.add_argument("--tail-guard-s", type=float, default=0.3)
+    p.add_argument("--hypothesis-model", default="tiny", choices=("tiny", "base"))
     p.add_argument("--out", type=Path, default=Path("results/raw/commit_smoke.json"))
     args = p.parse_args()
 
@@ -76,9 +78,16 @@ def main() -> None:
         print(f"no wavs in {args.wav_dir}")
         return
 
-    tiny = WhisperModel("tiny", device="cpu", compute_type="int8", cpu_threads=3)
     base = WhisperModel("base", device="cpu", compute_type="int8", cpu_threads=3)
-    for m in (tiny, base):
+    # The hypothesis engine. base as hypothesis means ONE model resident
+    # instead of two, which is 134 MB of the recogniser's footprint back —
+    # and the occupancy tax says footprint is not free on this device.
+    tiny = (
+        base
+        if args.hypothesis_model == "base"
+        else WhisperModel("tiny", device="cpu", compute_type="int8", cpu_threads=3)
+    )
+    for m in ({id(tiny): tiny, id(base): base}).values():
         m.transcribe(np.zeros(16000, dtype=np.float32), language="en", beam_size=1)
 
     def decode(model: object, audio: npt.NDArray[np.float32], **kw: object) -> object:
@@ -115,6 +124,7 @@ def main() -> None:
             )
             issuer = SelfPacedIssuer(duty_max=args.duty_max)
             now_s, hyp_ms, n_hyp = 0.0, [], 0
+            issue_at: list[float] = []
             idle_ms = 1e9  # nothing has run yet
             while now_s < dur:
                 d = issuer.decide(
@@ -132,6 +142,7 @@ def main() -> None:
                 if len(buf) < int(0.2 * rate):
                     now_s += 0.05
                     continue
+                issue_at.append(now_s)
                 t1 = time.perf_counter_ns()
                 segs = decode(
                     tiny,
@@ -172,6 +183,9 @@ def main() -> None:
                 # What WAIT would have paid: the remaining decode of the
                 # hypothesis race discards, before the tail final can start.
                 "wait_extra_ms": in_flight_ms,
+                # ACHIEVED cadence: the gap between consecutive issues, which
+                # the self-paced rule produces rather than is given.
+                "cadence_s": [b - a for a, b in itertools.pairwise(issue_at)],
             }
 
         rows.append(
@@ -229,6 +243,19 @@ def main() -> None:
     print(f"  (max {max(waits):.0f} ms over {len(waits)} segments). It buys a shorter")
     print("  tail only when that hypothesis commits, which needs a SECOND")
     print("  agreeing hypothesis that by definition has not been issued.")
+
+    cad = [c for r in rows for c in r["segments"]["cadence_s"]]  # type: ignore[index]
+    nhyp = [float(r["segments"]["n_hyp"]) for r in rows]  # type: ignore[index]
+    if cad:
+        print(
+            f"\n  achieved cadence {statistics.median(cad):.2f} s "
+            f"(min {min(cad):.2f}, max {max(cad):.2f}, n={len(cad)}); "
+            f"{statistics.median(nhyp):.0f} hypotheses per utterance"
+        )
+        print(
+            f"  distinct cadences to 0.1 s: {len({round(c, 1) for c in cad})} "
+            f"— the controller-varies check wants this > 1"
+        )
 
     tail = statistics.median([float(r["words"]["tail_s"]) for r in rows])  # type: ignore[index]
     full = statistics.median([float(r["audio_s"]) for r in rows])
