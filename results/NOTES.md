@@ -5017,3 +5017,45 @@ naive set after this run, which is acceptable: COMMIT-WL's configuration is
 already chosen and will not be re-selected on it.
 
 3 reps, REACTIVE, canonical config, ~13 min.
+
+## 2026-10-01 — Word density scored. The prediction hit; the hypothesis does not hold
+
+3 reps REACTIVE on single_step_reasoning, canonical config. Split rate 3/20 =
+0.15, identical in all three reps. 51 valid turns.
+
+    single_step_reasoning: audio 10.6 s, TTFA 3875 ms,
+    stt_final share 58.2 % [57.0, 59.2]
+
+    PREDICTION (between dev 56.0 % and multi_step 61.5 %)   INSIDE
+    falsification band [50, 65] %                           survives
+
+THE PREDICTION AS STATED SUCCEEDED. The hypothesis it was testing does not.
+
+Shares in WORD-DENSITY order, all five sets:
+
+    set                  words/s   stt share
+    long_digit              0.83      46.2 %
+    short_digit             0.89      47.9 %
+    single_step             2.36      58.2 %
+    dev                     2.40      56.0 %
+    multi_step              2.75      61.5 %
+
+46.2, 47.9, 58.2, 56.0, 61.5 — NOT MONOTONE. single_step at 2.36 words/s sits
+ABOVE dev at 2.40, and the intervals ([57.0, 59.2] against [54.7, 57.5]) barely
+touch, so the inversion is not noise. Density orders the two digit sets away
+from the rest, which duration did not, and then fails between the two sets whose
+densities are nearly equal.
+
+THE TEST WAS ALSO WEAK, which was pre-registered and is restated rather than
+glossed: a duration account allowed 46-62 % here, so 58.2 % is consistent with
+BOTH and excludes neither. The narrow band was hit; nothing was ruled out.
+
+WHERE THIS LEAVES P1. P1 stays falsified — that was scored on its own terms.
+Neither duration nor word density is a sufficient x-axis for the stt share on
+these five sets. What holds without qualification is the unordered claim:
+stt_final is the largest single stage in all five sets (46.2-61.5 %) and the
+language model is 5.0-6.5 % in all five. The paper's Fig. 1 should show the
+shares per set and NOT fit a line through them.
+
+single_step_reasoning is no longer naive and is not used as a selection set
+again.
