@@ -5059,3 +5059,51 @@ shares per set and NOT fit a line through them.
 
 single_step_reasoning is no longer naive and is not used as a selection set
 again.
+
+## PRE-REGISTRATION 2026-10-01e — pass 1n, REACTIVE-NOPARTIAL. Before the run
+
+The dev regression (2026-10-01) showed the Phase-1 canonical baseline was
+measured on a pipeline that emitted NO PARTIALS: 0 over 64 turns, against 2.38
+per turn and 81 % in flight at the endpoint today. +500 ms of TTFA separates
+them and the comparator was retired.
+
+That leaves the project with one baseline doing two jobs it cannot do at once.
+Canonical REACTIVE is what the FIELD means by a cascaded baseline — it emits
+partials, because partials are what thinker-side speculation consumes. But it
+is not the right floor for COMMIT-WL, because its partials already cost the
+final the overlap penalty COMMIT-WL is trying to avoid. Measuring COMMIT-WL
+against it credits COMMIT-WL with removing a cost the baseline did not have to
+pay in the first place.
+
+PASS 1n: REACTIVE-NOPARTIAL. partial_offsets_s empty, so no partial is ever
+issued; BOTH ENGINES STAY RESIDENT AND IDLE, so the occupancy tax (THP
+fallback, +7-8 %) is held constant and only the DECODES are removed. Otherwise
+identical to pass 1: same config, same sets, 4 x 3 reps, canonical everything
+else.
+
+    PREDICTION. Paired by utterance on the dev set, canonical minus NOPARTIAL
+    TTFA is 400-600 ms. FALSIFIED if the CI includes 0.
+
+    Reasoned from the decomposition: +315 ms on the final, +97 on llm_ttft,
+    +162 on tts_first against a pipeline that also differed by being
+    single-engine. Holding residency constant should leave the decode-contention
+    part, which is most of it.
+
+    Reported per set: the paired canonical - NOPARTIAL difference with its CI,
+    and the IN-FLIGHT RATE for each set, since the difference should scale with
+    how often a partial is still decoding at the endpoint.
+
+TWO BASELINES, BOTH NAMED, NEITHER HIDDEN:
+
+    REACTIVE (canonical)   the field's baseline. Emits partials. What a
+                           thinker-side system needs and what prior work means.
+    REACTIVE-NOPARTIAL     the pipeline's floor. Same residency, no partial
+                           decodes. What COMMIT-WL must beat to have done
+                           anything.
+
+P1 IS RE-SCORED ON NOPARTIAL as well as on canonical, and both are reported. P1
+is already falsified on canonical; whether it falls the same way without the
+partial-decode contention is a separate fact and is not used to revive it.
+
+PASS 2 IS MEASURED AGAINST NOPARTIAL. Against canonical it would be measured
+against a baseline carrying a cost it was designed to remove.
