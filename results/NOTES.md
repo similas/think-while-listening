@@ -5107,3 +5107,65 @@ partial-decode contention is a separate fact and is not used to revive it.
 
 PASS 2 IS MEASURED AGAINST NOPARTIAL. Against canonical it would be measured
 against a baseline carrying a cost it was designed to remove.
+
+## DECISION 2026-10-02 — NEITHER QUALIFIES. tiny a=2 runs, P4 is reported failed
+
+Two-tier, 3 reps on the selection set (16 items, median 10.6 s), tiny a=2 g=0.3
+duty 0.6, base re-decoding every committed span:
+
+    rep    dWER   final sees   saving   commits   base cov   duty   spans<end
+      1  +0.042         87 %   114 ms     16/16      100 %   0.41          18
+      2  +0.042         88 %   139 ms     16/16      100 %   0.41          18
+      3  +0.047         86 %   127 ms     16/16      100 %   0.42          18
+
+    ELIGIBILITY  commits 16/16 (>= 12)  PASS
+                 base coverage 100 % (>= 50 %)  PASS
+    WER BAR      dWER +0.042 (<= +0.020)  FAIL
+
+Against one-tier on the same set and rule:
+
+    arm                 dWER (median, range)   final sees   saving
+    tiny a=2 one-tier   +0.028 (+0.009..+0.042)      57-60 %   283 ms
+    base a=2 one-tier   +0.005 (stable)              73-100 %  133 ms (noise)
+    TWO-TIER            +0.042 (+0.042..+0.047)      86-88 %   127 ms
+
+TWO-TIER IS WORSE THAN ONE-TIER TINY ON BOTH AXES. It transcribes worse
+(+0.042 against +0.028) and commits less (the final still sees 87 % against
+57-60 %). It is also the most REPRODUCIBLE of the three, with a range of 0.005
+across reps against tiny's 0.033 — so this is not noise.
+
+WHY, as far as the data says. Two mechanisms, both visible in the table:
+
+ 1. SHORT-SPAN RE-DECODING IS WORSE THAN WHOLE-UTTERANCE DECODING. Base covered
+    100 % of what tiny committed and the transcript still got WORSE than tiny's
+    own. A 1-2 s span carries almost no acoustic context; `initial_prompt`
+    hands over the committed TEXT but nothing of the audio around it. The
+    premise of the design — base's words are better than tiny's — does not hold
+    when base is handed fragments.
+ 2. THE SPANS CROWD OUT THE HYPOTHESES. Duty sat at 0.41, well under the 0.6
+    ceiling, so the rule was not the constraint; but every base span is wall
+    time during which tiny is not issuing, so tiny committed far less than it
+    does alone. 87 % of the audio still reaching the final is the cost of that.
+
+DECIDED, by the rule as written and with "neither qualifies" being a valid
+outcome: no configuration passes. COMMIT-WL for the grid is ONE-TIER TINY,
+a=2, tail_guard 0.3, segment granularity, duty_max 0.6, at_endpoint race —
+the configuration chosen on 2026-09-23h — and P4 IS REPORTED FAILED, scored
+against the +0.020 bar it does not meet, exactly as pre-registered on
+2026-10-01 (option 2).
+
+WHAT THIS IS, stated as a result and not as a setback. On 10.6 s utterances
+there is no arrangement of this mechanism that commits meaningfully and holds
+its accuracy: commit with tiny and the transcript degrades; re-decode with base
+and the commits shrink while the transcript degrades further; use base alone
+and nothing commits. The listener can commit, or it can be accurate, at this
+utterance length — not both. That is a sharper claim than a tuned win, and it
+is what the paper reports.
+
+NOT PURSUED, and why: an agreement-1 rule (commit the newest hypothesis
+outright) would commit more, but it discards the agreement criterion that makes
+a commit safe, and the WER direction is already the wrong one. A longer span
+(batching several commits before re-decoding) would give base more context, but
+it delays the commit until after the endpoint on most turns, which is the thing
+the mechanism exists to beat. Both are recorded here rather than tried, because
+the budget belongs to passes 1n and 2.

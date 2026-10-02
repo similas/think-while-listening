@@ -221,13 +221,13 @@ def main() -> None:
             final = f"{committed} {tail_text}".strip()
             per_mode[want_words] = {
                 "text": final,
-                "committed_end_s": tail_from,
-                "tail_s": dur - tail_from,
+                "committed_end_s": float(tail_from),
+                "tail_s": float(dur - tail_from),
                 "tail_ms": tail_ms,
                 "hyp_ms": hyp_ms,
                 "n_hyp": n_hyp,
                 "wait_extra_ms": in_flight_ms,
-                "cadence_s": [b - a for a, b in itertools.pairwise(issue_at)],
+                "cadence_s": [float(b - a) for a, b in itertools.pairwise(issue_at)],
                 "spans_queued": spans_queued,
                 "spans_done": spans_done,
                 "spans_before_endpoint": spans_before_endpoint,
@@ -236,12 +236,15 @@ def main() -> None:
                 # either engine ran, over the audio it ran during. This is the
                 # quantity the VAD starvation was traced to, and it must hold
                 # whichever engine spends it.
-                "achieved_duty": (
+                "achieved_duty": float(
                     (sum(hyp_ms) + sum(span_ms)) / (now_s * 1000.0) if now_s > 0 else -1.0
                 ),
-                "committed": committer.committed_end_s > 0,
-                "tiny_committed_end_s": committer.committed_end_s,
-                "base_covered_frac": (
+                # CAST AT THE BOUNDARY. Whisper's timestamps are numpy
+                # scalars, so every value derived from them is one too, and
+                # json refuses them with a message that names the Python type.
+                "committed": bool(committer.committed_end_s > 0),
+                "tiny_committed_end_s": float(committer.committed_end_s),
+                "base_covered_frac": float(
                     two.base_committed_end_s / committer.committed_end_s
                     if committer.committed_end_s > 0
                     else 0.0
