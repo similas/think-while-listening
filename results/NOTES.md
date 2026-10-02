@@ -5213,3 +5213,63 @@ context length, words decoded, words kept. words_kept/words_decoded is the
 price of the context.
 
 3 reps, selection set (16 items, median 10.6 s), after pass 1n. ~20 min.
+
+## 2026-10-02 — PASS 1n COMPLETE. The partial-decode cost is real, smaller than predicted, and scales with in-flight rate
+
+12 runs, REACTIVE-NOPARTIAL (partial_offsets_s empty, BOTH ENGINES RESIDENT),
+otherwise identical to pass 1. Zero aborts. First run verified at 0 partials
+over 16 turns.
+
+PAIRED BY UTTERANCE, canonical minus NOPARTIAL TTFA:
+
+    set           canon   NOPART   paired diff ms          canon in-flight
+    dev            3595     3356   +315 [+188, +453] n=16             83 %
+    short_digit    3807     3779     -6 [ -57,  +43] n=20             15 %
+    long_digit     3924     3892     -0 [ -32,  +81] n=18              9 %
+    multi_step     4383     4344    +55 [ +24,  +93] n=71              1 %
+
+PREDICTION: dev difference 400-600 ms, FALSIFIED if the CI includes 0.
+RESULT: +315 ms [+188, +453]. The CI EXCLUDES 0, so the prediction SURVIVES its
+falsification test — and the point estimate MISSES THE PREDICTED BAND, which is
+reported rather than rounded into a pass. Only the interval's upper half reaches
+400 ms. I predicted the cost would be most of the +500 ms the 2026-09-15
+comparison showed; holding residency constant leaves about two thirds of it, so
+some of that +500 belonged to the single-engine/two-engine difference rather
+than to the decodes.
+
+THE EFFECT TRACKS THE IN-FLIGHT RATE, which is the mechanism check and it holds:
+83 % in flight -> +315 ms; 15 % and 9 % -> indistinguishable from zero, both CIs
+spanning 0; 1 % -> +55 ms [+24, +93], small but excluding 0. A partial that is
+NOT still decoding at the endpoint costs the final nothing measurable, which is
+what the overlap model says and is now shown on four sets rather than argued.
+
+WHY DEV AND NOT THE OTHERS: canonical offsets are [0.5, 1.5, 2.5] and dev's
+utterances are 2.5 s, so the third partial is issued at almost exactly the
+endpoint and is still running when it arrives. The digit sets (4.5-4.8 s) and
+multi_step (15.3 s) outlive their last partial, so its decode has finished
+before the speaker stops.
+
+### P1 RE-SCORED ON NOPARTIAL — it falls the same way
+
+    set           NOPARTIAL stt share     canonical (pass 1)
+    dev           52.9 % [51.4, 54.0]     56.0 %
+    short_digit   47.0 % [46.4, 47.7]     47.9 %
+    long_digit    46.1 % [45.8, 46.5]     46.2 %
+    multi_step    61.5 % [60.9, 62.0]     61.5 %
+
+52.9, 47.0, 46.1, 61.5 in duration order: NOT MONOTONE, two sets below 50 %,
+none below 40 %. Identical verdict to canonical. P1's falsification is therefore
+NOT an artefact of partial-decode contention — removing the partials entirely
+leaves the same shape. That is reported as a strengthening of the falsification,
+never as a route to reviving P1, which stays falsified on its own terms.
+
+### TWO BASELINES, BOTH NAMED
+
+    REACTIVE (canonical)  the field's baseline, emits partials.
+                          dev TTFA 3595 ms, multi_step 4383 ms.
+    REACTIVE-NOPARTIAL    the pipeline's floor, same residency, no partial
+                          decodes. dev 3356 ms, multi_step 4344 ms.
+
+PASS 2 IS MEASURED AGAINST NOPARTIAL. On multi_step the two differ by 55 ms, so
+for the set COMMIT-WL is aimed at, the choice of baseline is nearly immaterial —
+which is worth knowing before the comparison rather than after.
