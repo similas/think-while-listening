@@ -5169,3 +5169,47 @@ a commit safe, and the WER direction is already the wrong one. A longer span
 it delays the commit until after the endpoint on most turns, which is the thing
 the mechanism exists to beat. Both are recorded here rather than tried, because
 the budget belongs to passes 1n and 2.
+
+## PRE-REGISTRATION 2026-10-02b — two-tier v2: batch and context. Before the reps
+
+v1 was decided against (2026-10-02): +0.042 dWER, final still seeing 87 % of the
+audio, worse than one-tier tiny on both axes. The DECISION recorded two causes
+and v2 is the test of whether they were the causes or just the symptoms.
+
+    v1  one base call per committed span, 1-2 s of audio, no context
+    v2  spans accumulate to BATCH_S = 4.0 s (or the endpoint), then ONE base
+        call over [batch_start - LOOKBACK_S (2.0 s), batch_end], keeping only
+        words timestamped inside the batch
+
+The lookback is heard and never transcribed; the batching cuts the number of
+base calls by the same factor it lengthens them. Priority and duty rules are
+unchanged; at the endpoint, race, and the tail starts at base's last boundary —
+with a forced flush first, since a batch left pending would be re-read by the
+tail decode anyway.
+
+PREDICTION, all three required:
+
+    dWER        <= +0.015      base-quality words, now with context
+    final sees  <= 65 %        batching must not starve the hypotheses
+    saving      >= 250 ms      at least what one-tier tiny delivers
+
+ELIGIBILITY GATE unchanged (2026-10-01c): commits on >= 12/16 AND base covers
+>= 50 % of tiny-committed audio, both medians over 3 reps. Then dWER <= +0.020,
+then largest saving.
+
+WHAT EACH OUTCOME MEANS, fixed now so neither can be read backwards:
+
+    PASSES  the v1 failure was the fragments, not the architecture, and
+            context is what base needed. v2 becomes COMMIT-WL for pass 2.
+    FAILS   the DECISION of 2026-10-02 stands unchanged: one-tier tiny a=2
+            runs and P4 is reported failed. Two attempts at giving base better
+            input have then both come out worse than tiny alone, and the claim
+            becomes that the LISTENER'S ACCURACY CEILING IS THE HYPOTHESIS
+            ENGINE'S, not the re-decoder's — which is a stronger statement than
+            one attempt could support.
+
+LOGGED PER BASE CALL so the mechanism is visible either way: window length,
+context length, words decoded, words kept. words_kept/words_decoded is the
+price of the context.
+
+3 reps, selection set (16 items, median 10.6 s), after pass 1n. ~20 min.

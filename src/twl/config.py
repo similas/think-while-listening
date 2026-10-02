@@ -99,6 +99,12 @@ class CommitConfig:
     # TWO-TIER: tiny decides the commit boundaries, base re-decodes each
     # committed span and its text IS the transcript. Off reproduces one-tier.
     two_tier: bool = False
+    # v2: committed audio that accumulates before one base call, and the audio
+    # before it that base hears for context and never transcribes. v1 called
+    # base per span with no context and transcribed WORSE than tiny
+    # (NOTES 2026-10-02).
+    batch_s: float = 4.0
+    lookback_s: float = 2.0
     at_endpoint: str = "race"
     # Bound on the "wait" path. A hypothesis decodes a trimmed buffer, so it
     # should land in ~1.5 s; this stops a wedged engine holding the endpoint.

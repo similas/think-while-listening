@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import logging
 import os
 import threading
@@ -250,6 +251,7 @@ class StreamingWhisperSTT(STTService):
         *,
         base_s: float,
         initial_prompt: str,
+        want_words: bool | None = None,
     ) -> list[Word]:
         """Decode a TRIMMED buffer and return words timed in the TURN's audio.
 
@@ -269,14 +271,19 @@ class StreamingWhisperSTT(STTService):
             condition_on_previous_text=False,
             vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 250},
-            word_timestamps=commit.word_timestamps,
+            # The HYPOTHESIS path follows the config (segment granularity is
+            # the selected configuration). A BATCH call overrides it to True,
+            # because its words are filtered by timestamp and without them the
+            # context cannot be told from the batch.
+            word_timestamps=commit.word_timestamps if want_words is None else want_words,
             initial_prompt=initial_prompt or None,
         )
         out: list[Word] = []
         for seg in segments:
             if seg.no_speech_prob >= 0.6:
                 continue
-            if commit.word_timestamps and getattr(seg, "words", None):
+            use_words = commit.word_timestamps if want_words is None else want_words
+            if use_words and getattr(seg, "words", None):
                 out.extend(
                     Word(text=w.word.strip(), start_s=base_s + w.start, end_s=base_s + w.end)
                     for w in seg.words
@@ -344,7 +351,10 @@ class StreamingWhisperSTT(STTService):
                 job = choose_job(
                     in_flight=self.decoding,
                     duty_satisfied=decision.reason != "duty",
-                    has_pending_span=self._twotier.next_span() is not None,
+                    has_pending_span=self._twotier.ready_batch(
+                        batch_s=commit.batch_s, lookback_s=commit.lookback_s
+                    )
+                    is not None,
                     hypothesis_wanted=decision.issue,
                 )
                 if job is Job.BASE_SPAN:
@@ -434,41 +444,65 @@ class StreamingWhisperSTT(STTService):
                 ).strip()
                 await self.push_frame(InterimTranscriptionFrame(text, "", time_now_iso8601(), None))
 
-    async def _run_span(self) -> None:
-        """Re-decode one committed span with base; its text becomes the record.
+    async def _run_span(self, *, force: bool = False) -> None:
+        """One base call over the BATCH of committed spans, with context.
 
-        Tiny only ever chose where to cut. A cut in the wrong place costs a
-        worse split; a tiny WORD in the transcript costs a wrong word, which is
-        what the one-tier measurement could not afford.
+        v1 re-decoded each span alone and transcribed worse than tiny: a 1-2 s
+        fragment carries no acoustic context, and `initial_prompt` hands over
+        text, not audio. v2 waits for `batch_s` of committed audio, then decodes
+        [batch_start - lookback_s, batch_end] in ONE call and KEEPS ONLY the
+        words inside the batch. The lookback is heard and never transcribed.
         """
-        span = self._twotier.next_span()
-        if span is None:
+        commit = self._cfg.commit
+        batch = self._twotier.ready_batch(
+            force=force, batch_s=commit.batch_s, lookback_s=commit.lookback_s
+        )
+        if batch is None:
             return
-        n0 = int(span.start_s * self.sample_rate)
-        n1 = int(span.end_s * self.sample_rate)
+        n0 = int(batch.context_from_s * self.sample_rate)
+        n1 = int(batch.end_s * self.sample_rate)
         with self._lock:
             buf = self._audio[n0:n1].copy()
         if len(buf) < int(0.1 * self.sample_rate):
-            self._twotier.complete(span, span.tiny_text)
+            self._twotier.complete_batch(batch, " ".join(sp.tiny_text for sp in batch.spans))
             return
-        prompt = self._twotier.prompt() if self._cfg.commit.use_initial_prompt else ""
+        prompt = self._twotier.prompt() if commit.use_initial_prompt else ""
         started = now_ns()
         async with self._hyp_lock:
-            text = await asyncio.to_thread(self._decode_span, buf, prompt)
+            words = await asyncio.to_thread(
+                functools.partial(
+                    self._decode_words,
+                    buf,
+                    batch.context_from_s,
+                    prompt,
+                    None,
+                    model=self._model,
+                    want_words=True,
+                )
+            )
         done = now_ns()
+        # The context is thrown away: only words timed inside the batch count.
+        kept = [w for w in words if batch.start_s - 1e-6 <= w.start_s < batch.end_s + 1e-6]
+        text = " ".join(w.text for w in kept).strip()
         self._last_decode_end_ns = done
         self._issuer.note_decode((done - started) / 1e6)
-        self._twotier.complete(span, text)
-        self.spans_done += 1
+        self._twotier.complete_batch(batch, text)
+        self.spans_done += len(batch.spans)
         self._turns.note_span(
-            start_s=span.start_s,
-            end_s=span.end_s,
-            queued_ns=self._span_queued_ns.pop((span.start_s, span.end_s), started),
+            start_s=batch.start_s,
+            end_s=batch.end_s,
+            queued_ns=self._span_queued_ns.pop(
+                (batch.spans[0].start_s, batch.spans[0].end_s), started
+            ),
             started_ns=started,
             done_ns=done,
-            tiny_text=span.tiny_text,
+            tiny_text=" ".join(sp.tiny_text for sp in batch.spans),
             base_text=text,
             before_endpoint=self._speaking,
+            window_s=batch.seconds,
+            context_s=batch.context_s,
+            words_decoded=len(words),
+            words_kept=len(kept),
         )
 
     def _decode_span(self, audio: npt.NDArray[np.float32], prompt: str) -> str:
@@ -502,6 +536,9 @@ class StreamingWhisperSTT(STTService):
         base_s: float,
         prompt: str,
         on_boundaries: Callable[[int, int], None] | None = None,
+        *,
+        model: WhisperModel | None = None,
+        want_words: bool | None = None,
     ) -> list[Word]:
         """_decode's word-level twin, with the same in-thread bookkeeping."""
         started = now_ns()
@@ -509,7 +546,11 @@ class StreamingWhisperSTT(STTService):
             self._decode_starts.append(started)
         try:
             return self._transcribe_words(
-                audio, self._partial_model, base_s=base_s, initial_prompt=prompt
+                audio,
+                self._partial_model if model is None else model,
+                base_s=base_s,
+                initial_prompt=prompt,
+                want_words=want_words,
             )
         finally:
             done = now_ns()
@@ -695,6 +736,10 @@ class StreamingWhisperSTT(STTService):
                         await asyncio.wait_for(self._hyp_task, timeout=commit.wait_timeout_s)
                     self._hyp_task = None
                 if commit.two_tier:
+                    # FLUSH FIRST: a batch still pending at the endpoint would
+                    # otherwise be re-read by the tail decode anyway, so run it
+                    # while its audio is still shorter than the tail.
+                    await self._run_span(force=True)
                     # THE TAIL STARTS WHERE BASE GOT TO. A span tiny committed
                     # but base never re-decoded is not in the transcript, so
                     # its audio still has to be read by the final.

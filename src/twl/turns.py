@@ -374,6 +374,10 @@ class TurnManager:
         tiny_text: str,
         base_text: str,
         before_endpoint: bool,
+        window_s: float = -1.0,
+        context_s: float = -1.0,
+        words_decoded: int = -1,
+        words_kept: int = -1,
     ) -> None:
         """One two-tier span, written as base finishes it."""
         if self._clock is None:
@@ -393,6 +397,10 @@ class TurnManager:
                 tiny_text=tiny_text,
                 base_text=base_text,
                 before_endpoint=before_endpoint,
+                window_s=round(window_s, 3),
+                context_s=round(context_s, 3),
+                words_decoded=words_decoded,
+                words_kept=words_kept,
             ),
         )
         self.spans_written += 1

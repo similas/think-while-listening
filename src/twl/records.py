@@ -112,6 +112,13 @@ class SpanRecord:
     tiny_text: str
     base_text: str
     before_endpoint: bool
+    # v2: one base call covers several spans and hears audio before them.
+    # words_kept/words_decoded is the price of the context — everything
+    # decoded outside [start_s, end_s] is thrown away.
+    window_s: float = -1.0
+    context_s: float = -1.0
+    words_decoded: int = -1
+    words_kept: int = -1
 
     kind: str = field(default="span_record", init=False)
 
