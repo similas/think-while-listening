@@ -137,6 +137,7 @@ def main() -> None:
             span_ms: list[float] = []
             spans_done, spans_queued = 0, 0
             spans_before_endpoint = 0
+            batch_log: list[dict[str, float | int | bool]] = []
             idle_ms = 1e9
             while now_s < dur:
                 d = issuer.decide(
@@ -149,7 +150,10 @@ def main() -> None:
                     choose_job(
                         in_flight=False,
                         duty_satisfied=d.reason != "duty",
-                        has_pending_span=two.next_span() is not None,
+                        has_pending_span=two.ready_batch(
+                            batch_s=args.batch_s, lookback_s=args.lookback_s
+                        )
+                        is not None,
                         hypothesis_wanted=d.issue,
                     )
                     if args.two_tier
@@ -160,20 +164,31 @@ def main() -> None:
                     idle_ms += 50
                     continue
                 if job is Job.BASE_SPAN:
-                    sp = two.next_span()
-                    assert sp is not None
-                    seg_buf = pcm[int(sp.start_s * rate) : int(sp.end_s * rate)]
+                    b = two.ready_batch(batch_s=args.batch_s, lookback_s=args.lookback_s)
+                    assert b is not None
+                    seg_buf = pcm[int(b.context_from_s * rate) : int(b.end_s * rate)]
                     t1 = time.perf_counter_ns()
-                    segs = decode(base, seg_buf, initial_prompt=two.prompt() or None)
+                    segs = decode(
+                        base,
+                        seg_buf,
+                        word_timestamps=True,
+                        initial_prompt=two.prompt() or None,
+                    )
                     ms = (time.perf_counter_ns() - t1) / 1e6
-                    text = " ".join(
-                        x.text.strip()
-                        for x in segs
-                        if x.text.strip()  # type: ignore[union-attr]
-                    ).strip()
-                    two.complete(sp, text)
-                    spans_done += 1
+                    allw = words_of(segs, b.context_from_s, True)
+                    kept = [w for w in allw if b.start_s - 1e-6 <= w.start_s < b.end_s + 1e-6]
+                    two.complete_batch(b, " ".join(w.text for w in kept).strip())
+                    spans_done += len(b.spans)
                     span_ms.append(ms)
+                    batch_log.append(
+                        {
+                            "window_s": float(b.seconds),
+                            "context_s": float(b.context_s),
+                            "decoded": len(allw),
+                            "kept": len(kept),
+                            "before_endpoint": bool(now_s + ms / 1000.0 <= dur),
+                        }
+                    )
                     if now_s + ms / 1000.0 <= dur:
                         spans_before_endpoint += 1
                     issuer.note_decode(ms)
@@ -206,6 +221,31 @@ def main() -> None:
                 issuer.note_decode(ms)
                 now_s += (ms + issuer.required_idle_ms(now_s - committer.committed_end_s)) / 1000.0
                 idle_ms = 0.0
+            if args.two_tier:
+                # FORCED FLUSH: a batch left pending would be re-read by the
+                # tail decode anyway, so run it while its audio is shorter.
+                b = two.ready_batch(force=True, batch_s=args.batch_s, lookback_s=args.lookback_s)
+                if b is not None:
+                    seg_buf = pcm[int(b.context_from_s * rate) : int(b.end_s * rate)]
+                    t1 = time.perf_counter_ns()
+                    segs = decode(
+                        base, seg_buf, word_timestamps=True, initial_prompt=two.prompt() or None
+                    )
+                    ms = (time.perf_counter_ns() - t1) / 1e6
+                    allw = words_of(segs, b.context_from_s, True)
+                    kept = [w for w in allw if b.start_s - 1e-6 <= w.start_s < b.end_s + 1e-6]
+                    two.complete_batch(b, " ".join(w.text for w in kept).strip())
+                    spans_done += len(b.spans)
+                    span_ms.append(ms)
+                    batch_log.append(
+                        {
+                            "window_s": float(b.seconds),
+                            "context_s": float(b.context_s),
+                            "decoded": len(allw),
+                            "kept": len(kept),
+                            "before_endpoint": False,
+                        }
+                    )
             tail_from = two.base_committed_end_s if args.two_tier else committer.committed_end_s
             race_from = tail_from
             in_flight_ms = max(0.0, (now_s - dur) * 1000.0)
@@ -231,6 +271,7 @@ def main() -> None:
                 "spans_queued": spans_queued,
                 "spans_done": spans_done,
                 "spans_before_endpoint": spans_before_endpoint,
+                "batches": batch_log,
                 "span_ms": span_ms,
                 # ACHIEVED duty over the whole listening window: every decode
                 # either engine ran, over the audio it ran during. This is the
@@ -341,6 +382,15 @@ def main() -> None:
         dn = sum(int(r["words"]["spans_done"]) for r in rows)  # type: ignore[index]
         print(f"\n  TWO-TIER: {dn}/{q} spans re-decoded by base before the endpoint;")
         print(f"  base covered {statistics.median(cov):.0%} of the audio tiny committed")
+        bl = [b for r in rows for b in r["words"]["batches"]]  # type: ignore[index]
+        if bl:
+            print(
+                f"  base calls {len(bl)}: window median "
+                f"{statistics.median(float(b['window_s']) for b in bl):.1f} s, context "
+                f"{statistics.median(float(b['context_s']) for b in bl):.1f} s, "
+                f"words kept {sum(int(b['kept']) for b in bl)}/"
+                f"{sum(int(b['decoded']) for b in bl)}"
+            )
         print("  (the rest is audio tiny committed and base never reached, which")
         print("  the final still has to decode — it bought nothing).")
 

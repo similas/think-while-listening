@@ -5273,3 +5273,38 @@ never as a route to reviving P1, which stays falsified on its own terms.
 PASS 2 IS MEASURED AGAINST NOPARTIAL. On multi_step the two differ by 55 ms, so
 for the set COMMIT-WL is aimed at, the choice of baseline is nearly immaterial —
 which is worth knowing before the comparison rather than after.
+
+## PRE-REGISTRATION 2026-10-02c — pass 1r, residency. AFTER pass 2, not before
+
+Pass 1n left a gap it could not close. The 2026-09-15 canonical baseline was
++500 ms slower than today's dev TTFA; removing the partial DECODES while keeping
+both engines resident accounts for +315 ms [+188, +453]. The remaining ~185 ms
+is unattributed. Two candidates:
+
+  RESIDENCY. The second engine is +134 MB resident, and the occupancy tax
+  (2026-09-16, THP fallback) says mere residency costs the recognizer 7-8 %.
+  2026-09-15 was single-engine, so it paid none of it.
+  DRIFT. Seventeen days of harness changes that have nothing to do with either.
+
+PASS 1r: dev set only, 3 reps, the NOPARTIAL config with the tiny model
+UNLOADED (partial_model empty, so it is never built). Everything else identical.
+That isolates residency from the decodes, which pass 1n already removed.
+
+    PREDICTION. Paired TTFA, NOPARTIAL minus UNLOADED.
+
+    >= 100 ms with a CI excluding 0  ->  the two-engine design's residency cost
+        is MEASURED, and it goes into the T-EPA accounting as "+134 MB, +X ms"
+        rather than as memory alone. That accounting has priced resident models
+        by megabytes since Phase 4; this gives it a latency column.
+
+    ~ 0 (CI includes 0)  ->  residency is not the remainder, the 2026-09-15 gap
+        was harness drift, and it is recorded as drift. The honest consequence
+        is that cross-date comparisons in this project need a same-day baseline,
+        which is what pass 1n now provides.
+
+RUNS AFTER PASS 2, deliberately. Pass 2 is the result the thesis turns on and it
+is already configured and waiting; a residency measurement is an accounting
+detail for a decision (T-EPA) that was made and parked. Ordering it first would
+be spending the headline's budget on a footnote.
+
+~8 min (dev set, 3 reps).
