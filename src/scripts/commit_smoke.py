@@ -32,7 +32,7 @@ import numpy.typing as npt
 
 from twl.commit import LocalAgreementCommitter, Word
 from twl.pacing import SelfPacedIssuer
-from twl.twotier import Job, Span, TwoTierListener, choose_job
+from twl.twotier import BATCH_S, LOOKBACK_S, Job, Span, TwoTierListener, choose_job
 from twl.wer import wer
 
 
@@ -66,6 +66,8 @@ def main() -> None:
     p.add_argument("--agreement-n", type=int, default=2)
     p.add_argument("--tail-guard-s", type=float, default=0.3)
     p.add_argument("--hypothesis-model", default="tiny", choices=("tiny", "base"))
+    p.add_argument("--batch-s", type=float, default=BATCH_S)
+    p.add_argument("--lookback-s", type=float, default=LOOKBACK_S)
     p.add_argument(
         "--two-tier",
         action="store_true",
