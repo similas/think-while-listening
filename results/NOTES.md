@@ -5308,3 +5308,35 @@ detail for a decision (T-EPA) that was made and parked. Ordering it first would
 be spending the headline's budget on a footnote.
 
 ~8 min (dev set, 3 reps).
+
+## AMENDMENT 2026-10-05 — v2 at batch_s 3.0, so the lookback is actually exercised
+
+v2 rep 1 at batch_s 4.0 passed every threshold but dWER (+0.021 against a
++0.020 bar), and improved on v1 substantially: final sees 52 % against 87 %,
+saving 329 ms, windows 3.7-8.1 s against v1's 1-2 s fragments.
+
+BUT THE LOOKBACK NEVER ENGAGED. All 16 base calls report context_s = 0.0 and
+kept/decoded = 181/181. The reason is structural, not a bug: there is EXACTLY
+ONE base call per utterance, its batch starts at 0.0 s because tiny's first
+commit begins at the start of the utterance, and max(0, 0 - 2.0) = 0. With
+batch_s 4.0 on a 10.6 s utterance where tiny commits ~4.75 s, a second batch
+never fires, and only a second or later batch has earlier audio to hear.
+
+So v1 -> v2 is ENTIRELY THE BATCHING. The context hypothesis is untested, and
+"v2 improved" must not be read as "context helped".
+
+ADDED, to test it: 3 reps at batch_s 3.0, lookback 2.0. A 3.0 s batch on ~4.75 s
+of committed audio should fire twice, and the second batch starts around 3.0 s
+with 2.0 s of audio behind it. context_s and kept/decoded are reported PER BATCH
+so the lookback is shown engaged rather than assumed.
+
+SELECTION between batch_s 4.0 and 3.0 by the rule as written — eligibility
+(commits >= 12/16, base coverage >= 50 %), then dWER <= +0.020, then largest
+saving — on medians over 3 reps each.
+
+    IF NEITHER CLEARS +0.020, the standing DECISION of 2026-10-02 holds: one-tier
+    tiny a=2 runs and P4 is reported failed.
+    IF ONE CLEARS IT, it is COMMIT-WL for pass 2.
+
+Both are recorded in the DECISION with the context finding stated plainly,
+whichever way it falls.
