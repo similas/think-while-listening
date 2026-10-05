@@ -5340,3 +5340,63 @@ saving — on medians over 3 reps each.
 
 Both are recorded in the DECISION with the context finding stated plainly,
 whichever way it falls.
+
+## DECISION 2026-10-05 — two-tier v2 FAILS at both batch sizes. The standing decision holds
+
+3 reps each, selection set (16 items, median 10.6 s), tiny a=2 g=0.3 duty 0.6.
+
+    cfg        rep    dWER  final sees  saving  commits   cov  context  kept/dec  calls/utt
+    batch 4.0    1  +0.021         50%   329 ms   16/16  100%    0.00 s  181/181        1.0
+    batch 4.0    2  +0.031         53%   289      16/16  100%    0.00    159/159        1.0
+    batch 4.0    3  +0.028         63%   261      16/16  100%    0.00    151/151        1.0
+    batch 3.0    1  +0.010         58%   261      16/16  100%    0.00    154/154        1.0
+    batch 3.0    2  +0.028         59%   323      16/16  100%    0.00    162/162        1.0
+    batch 3.0    3  +0.069         53%   292      16/16  100%    0.00    169/169        1.0
+
+    batch 4.0  MEDIAN dWER +0.028 (+0.021..+0.031)  final sees 53%  saving 289 ms
+    batch 3.0  MEDIAN dWER +0.028 (+0.010..+0.069)  final sees 58%  saving 292 ms
+
+    ELIGIBILITY  both PASS (commits 16/16, coverage 100 %)
+    dWER BAR     both FAIL at +0.028 against +0.020
+
+NEITHER CLEARS THE BAR, so by the rule as written the DECISION of 2026-10-02
+STANDS: COMMIT-WL for the grid is ONE-TIER TINY a=2, tail_guard 0.3, segment
+granularity, duty_max 0.6, at_endpoint race, and P4 IS REPORTED FAILED.
+
+THE LOOKBACK NEVER ENGAGED, AT EITHER BATCH SIZE. context_s is 0.00 s and
+kept == decoded on every batch of all six reps, with exactly 1.0 base calls per
+utterance throughout. Lowering batch_s from 4.0 to 3.0 did not produce a second
+batch, so the mid-utterance batch is not firing at all and every base call is
+the FORCED FLUSH at the endpoint, covering the whole committed range from 0.0 s.
+
+    THE CONTEXT HYPOTHESIS IS THEREFORE STILL UNTESTED. Two configurations were
+    run to test it and neither exercised it. Why the mid-utterance batch does
+    not fire is not established — the spans are there (2.75 per utterance,
+    ~4.75 s total, so 3.0 s should accumulate) — and it is recorded as an open
+    question rather than guessed at. It does not change the DECISION, because
+    both configurations fail the WER bar regardless of whether context would
+    have helped.
+
+WHAT IS ESTABLISHED ACROSS v1, v2-4.0 AND v2-3.0:
+
+    arm            dWER median   final sees   saving
+    one-tier tiny       +0.028       57-60 %   283 ms
+    two-tier v1         +0.042       86-88 %   127 ms
+    two-tier v2 4.0     +0.028          53 %   289 ms
+    two-tier v2 3.0     +0.028          58 %   292 ms
+
+BATCHING RECOVERED EVERYTHING v1 LOST and nothing more: v2 lands exactly on
+one-tier tiny's +0.028 on all three measures. Three architectures, one number.
+Adding base as a re-decoder — in fragments, in batches, or in batches at two
+sizes — does not move the listener's accuracy off the hypothesis engine's.
+
+THE CLAIM THIS SUPPORTS, and it is stronger than one attempt could carry: THE
+LISTENER'S ACCURACY CEILING IS THE HYPOTHESIS ENGINE'S, NOT THE RE-DECODER'S.
+Where tiny chooses the commit boundaries, the transcript inherits tiny's errors
+regardless of who writes the words — because a boundary in the wrong place
+splits a word or a phrase, and no amount of re-decoding the resulting fragments
+puts it back.
+
+batch 3.0 is also the least stable arm measured (+0.010 to +0.069 across three
+reps), which is recorded because a single rep of it would have looked like the
+best result in this table.
