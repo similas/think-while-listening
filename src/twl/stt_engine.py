@@ -28,7 +28,7 @@ def load_pinned(
     threads inherit THIS thread's affinity, so the pinning has to happen here
     rather than around each decode.
     """
-    from faster_whisper import WhisperModel
+    from faster_whisper import WhisperModel  # type: ignore[import-untyped]
 
     if cpus:
         os.sched_setaffinity(0, set(cpus))

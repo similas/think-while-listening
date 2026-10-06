@@ -151,9 +151,21 @@ class FixedTickIssuer:
     min_uncommitted_s: float = 0.0
 
     def decide(
-        self, *, in_flight: bool, uncommitted_s: float, idle_ms: float, buffer_s: float
+        self,
+        *,
+        in_flight: bool,
+        uncommitted_s: float,
+        idle_ms: float,
+        buffer_s: float,
+        elapsed_s: float = 0.0,
+        pending_agreement: int = 0,
     ) -> IssueDecision:
-        del uncommitted_s, idle_ms  # NAIVE looks at neither, by construction
+        # NAIVE looks at none of these, by construction. They are accepted so
+        # the two issuers share one call site: the ablation has to be the SAME
+        # call with a different rule behind it, or the arms differ in more than
+        # the rule. mypy caught this before it ran; it would have raised
+        # TypeError on the first NAIVE hypothesis.
+        del uncommitted_s, idle_ms, elapsed_s, pending_agreement
         if in_flight:
             return IssueDecision(
                 False, "in_flight", expected_decode_ms=modelled_decode_ms(buffer_s)
