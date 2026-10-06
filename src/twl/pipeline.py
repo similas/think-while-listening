@@ -27,7 +27,7 @@ from twl.services import LlamaChatProcessor, PiperTTSService, StubLlmProcessor
 from twl.speculation import SpeculationDriver
 from twl.stt import StreamingWhisperSTT
 from twl.transport import FrameSource, TwlAudioTransport
-from twl.turns import TurnManager
+from twl.turns import IdleFn, TurnManager
 from twl.vad import EdgeSileroVAD
 
 
@@ -61,7 +61,7 @@ def build_pipeline(
     detector: ContentionDetector | None = None,
     temps_fn: Callable[[int], dict[str, float]] | None = None,
     energy_fn: Callable[[int, int], float] | None = None,
-    idle_fn: Callable[[int, int | None], float] | None = None,
+    idle_fn: IdleFn | None = None,
     warmup_turns: int = 0,
     plan: list[PlannedTurn] | None = None,
     policy_runner: PolicyRunner | None = None,

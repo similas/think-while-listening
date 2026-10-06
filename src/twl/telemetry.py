@@ -190,7 +190,9 @@ class TegrastatsSampler:
             joules += (p0 + p1) / 2.0 * (t1 - t0) / 1e9 / 1000.0
         return joules
 
-    def idle_mw(self, before_ns: int, window_s: float = 2.0, since_ns: int | None = None) -> float:
+    def idle_mw(
+        self, before_ns: int, window_s: float = 2.0, *, since_ns: int | None = None
+    ) -> float:
         """Median VDD_IN over a QUIESCENT window ending at ``before_ns``.
 
         ``since_ns`` is the earliest instant the pipeline is known to be quiet

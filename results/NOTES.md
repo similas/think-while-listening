@@ -5851,3 +5851,86 @@ in the same desktop state, which keeps the comparison internally valid, and
 the absolute idle floor (5.1-6.7 W) carries that caveat. Clocks ARE pinned,
 because a free-running governor on cores 3-5 is a direct confound on a duty
 cycle and --clocks costs nothing.
+
+## 2026-10-06 — P5 SCORED AND FAILED. The issue rule does not starve the VAD on this set
+
+Four arms, one rep each, p5_long20 (20 items, median 24.3 s), ALL on build
+5b9fa60 clean, clocks pinned, scored by src/scripts/p5_score.py.
+
+    arm                  turns  items  split items  starved/turns   rate [95% Wilson]   cadence IQR
+    REACTIVE-NOPARTIAL      29     20            6          14/29   0.48 [0.31, 0.66]   n=0 (none issued)
+    NAIVE-1.0               29     20            6          14/29   0.48 [0.31, 0.66]   206 ms (n=321)
+    CONTROLLED-0.6          29     20            6          14/29   0.48 [0.31, 0.66]   301 ms (n=174)
+    CONTROLLED-0.8          29     20            6          14/29   0.48 [0.31, 0.66]   228 ms (n=251)
+
+    endpoint delay vs the file's own end of speech, non-split turns only:
+    arm                    n   median     p95     max
+    REACTIVE-NOPARTIAL    14      -80     -37     -19
+    NAIVE-1.0             14      -78     -37     -19
+    CONTROLLED-0.6        14      -78     -38     -15
+    CONTROLLED-0.8        14      -79     -36     +15
+
+### P5 FAILS. NAIVE does not starve.
+
+P5 holds only if NAIVE starves on >= 20 % of turns AND both CONTROLLED arms do
+not. EVERY ARM IS IDENTICAL on every quantity the criterion names: the same 29
+turns, the same 20 items, the same 6 split items, endpoint-delay medians within
+2 ms of each other and p95s within 2 ms.
+
+THE ARM THAT SETTLES IT IS REACTIVE-NOPARTIAL. It issues NO hypotheses at all --
+cadence n=0 -- and it splits exactly as often as the arms that issue 321. The
+splitting is a property of this corpus under this VAD, present with the
+listener switched off, and no issue rule moves it. The 0.48 starvation rate is
+the corpus's rate, not the rule's, and it is the same number in all four arms.
+
+THIS IS WHY THE BASELINE ARM WAS ADDED. Without it, NAIVE's 0.48 would have
+read as "NAIVE starves on 48 % of turns, P5 holds" -- and the voided 10:36 run
+was reported to the user in exactly those terms, as "NAIVE-1.0 starves".
+
+### Disjunct (b) is NOT SCOREABLE AS WRITTEN, and is not respecified after the data
+
+P5's second disjunct is "endpoint delay > 2x REACTIVE". REACTIVE's median
+delay on this subset is NEGATIVE, -80 ms: the VAD declares the endpoint BEFORE
+the file's nominal speech length, because the files carry trailing padding that
+the VAD correctly treats as silence. Twice a negative number is a LOOSER bar
+than the number itself, so "> 2x REACTIVE" catches nearly every turn and means
+the opposite of what it was written to mean.
+
+The bar is NOT rewritten now. Choosing a threshold after seeing the
+distributions is the defect the whole pre-registration discipline exists to
+prevent. Disjunct (b) is reported as unscoreable on this set, with the four
+distributions printed above so a reader can see directly that no arm differs.
+Any future respecification is pre-registered before the run that uses it.
+
+### CONTROLLER-VARIES: satisfied, and NAIVE varies too
+
+CONTROLLED-0.6's achieved cadence IQR is 301 ms (n=174) and CONTROLLED-0.8's is
+228 ms (n=251), so the controller is not flat and P5 is testable rather than
+inert on that clause.
+
+NAIVE's IQR is 206 ms (n=321), which a FIXED 1.0 s tick should not have. Its
+in_flight check skips a tick whenever a decode is still running, so even the
+ablation is partly self-paced. The ablation is therefore weaker than intended
+-- it is not an unbounded issuer -- and that is a defect in the arm, recorded.
+
+### What NAIVE does buy: 85 % more decodes, for nothing
+
+    NAIVE-1.0       321 hypotheses
+    CONTROLLED-0.8  251
+    CONTROLLED-0.6  174
+
+NAIVE issues 1.84x CONTROLLED-0.6's decodes and produces the same turns, the
+same splits and the same endpoint delays. The duty bound costs nothing in
+outcome here and saves 147 decodes.
+
+### A prior claim this puts in question
+
+pacing.py's docstring says "1.0 s cadence ran at duty 0.96 and starved the VAD
+badly enough to turn 80 files into 94 turns" (2026-09-22). On THIS set a 1.0 s
+tick starves nothing, and the splitting that does occur is present with no
+listener at all. The 2026-09-22 observation was on multi_step's 80 files under
+a different build and a different gap rule, so it is not refuted here -- but
+the attribution of those 94 turns to the cadence now has a competing
+explanation that was never controlled for, and pass 2's ~45 % split under
+NOPARTIAL points the same way. FLAGGED, not withdrawn: refuting it needs
+REACTIVE and NAIVE on multi_step under one build, which has not been run.

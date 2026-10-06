@@ -20,7 +20,7 @@ import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, Protocol, TextIO
 
 import yaml
 
@@ -54,12 +54,25 @@ from twl.telemetry import (
 
 log = logging.getLogger(__name__)
 
+
 # How far a turn's detected endpoint may sit from the file's own before that
 # turn, and its successor, are flagged. 1.5 s covers the VAD hangover (0.8 s)
 # and the poll granularity with room to spare; past it the turn is not the
 # utterance the file played. A SECOND divergence voids the run: one Silero
 # split on a 30 s utterance must not throw away fifty minutes, but two means
 # turns and files have parted company.
+class IdleFn(Protocol):
+    """The idle-power baseline, called by KEYWORD for the quiet bound.
+
+    Spelled as a Protocol rather than a Callable because the quiet bound is the
+    third parameter and the second is a window length: passing it positionally
+    typechecks against a bare Callable and silently means something else. It
+    did, on 2026-10-06, in all four P5 arms.
+    """
+
+    def __call__(self, before_ns: int, *, since_ns: int | None = None) -> float: ...
+
+
 ENDPOINT_DRIFT_MS = 1500.0
 # After playback_done the output path still has buffers to drain. The idle
 # baseline starts here, not at the mark.
@@ -131,7 +144,7 @@ class TurnManager:
         detector: ContentionDetector | None = None,
         temps_fn: Callable[[int], dict[str, float]] | None = None,
         energy_fn: Callable[[int, int], float] | None = None,
-        idle_fn: Callable[[int, int | None], float] | None = None,
+        idle_fn: IdleFn | None = None,
         warmup_turns: int = 0,
         plan: list[PlannedTurn] | None = None,
     ):
@@ -316,7 +329,9 @@ class TurnManager:
         self._last_hyp_ns = 0
         self._origin_by_turn[self._turn] = self._clock.origin_ns
         self._idle_mw = (
-            self._idle_fn(at_ns, self._quiet_since_ns()) if self._idle_fn is not None else -1.0
+            self._idle_fn(at_ns, since_ns=self._quiet_since_ns())
+            if self._idle_fn is not None
+            else -1.0
         )
         self._contention = {}
         if self._detector is not None:

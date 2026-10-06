@@ -222,3 +222,18 @@ def test_idle_baseline_refuses_a_window_that_is_too_short() -> None:
     # Quiet only for the last 100 ms: fewer than MIN_IDLE_SAMPLES points.
     assert s.idle_mw(end, window_s=2.0, since_ns=end - 100_000_000) == -1.0
     assert MIN_IDLE_SAMPLES >= 3
+
+
+def test_the_idle_baseline_is_called_with_its_quiet_bound_by_keyword() -> None:
+    """Positionally, the quiet bound lands in ``window_s`` and means nothing.
+
+    All four P5 arms on 2026-10-06 raised TypeError on turn 1 and ran every
+    later turn with an unbounded window, because the call was positional and a
+    bare Callable annotation accepted it.
+    """
+    import inspect
+
+    from twl.telemetry import TegrastatsSampler
+
+    p = inspect.signature(TegrastatsSampler.idle_mw).parameters
+    assert p["since_ns"].kind is inspect.Parameter.KEYWORD_ONLY
