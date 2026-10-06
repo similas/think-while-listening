@@ -1,8 +1,8 @@
-# P5 ablation arm: NAIVE issue rule, fixed 1.0 s tick.
+# P5 arm: CONTROLLED at duty_max 0.6.
 #
-# Identical to commit_wl.yaml except stt.commit.issue_rule. This is the arm P5
-# predicts will starve the VAD: a tick that ignores how long a decode took.
-# which is disjoint from every scored set.
+# Byte-identical to commit_wl.yaml. It exists so the P5 arms read as three
+# configs with one difference between them, rather than two p5_* files and the
+# grid's own config standing in for the third.
 audio:
   sample_rate: 16000
   channels: 1
@@ -48,12 +48,8 @@ stt:
     min_uncommitted_s: 1.0
     word_timestamps: false
     use_initial_prompt: true
-    issue_rule: naive
-    # PINNED, not left to the dataclass default: "NAIVE-1.0" has to be in the
-    # config hash or the arm's name is an assertion. duty_max is omitted
-    # because FixedTickIssuer ignores it, and an inert knob in an ablation's
-    # config reads as a setting that did something.
-    naive_tick_s: 1.0
+    issue_rule: controlled
+    duty_max: 0.6
     at_endpoint: race
   partial_cpu_threads: 3
 
