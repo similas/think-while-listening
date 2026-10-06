@@ -157,6 +157,11 @@ Root-level files are allowed; no other top-level folders.
 - Before installing anything heavy (> 200 MB or torch-adjacent), before any
   experiment expected to run > 30 minutes, and before any design decision that
   changes the research claims, metrics, or benchmarks: stop and ask.
+- **Before any gate report, DECISION, or pre-registration, run the reviewer
+  subagent (`.claude/agents/reviewer.md`) on the draft and resolve every
+  finding or state why not. Only findings that survive come to the user.**
+  Every report carries a one-line footer: `reviewer: N findings, M resolved`,
+  or `reviewer: no findings`.
 - Keep `results/NOTES.md` as a dated lab notebook: what was run, what was
   observed, what surprised you, what is unresolved. Terse. Facts only.
 - Any run with swap activity, an OOM, or a thermal-throttle event is recorded
