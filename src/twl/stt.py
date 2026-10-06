@@ -247,6 +247,17 @@ class StreamingWhisperSTT(STTService):
             # RESPAWN AT audio_out_first, the first instant after every
             # interval TTFA measures; at turn close for a turn with no reply.
             # Never at the endpoint, which is where P9 put it.
+            # T-EPA, into the record rather than only the console: what the
+            # second resident worker took from the system.
+            self._turns.note_worker_event(
+                "pool_ready",
+                ns=now_ns(),
+                extra={
+                    "mem_available_delta_mb": self._pool.mem_available_delta_mb,
+                    "ready": [w.ready for w in self._pool.workers],
+                    "spawn_ms": [round(w.last_spawn_ms, 1) for w in self._pool.workers],
+                },
+            )
             self._turns.add_stage_listener("audio_out_first", self._pool.respawn_dead_async)
             self._turns.add_stage_listener("turn_closed", self._pool.respawn_dead_async)
             log.warning(
