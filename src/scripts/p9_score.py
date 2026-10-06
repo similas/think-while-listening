@@ -50,8 +50,9 @@ def read_turns(d: Path) -> tuple[str, list[dict]]:
 
 def read_run(d: Path) -> tuple[str, dict[int, dict]]:
     lines = [json.loads(x) for x in (d / "turns.jsonl").read_text().splitlines() if x.strip()]
-    notes = next(r for r in lines if r["kind"] == "run_meta").get("notes", "")
-    arm = "KILL" if "COMMIT-WL-K " in notes else "RACE"
+    # From the config that ran, not the free-text notes (a label is an assertion).
+    cfg = next(r for r in lines if r["kind"] == "run_meta").get("config_path", "")
+    arm = "KILL" if "kill" in Path(cfg).name else "RACE"
     stop: dict[int, float] = {}
     for r in lines:
         if r["kind"] == "stage_event" and r["stage"] == "vad_user_stopped":
