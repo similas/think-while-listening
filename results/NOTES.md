@@ -6513,3 +6513,32 @@ right test is the paired per-item residual (TTFA - final_ms), RACE - KILL:
 +1 ms [-38, +47], n=16, with the final-decode delta +474 [+59, +796] on the
 same 16 items. The residual is consistent with zero and excludes a reply-side
 effect above ~47 ms. "Entirely" is withdrawn.
+
+## 2026-10-06 — P9b RE-RUN declared (user decision (A)), before launch
+
+TWO CHANGES FROM THE PRE-REGISTRATION (b2c6f71), and only these:
+  1. The turn-close respawn fallback is REMOVED. Respawn happens only at
+     audio_out_first, where no final can be pending (finals are served in
+     endpoint order). The fallback put a spawn on a split's pending final in
+     every KILL run of the first attempt.
+  2. Validity check 1 pairs each endpoint with the final it produced ACROSS
+     TURN RECORDS, from final_window events written by the STT handler. The
+     first scorer looked within one turn record and could not see a split's
+     final at all.
+
+Everything else is unchanged: design, predictions, bars (P9b-a <= 1.1x /
+>= 1.3x; P9b-b >= 150 ms with CI lower > 0), the routing of every other
+outcome to (b), the other validity checks, and p9b_score.py's verdict code.
+
+BUILD: code at 51b59dd; HEAD differs from it only in results/NOTES.md
+(verified at launch with git diff 51b59dd HEAD -- src, which must be empty).
+
+THE VOID RUNS STAY ON RECORD beside these (reactive-20261006-140054-ab1376,
+-141127-236c6f, -142155-b1ac96 KILL, void by check 1; -140608-bb744a,
+-141637-997d1f, -142712-5b9791 RACE). Their measured figures are NOT CITED
+anywhere from here on -- not as a result, not as prior evidence, not as an
+expectation -- because they were measured under a rule that voids them. P9b is
+scored on the re-run alone.
+
+If P9b holds: pass 2k as pre-registered. If not: decision (b), then passes 8,
+6, 7, 9, 1r.
