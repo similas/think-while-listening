@@ -105,7 +105,20 @@ class CommitConfig:
     # (NOTES 2026-10-02).
     batch_s: float = 4.0
     lookback_s: float = 2.0
+    # "race": start the tail final immediately and leave any hypothesis still
+    # decoding to finish on its own cores. "kill": SIGKILL it first, which a
+    # thread cannot do and a process can (twl.hypothesis_worker). "wait": let
+    # it finish and commit it. Pass 2 measured what "race" costs: a tail 43 %
+    # shorter whose final still took 122 ms longer, because the orphan was
+    # still running.
     at_endpoint: str = "race"
+    # Run hypotheses in a child process so they can be preempted. Required by
+    # at_endpoint "kill"; available to "race" so the two can be compared with
+    # the process boundary held constant.
+    hypothesis_process: bool = False
+    # Expected utterance length for THIS SET, a prior and nothing more, used by
+    # the listener feasibility gate (twl.pacing). 0.0 disables the gate.
+    duration_prior_s: float = 0.0
     # Bound on the "wait" path. A hypothesis decodes a trimmed buffer, so it
     # should land in ~1.5 s; this stops a wedged engine holding the endpoint.
     wait_timeout_s: float = 5.0
@@ -263,8 +276,13 @@ def load_config(path: Path) -> TwlConfig:
         raise ValueError(f"{path}: llm.backend must be one of {VALID_LLM_BACKENDS}")
     if cfg.stt.commit.issue_rule not in ("controlled", "naive"):
         raise ValueError(f"{path}: stt.commit.issue_rule must be controlled or naive")
-    if cfg.stt.commit.at_endpoint not in ("race", "wait"):
-        raise ValueError(f"{path}: stt.commit.at_endpoint must be race or wait")
+    if cfg.stt.commit.at_endpoint not in ("race", "wait", "kill"):
+        raise ValueError(f"{path}: stt.commit.at_endpoint must be race, wait or kill")
+    if cfg.stt.commit.at_endpoint == "kill" and not cfg.stt.commit.hypothesis_process:
+        raise ValueError(
+            f"{path}: at_endpoint 'kill' needs hypothesis_process true — a thread "
+            f"cannot be preempted, which is the whole reason the child exists"
+        )
     if not 0.0 < cfg.stt.commit.duty_max <= 1.0:
         raise ValueError(f"{path}: stt.commit.duty_max must be in (0, 1]")
     return cfg

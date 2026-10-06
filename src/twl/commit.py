@@ -69,6 +69,16 @@ class LocalAgreementCommitter:
     # The unagreed tails of the last agreement_n - 1 hypotheses, newest last.
     _remainders: list[list[Word]] = field(default_factory=list, repr=False)
 
+    @property
+    def pending_agreement(self) -> int:
+        """Hypotheses already in the agreement window.
+
+        The feasibility gate needs to know how many MORE decodes a commit still
+        costs: with agreement_n 2 and one hypothesis already held, the next
+        decode can commit on its own, and the gate should not charge it for two.
+        """
+        return len(self._remainders)
+
     def offer(self, hyp: list[Word], buffer_end_s: float) -> list[Word]:
         """Feed one hypothesis decoded on audio[committed_end_s : buffer_end_s].
 

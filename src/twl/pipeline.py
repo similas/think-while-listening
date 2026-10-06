@@ -61,7 +61,7 @@ def build_pipeline(
     detector: ContentionDetector | None = None,
     temps_fn: Callable[[int], dict[str, float]] | None = None,
     energy_fn: Callable[[int, int], float] | None = None,
-    idle_fn: Callable[[int], float] | None = None,
+    idle_fn: Callable[[int, int | None], float] | None = None,
     warmup_turns: int = 0,
     plan: list[PlannedTurn] | None = None,
     policy_runner: PolicyRunner | None = None,

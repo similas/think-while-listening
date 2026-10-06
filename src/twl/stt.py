@@ -35,6 +35,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import numpy.typing as npt
 from pipecat.frames.frames import (
+    CancelFrame,
+    EndFrame,
     ErrorFrame,
     Frame,
     InterimTranscriptionFrame,
@@ -53,6 +55,7 @@ from pipecat.utils.time import time_now_iso8601
 from twl.clock import now_ns
 from twl.commit import LocalAgreementCommitter, Word
 from twl.config import SttConfig
+from twl.hypothesis_worker import HypothesisWorker
 from twl.pacing import FixedTickIssuer, SelfPacedIssuer
 from twl.telemetry import (
     read_faults,
@@ -128,7 +131,12 @@ class StreamingWhisperSTT(STTService):
             agreement_n=commit.agreement_n, tail_guard_s=commit.tail_guard_s
         )
         self._issuer: SelfPacedIssuer | FixedTickIssuer = (
-            SelfPacedIssuer(duty_max=commit.duty_max, min_uncommitted_s=commit.min_uncommitted_s)
+            SelfPacedIssuer(
+                duty_max=commit.duty_max,
+                min_uncommitted_s=commit.min_uncommitted_s,
+                duration_prior_s=commit.duration_prior_s,
+                agreement_n=commit.agreement_n,
+            )
             if commit.issue_rule == "controlled"
             else FixedTickIssuer(tick_s=commit.naive_tick_s)
         )
@@ -139,6 +147,13 @@ class StreamingWhisperSTT(STTService):
         self._last_decode_end_ns = 0
         self.hypotheses_issued = 0
         self.hypotheses_skipped = 0
+        # Abstentions the feasibility gate made, and decodes the endpoint
+        # preempted. Both are the mechanism working, so both are counted
+        # rather than inferred from a gap in the partial records.
+        self.hypotheses_infeasible = 0
+        self.hypotheses_killed = 0
+        self.hypotheses_lost = 0
+        self._hyp_worker: HypothesisWorker | None = None
         self.spans_done = 0
         # Issued = decodes started (the cost). Emitted = frames pushed while
         # the user was still speaking (the decision window). They differ, and
@@ -158,6 +173,19 @@ class StreamingWhisperSTT(STTService):
     async def start(self, frame: StartFrame) -> None:
         await super().start(frame)
         await self.ensure_loaded()
+
+    async def stop(self, frame: EndFrame) -> None:
+        """Take the child down with the pipeline, so no run leaves one behind."""
+        if self._hyp_worker is not None:
+            await asyncio.to_thread(self._hyp_worker.stop)
+            self._hyp_worker = None
+        await super().stop(frame)
+
+    async def cancel(self, frame: CancelFrame) -> None:
+        if self._hyp_worker is not None:
+            await asyncio.to_thread(self._hyp_worker.stop)
+            self._hyp_worker = None
+        await super().cancel(frame)
 
     async def ensure_loaded(self) -> None:
         """Load the model (idempotent); callable before pipeline start."""
@@ -195,6 +223,24 @@ class StreamingWhisperSTT(STTService):
                 "stt: partial engine %s loaded on cpus %s",
                 self._cfg.partial_model,
                 self._cfg.partial_cpus,
+            )
+        if self._cfg.commit.hypothesis_process:
+            # The child holds its OWN tiny engine. The in-process one above
+            # stays loaded so residency is unchanged between the two arms and
+            # the comparison is kill-vs-race, not one engine against two.
+            self._hyp_worker = HypothesisWorker(
+                model_name=self._cfg.partial_model or self._cfg.model,
+                cpu_threads=self._cfg.partial_cpu_threads,
+                cpus=list(self._cfg.partial_cpus),
+                language=self._cfg.language,
+                sample_rate=self.sample_rate,
+                compute_type=self._cfg.compute_type,
+            )
+            await asyncio.to_thread(self._hyp_worker.start)
+            log.info(
+                "stt: preemptible hypothesis worker ready=%s in %.0f ms",
+                self._hyp_worker.ready,
+                self._hyp_worker.last_spawn_ms,
             )
 
     async def warmup(self, *, request_hugepages_after: bool = False) -> None:
@@ -343,7 +389,14 @@ class StreamingWhisperSTT(STTService):
                 uncommitted_s=have_s - committed_end,
                 idle_ms=(now_ns() - self._last_decode_end_ns) / 1e6,
                 buffer_s=have_s - committed_end,
+                # Speech heard so far IS the elapsed time the gate reasons
+                # about: the buffer is what VAD has passed through, so it
+                # excludes the pauses the prior was measured without.
+                elapsed_s=have_s,
+                pending_agreement=self._committer.pending_agreement,
             )
+            if not decision.issue and decision.reason == "infeasible":
+                self.hypotheses_infeasible += 1
             if commit.two_tier:
                 # A committed span base has not read yet is audio the final
                 # would otherwise decode again, so it outranks a new
@@ -394,9 +447,14 @@ class StreamingWhisperSTT(STTService):
             prompt = self._committer.prompt() if commit.use_initial_prompt else ""
             t0 = now_ns()
             async with self._hyp_lock:
-                words = await asyncio.to_thread(
-                    self._decode_words, buf, committed_end, prompt, report
-                )
+                if self._hyp_worker is not None:
+                    words = await asyncio.to_thread(
+                        self._decode_words_in_worker, buf, committed_end, prompt, report
+                    )
+                else:
+                    words = await asyncio.to_thread(
+                        self._decode_words, buf, committed_end, prompt, report
+                    )
             done_ns = now_ns()
             decode_ms = (done_ns - t0) / 1e6
             self._last_decode_end_ns = done_ns
@@ -559,6 +617,44 @@ class StreamingWhisperSTT(STTService):
             if on_boundaries is not None:
                 on_boundaries(started, done)
 
+    def _decode_words_in_worker(
+        self,
+        audio: npt.NDArray[np.float32],
+        base_s: float,
+        prompt: str,
+        on_boundaries: Callable[[int, int], None] | None = None,
+    ) -> list[Word]:
+        """_decode_words through the child process, where a kill can reach it.
+
+        The in-flight bookkeeping is the same and matters more here, not less:
+        a killed decode must leave ``decoding`` False, or the watchdog and the
+        playback gate wait on a process that no longer exists.
+        """
+        assert self._hyp_worker is not None
+        started = now_ns()
+        with self._activity_lock:
+            self._decode_starts.append(started)
+        try:
+            got = self._hyp_worker.decode(
+                audio,
+                base_s=base_s,
+                initial_prompt=prompt,
+                want_words=bool(self._cfg.commit.word_timestamps),
+            )
+        finally:
+            done = now_ns()
+            with self._activity_lock:
+                self._decode_starts.remove(started)
+            if on_boundaries is not None:
+                on_boundaries(started, done)
+        if got is None:
+            # Killed at the endpoint, or the child died. Not an error: the
+            # words are gone and the committer simply never hears them.
+            self.hypotheses_lost += 1
+            return []
+        words, _decode_ms = got
+        return words
+
     async def _partial_loop(self) -> None:
         """Decode at FIXED OFFSETS INTO THE AUDIO, never on a wall-clock tick.
 
@@ -702,7 +798,18 @@ class StreamingWhisperSTT(STTService):
 
         elif isinstance(frame, _STOPPED):
             self._speaking = False
-            if self._hyp_task is not None and self._cfg.commit.at_endpoint == "race":
+            if self._hyp_task is not None and self._cfg.commit.at_endpoint == "kill":
+                # PREEMPT. The task is cancelled as in "race", and then the
+                # decode itself is stopped, which is the part a thread cannot
+                # do. The final starts on cores nothing else is holding.
+                self._hyp_task.cancel()
+                self._hyp_task = None
+                if self._hyp_worker is not None:
+                    if self._hyp_worker.kill_if_busy():
+                        self.hypotheses_killed += 1
+                    # Respawn inside the reply, where there is nothing to starve.
+                    self._hyp_worker.respawn_async()
+            elif self._hyp_task is not None and self._cfg.commit.at_endpoint == "race":
                 # RACE: the tail final starts now and any hypothesis still
                 # decoding is discarded. Its cost is already paid and its
                 # boundaries are still reported from the worker thread.

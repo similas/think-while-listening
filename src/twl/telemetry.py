@@ -89,6 +89,11 @@ def parse_tegrastats_line(line: str, *, run_id: str, t_ms: float) -> TelemetrySa
     )
 
 
+# At the 100 ms sampling interval this is 300 ms of quiet. Fewer than three
+# points is a reading, not a baseline.
+MIN_IDLE_SAMPLES = 3
+
+
 class TegrastatsSampler:
     """Background tegrastats at a fixed interval, streaming JSONL to a file.
 
@@ -185,15 +190,27 @@ class TegrastatsSampler:
             joules += (p0 + p1) / 2.0 * (t1 - t0) / 1e9 / 1000.0
         return joules
 
-    def idle_mw(self, before_ns: int, window_s: float = 2.0) -> float:
-        """Median VDD_IN over the window ENDING at ``before_ns``. -1.0 if none.
+    def idle_mw(self, before_ns: int, window_s: float = 2.0, since_ns: int | None = None) -> float:
+        """Median VDD_IN over a QUIESCENT window ending at ``before_ns``.
 
-        Measured between turns, where the pipeline is quiet, so per-turn energy
-        can be reported net of the board's own draw.
+        ``since_ns`` is the earliest instant the pipeline is known to be quiet
+        -- in a file run, shortly after the previous reply finished playing.
+        Without it the window reaches back into that reply: pass 2 measured a
+        "baseline" of 5274 mW on multi_step, which made energy net of idle come
+        out at -7 J per turn. Negative net energy is not physical, and the
+        cause was the baseline, not the turn.
+
+        Returns -1.0 when the quiet window holds too few samples to have a
+        median worth taking, because a baseline guessed from one reading is
+        worse than an admitted gap.
         """
         lo = before_ns - int(window_s * 1e9)
+        if since_ns is not None:
+            lo = max(lo, since_ns)
         vals = sorted(mw for ns, mw in self._recent_power if lo <= ns < before_ns)
-        return vals[len(vals) // 2] if vals else -1.0
+        if len(vals) < MIN_IDLE_SAMPLES:
+            return -1.0
+        return vals[len(vals) // 2]
 
     def temps_since(self, start_ns: int) -> dict[str, float]:
         """Median temperature per zone over the samples since ``start_ns``.

@@ -203,3 +203,22 @@ def test_endpoint_after_final_needs_both_marks() -> None:
     assert not endpoint_after_final({"stt_final": 1.0})
     assert not endpoint_after_final({"vad_user_stopped": 1.0})
     assert not endpoint_after_final({})
+
+
+def test_idle_baseline_refuses_a_window_that_is_too_short() -> None:
+    """A baseline from one reading is worse than an admitted gap.
+
+    Pass 2's net energy came out at -7 J per turn because the idle window
+    reached back into the previous reply. The window is now bounded by the
+    quiet period, and a window with too few samples reports -1.0.
+    """
+    from twl.telemetry import MIN_IDLE_SAMPLES, TegrastatsSampler
+
+    s = TegrastatsSampler.__new__(TegrastatsSampler)
+    s._recent_power = [(1_000_000_000 + i * 100_000_000, 5000 + i) for i in range(20)]
+    end = 3_000_000_000
+    # The whole 2 s window: plenty of samples, a median is taken.
+    assert s.idle_mw(end, window_s=2.0) > 0
+    # Quiet only for the last 100 ms: fewer than MIN_IDLE_SAMPLES points.
+    assert s.idle_mw(end, window_s=2.0, since_ns=end - 100_000_000) == -1.0
+    assert MIN_IDLE_SAMPLES >= 3

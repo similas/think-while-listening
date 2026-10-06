@@ -40,6 +40,8 @@ class IssueDecision:
     required_idle_ms: float = 0.0
     idle_ms: float = 0.0
     expected_decode_ms: float = 0.0
+    remaining_s: float = -1.0
+    needed_s: float = -1.0
 
 
 @dataclass
@@ -48,6 +50,12 @@ class SelfPacedIssuer:
 
     duty_max: float = 0.6
     min_uncommitted_s: float = 1.0
+    # THE FEASIBILITY GATE. The expected length of an utterance in this set,
+    # stated as a PRIOR and nothing more: it is not measured from the audio in
+    # flight and it is not claimed to be known. 0.0 disables the gate, which is
+    # what every run before 2026-10-06 did implicitly.
+    duration_prior_s: float = 0.0
+    agreement_n: int = 2
     last_decode_ms: float = field(default=0.0, init=False)
 
     def required_idle_ms(self, buffer_s: float) -> float:
@@ -55,8 +63,29 @@ class SelfPacedIssuer:
         d = self.last_decode_ms or modelled_decode_ms(buffer_s)
         return (1.0 / self.duty_max - 1.0) * d
 
+    def time_to_commit_s(self, buffer_s: float, pending_agreement: int) -> float:
+        """How long from issuing now until these words could be COMMITTED.
+
+        A hypothesis is only worth its cores if what it finds can still reach
+        the transcript before the endpoint. Reaching the transcript takes this
+        decode plus however many more LocalAgreement still needs, and the duty
+        rule puts its own idle between them -- so the span is the issuer's own
+        model, with no new constant: k decodes of D at duty d span
+        ``((k - 1) / d + 1) x D``.
+        """
+        d_s = (self.last_decode_ms or modelled_decode_ms(buffer_s)) / 1000.0
+        k = max(1, self.agreement_n - pending_agreement)
+        return ((k - 1) / self.duty_max + 1.0) * d_s
+
     def decide(
-        self, *, in_flight: bool, uncommitted_s: float, idle_ms: float, buffer_s: float
+        self,
+        *,
+        in_flight: bool,
+        uncommitted_s: float,
+        idle_ms: float,
+        buffer_s: float,
+        elapsed_s: float = 0.0,
+        pending_agreement: int = 0,
     ) -> IssueDecision:
         """Issue the next hypothesis, or say why not.
 
@@ -65,12 +94,31 @@ class SelfPacedIssuer:
             uncommitted_s: audio not yet committed, in seconds.
             idle_ms: how long the recognizer has been idle.
             buffer_s: how much audio the next decode would see.
+            elapsed_s: speech heard so far in this turn.
+            pending_agreement: hypotheses already in the committer's window,
+                which this decode does not have to pay for again.
         """
         expected = self.last_decode_ms or modelled_decode_ms(buffer_s)
         if in_flight:
             return IssueDecision(False, "in_flight", expected_decode_ms=expected)
         if uncommitted_s < self.min_uncommitted_s:
             return IssueDecision(False, "too_little_audio", expected_decode_ms=expected)
+        # THE LISTENER'S FEASIBILITY GATE, before the duty check: a hypothesis
+        # that cannot commit before the user stops is not paced differently, it
+        # is not issued. On a 2.5 s dev utterance the gate abstains outright --
+        # which is the correct answer, and the one pass 2 paid 394 ms to learn
+        # the hard way.
+        if self.duration_prior_s > 0.0:
+            remaining = max(0.0, self.duration_prior_s - elapsed_s)
+            needed = self.time_to_commit_s(buffer_s, pending_agreement)
+            if remaining < needed:
+                return IssueDecision(
+                    False,
+                    "infeasible",
+                    expected_decode_ms=expected,
+                    remaining_s=remaining,
+                    needed_s=needed,
+                )
         need = self.required_idle_ms(buffer_s)
         if idle_ms < need:
             return IssueDecision(False, "duty", need, idle_ms, expected)

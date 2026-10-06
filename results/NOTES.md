@@ -5636,3 +5636,88 @@ arrival. CHOSEN (b), a finally block in LlamaChatProcessor._generate, because
 they had already taken. The three turns stay excluded from pass 2's TTFA either
 way -- they have no audio_out_first -- and the fix lands before pass 3.
 make check: 246 passed.
+
+## 2026-10-06 — PRE-REGISTRATION: preemptible hypotheses (P9) and the listener feasibility gate
+
+Written and committed BEFORE the runs. Pass 2 found that COMMIT-WL hands the
+final a 43 % shorter tail on multi_step and the final still takes 122 ms
+LONGER. Two mechanisms are proposed for that, and only the first is tested here.
+
+### The orphan
+
+``asyncio.to_thread`` cannot cancel a ``transcribe()`` already running: at the
+endpoint, "race" cancels the task and leaves the decode burning cores 3-5 until
+it finishes. stt.py has carried that in comments since 2026-09-16; pass 2 is
+the first measurement of its price. A thread cannot be preempted and a process
+can, so the hypothesis now runs in a child (twl.hypothesis_worker) that the
+parent SIGKILLs at the endpoint and respawns during the reply.
+
+THE CONTROL IS RACE-IN-THE-CHILD, NOT PASS 2. Both arms run hypotheses in the
+child so the comparison is kill-against-race and not process-against-thread.
+Pass 2's numbers stand at their own setting and are not restated.
+
+P9 PREEMPTION. On the selection set (single_step_set, 20 items, median 10.6 s),
+   3 reps each of COMMIT-WL-K (kill) and COMMIT-WL-PROC (race, same process
+   boundary): the final decode is <= 1.1x the SOLO model of its own tail
+   (1384 + 74 x tail_s, 2026-09-17 B2). FALSIFIED if >= 1.3x.
+   REPORTED ALONGSIDE, per arm: in-flight-at-endpoint rate, kills, orphan
+   count, and the respawn cost actually measured (the claim that tiny reloads
+   in well under a second is an expectation, not yet a measurement).
+
+### The feasibility gate
+
+A hypothesis earns its cores only if what it finds can still be COMMITTED
+before the user stops. Committing costs this decode plus however many more
+LocalAgreement still needs, with the duty rule's own idle between them: k
+decodes of D at duty d span ((k-1)/d + 1) x D. Remaining speech is estimated
+from a DURATION PRIOR for the set -- stated as a prior, not measured from the
+audio in flight and not claimed to be known.
+
+On the dev set the gate abstains outright: 2.5 s of speech cannot hold two
+1.4 s decodes. That is the correct answer and it is the -394.5 ms regression
+pass 2 paid to discover. On multi_step it issues until roughly f = 0.8.
+
+NOT YET SCORED. The gate is built, unit-tested and committed, and it is OFF by
+default (duration_prior_s 0.0 reproduces every run before today). It is scored
+only in pass 2k, and only if P9 holds.
+
+### Pass 2k, conditional on P9
+
+If P9 holds: COMMIT-WL-K + gate against NOPARTIAL, multi_step and dev ONLY --
+the digit sets cannot commit and are uninformative -- 3 reps.
+   P3 PRIMARY UNCHANGED: median TTFA reduction >= 300 ms on multi_step, CI
+   excluding 0.
+   DEV PREDICTED ~0, because the gate abstains there. A dev regression as large
+   as pass 2's -394.5 ms would mean the gate is not abstaining and is reported
+   as the gate failing, not as the arm failing.
+   P7 RE-STATED HONESTLY, and the restatement is recorded as a change to a
+   pre-registered metric rather than slipped in: joules per turn WILL be higher
+   on long utterances, because listening harder is bought with energy. The
+   reported quantity becomes JOULES PER MILLISECOND SAVED, and the trade is
+   left to a battery-aware policy in the Discussion. The old P7 stands as
+   falsified on pass 2's data; it is not re-scored to a kinder bar.
+
+### Instrumentation landed with this, all of it off the critical path
+
+1. FILE INDEX PER TURN from the file source (FileFrameSource.files_started),
+   recorded at turn open. Ground truth existed all along; pass 2 recovered the
+   item by DP alignment over WER, which worked and was a recovery, not a
+   design. Both halves of a split now record the same utterance, so a split is
+   visible in the records rather than inferred.
+2. IDLE POWER sampled only over the QUIESCENT window -- after the previous
+   reply finished playing, plus 200 ms of settling -- and reported -1.0 when
+   that window holds fewer than 3 samples. Pass 2's baseline of 5274 mW was
+   measured partly inside the previous reply, which is why net energy came out
+   at -7 J per turn. Raw and net are both reported from here on.
+3. COUNTERS for abstentions (hypotheses_infeasible), kills
+   (hypotheses_killed) and lost hypotheses (hypotheses_lost), so the mechanism
+   working is counted rather than inferred from a gap in the records.
+
+### Noted, not acted on
+
+The orphan afflicts canonical REACTIVE's fixed-offset partials in exactly the
+same way, so wiring the worker there would make THE FIELD'S BASELINE FASTER
+TOO. That is a change to what the baseline measures, and every REACTIVE number
+in this project was taken without it. It is recorded here and left alone until
+there is a decision to re-run the baseline; adopting it quietly would make the
+old and new REACTIVE numbers incomparable while looking like the same arm.

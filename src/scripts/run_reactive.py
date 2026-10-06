@@ -509,6 +509,10 @@ async def run(args: argparse.Namespace) -> None:
             # each utterance actually stopped, which the pipeline's VAD does
             # not get to define for itself.
             built.turns.speech_end_fn = source.speech_end_ns.get
+            # Ground truth for WHICH utterance, for the same reason: the source
+            # knows which file is playing, so a turn no longer has to be mapped
+            # to an item by its position in a sequence that splits.
+            built.turns.set_file_index_source(lambda: source.files_started)
 
         adversary = None
         if adv_cpus:

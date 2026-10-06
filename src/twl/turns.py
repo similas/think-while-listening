@@ -61,6 +61,9 @@ log = logging.getLogger(__name__)
 # split on a 30 s utterance must not throw away fifty minutes, but two means
 # turns and files have parted company.
 ENDPOINT_DRIFT_MS = 1500.0
+# After playback_done the output path still has buffers to drain. The idle
+# baseline starts here, not at the mark.
+IDLE_SETTLE_NS = 200_000_000
 
 
 @dataclass
@@ -128,7 +131,7 @@ class TurnManager:
         detector: ContentionDetector | None = None,
         temps_fn: Callable[[int], dict[str, float]] | None = None,
         energy_fn: Callable[[int, int], float] | None = None,
-        idle_fn: Callable[[int], float] | None = None,
+        idle_fn: Callable[[int, int | None], float] | None = None,
         warmup_turns: int = 0,
         plan: list[PlannedTurn] | None = None,
     ):
@@ -212,6 +215,14 @@ class TurnManager:
         # rate, not a harness fault.
         self._split_turns: set[int] = set()
         self.vad_splits = 0
+        # GROUND TRUTH FOR THE ITEM, from the file source rather than from the
+        # turn number. Turn k is the k-th file only while nothing splits, and
+        # multi_step splits 14 times in 80 files; pass 2 had to recover the
+        # item by aligning transcripts, which worked but was a recovery, not a
+        # design. The source knows which file is playing, so it is asked.
+        self._file_index_fn: Callable[[], int] | None = None
+        self._utterance = -1
+        self._last_playback_done_ns = 0
         self._closed = False
         self._idle_mw = -1.0
         # How the last turn ended. The playback gate refuses to release on an
@@ -241,6 +252,20 @@ class TurnManager:
         """Milliseconds since the open turn began (0.0 if none is open)."""
         return (now_ns() - self._turn_opened_ns) / 1e6 if self._clock is not None else 0.0
 
+    def _quiet_since_ns(self) -> int | None:
+        """Earliest instant the pipeline is known to be quiet, or None.
+
+        Nothing has played yet on the first turn, so there is no reply to clear
+        and the whole window qualifies.
+        """
+        if self._last_playback_done_ns == 0:
+            return None
+        return self._last_playback_done_ns + IDLE_SETTLE_NS
+
+    def set_file_index_source(self, fn: Callable[[], int]) -> None:
+        """Supply the playing file's 1-based index (FileFrameSource)."""
+        self._file_index_fn = fn
+
     def turn_started(self, at_ns: int) -> None:
         """VAD opened a user turn. Force-finishes an unfinished previous turn.
 
@@ -261,6 +286,9 @@ class TurnManager:
             self.finish_turn(forced=True)
         self._turn += 1
         self._clock = TurnClock(origin_ns=at_ns)
+        # Read at OPEN: both halves of a split read the same file, which is
+        # what makes a split visible in the records instead of inferable.
+        self._utterance = self._file_index_fn() if self._file_index_fn is not None else -1
         self._transcript = ""
         self._stt_audio_s = -1.0
         self._stt_minflt = -1
@@ -287,7 +315,9 @@ class TurnManager:
         self._turn_opened_ns = at_ns
         self._last_hyp_ns = 0
         self._origin_by_turn[self._turn] = self._clock.origin_ns
-        self._idle_mw = self._idle_fn(at_ns) if self._idle_fn is not None else -1.0
+        self._idle_mw = (
+            self._idle_fn(at_ns, self._quiet_since_ns()) if self._idle_fn is not None else -1.0
+        )
         self._contention = {}
         if self._detector is not None:
             self._detector.begin_turn()
@@ -303,6 +333,11 @@ class TurnManager:
                 return
             self._marked_once.add(stage)
         m = self._clock.mark(stage, at_ns=at_ns)
+        if stage == "playback_done":
+            # The last instant the pipeline is known to be LOUD. Everything
+            # after it, plus a settling allowance, is the idle baseline's
+            # window; see telemetry.idle_mw.
+            self._last_playback_done_ns = now_ns() if at_ns is None else at_ns
         if stage == "vad_user_stopped":
             self._stop_ns_by_turn[self._turn] = at_ns if at_ns is not None else now_ns()
         # A stage mark is the turn's sign of life. The progress watchdog reads
@@ -576,7 +611,9 @@ class TurnManager:
 
     def _planned_utterance(self) -> int:
         if self._plan is None:
-            return -1
+            # No plan means a straight file run, where the item is whichever
+            # file the source is playing.
+            return self._utterance
         i = self._turn - 1
         return self._plan[i].utterance if 0 <= i < len(self._plan) else -1
 
