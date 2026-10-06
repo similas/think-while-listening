@@ -6222,3 +6222,13 @@ printed by src/scripts/p9_score.py.
 PRECONDITIONS FOR ANY P9b: spawn_ms and kill count written to run_complete;
 per-turn respawn start and ready timestamps against stt_final; and the
 pre-registered effect sized to the paired +0.11x, not the withdrawn 0.4x.
+
+## 2026-10-06 — 9c1a306 was pushed with make check FAILING
+
+The correction above was committed by a chain that piped `make check` into
+`tail`, which discards the exit status, so the commit ran on a failed gate:
+four E501 lines in src/scripts/p9_score.py. It is the same trap recorded on
+2026-09-2x as "make check | tail", and I walked into it again. Fixed in the
+next commit; make check passes (256). From here the gate's exit code is
+captured into a variable and tested before any commit, never read through a
+pipe.

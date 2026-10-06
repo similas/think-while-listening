@@ -146,15 +146,12 @@ def main() -> None:
                 cells.append(f"mean {fmt.format(statistics.fmean(v))}" if v else "-")
             else:
                 lo, hi = boot(v)
-                cells.append(
-                    f"{fmt.format(statistics.median(v))} [{fmt.format(lo)}, {fmt.format(hi)}]".replace(
-                        " ms]", "]"
-                    )
-                    .replace(" s]", "]")
-                    .replace("x]", "]")
-                    if v
-                    else "-"
-                )
+                if not v:
+                    cells.append("-")
+                    continue
+                ci = f"[{fmt.format(lo)}, {fmt.format(hi)}]"
+                ci = ci.replace(" ms]", "]").replace(" s]", "]").replace("x]", "]")
+                cells.append(f"{fmt.format(statistics.median(v))} {ci}")
         print(f"{key:>24} {cells[0]:>22} {cells[1]:>22}")
     print()
     for key in ("final_ms", "ttfa_ms", "committed_s"):
@@ -165,7 +162,8 @@ def main() -> None:
         ]
         lo, hi = boot(d)
         print(
-            f"  paired RACE - KILL {key:>12}: {statistics.median(d):+.2f} [{lo:+.2f}, {hi:+.2f}]  n={len(d)}"
+            f"  paired RACE - KILL {key:>12}: {statistics.median(d):+.2f} "
+            f"[{lo:+.2f}, {hi:+.2f}]  n={len(d)}"
         )
     # ---- the attribution evidence, which the verdict alone does not carry ----
     turns: dict[str, list[dict]] = {"KILL": [], "RACE": []}
@@ -183,7 +181,8 @@ def main() -> None:
             v = [t["ratio"] for t in turns[arm] if t["inflight"] == f]
             tail = statistics.median([t["tail_s"] for t in turns[arm] if t["inflight"] == f])
             print(
-                f"  {arm} in-flight={int(f)}: {statistics.median(v):.2f}x  n={len(v)}  tail {tail:.2f} s"
+                f"  {arm} in-flight={int(f)}: {statistics.median(v):.2f}x  "
+                f"n={len(v)}  tail {tail:.2f} s"
             )
     print("\nRATIO BY IN-FLIGHT, PAIRED WITHIN ITEM (items seen both ways across reps):")
     for arm in ("KILL", "RACE"):
@@ -211,7 +210,8 @@ def main() -> None:
             else "0 (none by design)"
         )
         print(
-            f"  {arm}: in-flight {inf}/{n} = {inf / n:.2f}; kills {kills}; orphaned records {orph:.0f}"
+            f"  {arm}: in-flight {inf}/{n} = {inf / n:.2f}; kills {kills}; "
+            f"orphaned records {orph:.0f}"
         )
 
     k = statistics.median([med["KILL"][u]["ratio"] for u in common])
