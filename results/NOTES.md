@@ -6459,3 +6459,57 @@ cancelled hypothesis keeps the cores the final needs. Removing it takes a
 second resident engine (~107 MB) and a respawn kept outside every scored
 interval. Done naively -- respawning at the endpoint, as P9 did -- the remedy
 costs 1.6 s more than the disease.
+
+## 2026-10-06 — CORRECTION to "P9b HOLDS": validity check 1 FAILED in every KILL run
+
+Appended, not edited. The reviewer caught it; I verified it.
+
+### 1. "Spawn intervals intersecting any turn's [vad_user_stopped, stt_final]: 0" IS WITHDRAWN
+
+The scorer looked for vad_user_stopped and stt_final in the SAME turn record and
+skipped any turn missing either. On a VAD split the endpoint is marked on turn
+N and the final it produces on turn N+1, so exactly the windows at risk were
+never tested. Re-paired across turn records in absolute ns (origin_ns +
+offset), each final taken by the oldest unanswered endpoint, with a stop more
+than 6 s before the next final treated as unanswered (the slowest final in
+these six runs is 4.1 s; without the resync, one endpoint that never produced
+a final shifts every later pairing):
+
+    KILL ab1376  stop t6 5324  spawn 5523->7212  final t7 7594   (2270 ms)
+    KILL 236c6f  stop t20 3201 spawn 3656->4978  final t21 5302  (2102 ms)
+    KILL b1ac96  stop t20 3201 spawn 3649->5076  final t21 5353  (2152 ms)
+    RACE (all three)                                    0 intersections
+
+ONE IN EVERY KILL RUN. Cause: the pre-registered fallback "if a turn never
+reaches audio_out_first, the respawn starts when that turn closes". A split's
+first half closes when the second half opens, with the first half's final
+still decoding, so the respawn started inside it. The same items' finals in
+reps with no spawn ran 1671-1850 ms: ~400 ms of the spawn landed on each.
+
+All three are INVALID split turns, so no scored item is contaminated and the
+P9b-a and P9b-b numbers are computed without them. But check 1 as
+pre-registered reads "no spawn interval intersects [vad_user_stopped,
+stt_final] of ANY turn, in either arm. One intersection voids the run." Its
+intent is "no spawn on a final decode", and that is what happened.
+
+    BY THE PRE-REGISTERED RULE ALL THREE KILL RUNS ARE VOID, THE KILL ARM HAS
+    NO DATA, AND P9b IS NOT TESTABLE -- WHICH THE PRE-REGISTRATION ROUTES TO
+    DECISION (b). "P9b HOLDS" IS WITHDRAWN AS A VERDICT. The measured numbers
+    stand as measurements of runs that violated their own validity check.
+
+Whether to fix the fallback and re-run the K,R x 3 is a decision for the
+user, not one I take after seeing that the effect was large.
+
+### 2. "P9's RACE vs P9b's KILL, same build family" IS RELABELLED
+
+The +450 ms is P9b's RACE minus P9b's KILL, paired within build 8d8a854,
+[+59, +796], n=17. Nothing across builds was computed; "same build family"
+is dropped.
+
+### 3. "The TTFA gain equals the final-decode gain to within 15 ms" IS REPLACED
+
+That was a difference of two medians on different item sets (n=17 vs 16). The
+right test is the paired per-item residual (TTFA - final_ms), RACE - KILL:
++1 ms [-38, +47], n=16, with the final-decode delta +474 [+59, +796] on the
+same 16 items. The residual is consistent with zero and excludes a reply-side
+effect above ~47 ms. "Entirely" is withdrawn.
