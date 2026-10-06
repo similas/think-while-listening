@@ -6105,3 +6105,79 @@ utterances give the VAD more chances to find a gap. That was never stated.
    it.
 6. Order after P9 and pass 2k: passes 8 (2 reps), 6, 7, 9, 1r. Writing begins
    when the last lands.
+
+## 2026-10-06 — P9 FALSIFIED AS RUN. The run tested my respawn bug, not the kill
+
+Interleaved K,R x3 on single_step_set (20 items), build 65550d5 clean, clocks
+pinned, scored by src/scripts/p9_score.py. 16 common items (split items out),
+per arm median over reps, bootstrap over items.
+
+                         KILL                     RACE (in child)
+    final / solo model   2.06x [2.01, 2.07]       1.24x [0.96, 1.33]
+    final_ms             3948 [3639, 4154]        2203 [1943, 2438]
+    TTFA                 5318 [5060, 5594]        3536 [3439, 3871]
+    tail_s               6.40                     6.77
+    committed_s          4.00                     4.00
+    in flight at endpoint  0.62 of turns          0.75
+    orphan overhang      35 ms [0, 40]            1558 ms [34, 2029]
+
+    paired RACE - KILL final_ms  -1566 [-2146, -1245] n=16
+    paired RACE - KILL TTFA      -1544 [-2187, -1372] n=16
+
+P9 (KILL <= 1.1x, falsified >= 1.3x): point estimate 2.06x. FALSIFIED.
+
+### The kill works. Everything around it does not.
+
+The kill does what it was built to do: a decode in flight at the endpoint now
+lets go 35 ms after it instead of 1558 ms. The final is nevertheless 1.6 s
+SLOWER. The cause is in my implementation, at src/twl/stt.py's kill branch:
+
+    respawn_async() IS CALLED AT EVERY ENDPOINT, whether or not anything was
+    killed, and it starts AT the endpoint -- not "inside the reply", as the
+    comment beside it claims. start() also clears readiness first, so a worker
+    that was idle and healthy is replaced anyway.
+
+A respawn costs 3967-4551 ms (13 observations, from the no-worker warnings;
+the full distribution was not captured because twl's INFO lines do not reach
+the run log -- an instrumentation gap). The expectation that tiny reloads
+"well under a second" was 4x out. That spawn -- imports, then a model load
+pinned to cores 3-5 -- runs concurrently with the final on the same cores.
+
+THE EVIDENCE THAT IT IS THE RESPAWN AND NOT THE KILL, per turn:
+
+    KILL, nothing in flight (no kill happened)   n=17   2.06x
+    KILL, a hypothesis in flight (killed)        n=31   2.04x
+    RACE, nothing in flight                      n=15   0.92x
+    RACE, an orphan in flight                    n=35   1.31x
+
+KILL turns that killed nothing are exactly as slow as turns that did. What
+they share is the respawn.
+
+### What P9's run DOES establish
+
+THE ORPHAN'S PRICE, from the RACE arm alone: 1.31x the solo model with an orphan
+in flight against 0.92x without, on the same arm, same build, same session --
+about 0.4 of a solo decode. That is the ceiling on what a clean kill could
+recover, and it is now measured rather than inferred from pass 2.
+
+THE COMPARATOR IS NOT BIASED LOW HERE. RACE turns with nothing in flight sit at
+0.92x the carried 2026-09-17 model. The stated bias (the model under-estimates
+an in-pipeline decode, pushing ratios toward falsification) does not show on
+this corpus; if anything the model is slightly pessimistic.
+
+NO DEGRADATION TOWARD NOPARTIAL. 13 turns across the three KILL reps opened
+before the respawn was ready, but committed audio is identical between arms
+(4.00 s, paired +0.00) -- the worker became ready partway into those turns.
+The warning's own text, "this turn commits nothing", is wrong and will be
+corrected.
+
+### Status of the hypothesis
+
+P9 AS PRE-REGISTERED IS FALSIFIED and stands so; it is not re-scored. But the
+hypothesis it was meant to test -- that preempting the orphan bounds the final
+-- was NOT tested by this run, because every KILL endpoint carried a ~4 s
+respawn on the final's cores that the hypothesis never proposed. Testing it
+needs a respawn that does not land on the final (after kills only, deferred
+past stt_final or onto other cores, or a hot spare), which is a new design and
+a new pre-registration, not a re-run of this one. Pass 2k is conditional on P9
+holding, so it does not run. That decision is the user's.
