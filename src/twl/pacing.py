@@ -13,8 +13,25 @@ decode widens the gap; it never drops a hypothesis.
 
 Why duty at all: the partial engine and the VAD share cores 3-5, and the
 measured failure is a duty cycle, not a queue (decodes never overlapped each
-other — 0 of 476 turns). 1.0 s cadence ran at duty 0.96 and starved the VAD
-badly enough to turn 80 files into 94 turns; 2.5 s ran at 0.64 and held.
+other — 0 of 476 turns). The bound is cheap and the rule needs no starvation
+story to justify it: at equal outcome it issues far fewer decodes.
+
+THE 94-TURN CASCADE WAS NOT THIS. An earlier version of this docstring blamed
+"1.0 s cadence at duty 0.96" for turning 80 files into 94 turns on 2026-09-22.
+The post-mortem that same day found the cause and it is not the cadence: the
+reply was still playing when the next utterance began. Reply tail ran to a
+median 7004 ms (p95 9465) against a 1500 ms inter-file gap, so each utterance
+started ~5.5 s before the previous reply finished; turn 15 was closed by turn
+14's BotStoppedSpeaking with no stt_final of its own, every mark then landed
+one turn late, and mark() counted 2317 orphans. A gate that waits for observed
+silence replaced the fixed gap.
+
+P5 (2026-10-06) tested the cadence story directly and it does not hold. On
+p5_long20 the NAIVE arm reached duty 0.950 (q1 0.946, q3 0.956) and split
+exactly the same 6 of 20 items as CONTROLLED at 0.609 and as a REACTIVE
+baseline issuing no hypotheses at all — 15/29 turns in every arm, delays within
+2 ms. Duty 0.95 starved nothing. What the bound does buy is measured: 197
+hypotheses against NAIVE's 348 for an identical outcome.
 """
 
 from __future__ import annotations

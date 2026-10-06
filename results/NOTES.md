@@ -6060,3 +6060,48 @@ TEARDOWN ASYMMETRY. REACTIVE and CONTROLLED-0.6 each wrote
 teardown_stacks.txt (10 s timeout, playback thread blocked in pyaudio.write);
 NAIVE and CONTROLLED-0.8 did not. Unexplained, and to be made deterministic
 before the P9 run.
+
+## 2026-10-06 — CORRECTION: the multi_step split rate was never 45 %
+
+APPENDED, not edited. The entry of 2026-10-06 ("PASS 2 SCORED") says
+"multi_step loses ~45 % of its items to VAD splits in BOTH arms". That is
+wrong, and the error is an aggregation mistake of mine: pass2_score.py reports
+`vad_split_item` SUMMED OVER THREE REPS (36) and I divided it by ONE rep's 80
+items. The harness counts the rate itself, per run, and always did:
+
+    pass 1n  rep1  11 of 80 (0.14)   pass 2  rep1  12 of 80 (0.15)
+             rep2  11 of 80 (0.14)           rep2  11 of 80 (0.14)
+             rep3  11 of 80 (0.14)           rep3  12 of 80 (0.15)
+
+    multi_step: 11-12 of 80 per rep, 0.14-0.15
+    p5_long20:   6 of 20 per rep,    0.30
+
+THE ARGUMENT THE 45 % WAS USED FOR STILL HOLDS, and holds better at the true
+numbers: the rate is the same in NOPARTIAL as in COMMIT-WL, and NOPARTIAL
+issues no hypotheses, so splitting is not the listener's doing. The split rate
+is roughly twice as high on p5_long20 (0.30) as on full multi_step (0.14),
+which is consistent with p5_long20 being the 20 LONGEST items — longer
+utterances give the VAD more chances to find a gap. That was never stated.
+
+## 2026-10-06 — DECISIONS taken on 873339b (user)
+
+1. P5 STANDS FAILED. No successor run. The duty rule is justified on what was
+   measured instead: 197 hypotheses against NAIVE's 348 at an identical
+   outcome, and whatever P9 shows.
+2. pacing.py's starvation docstring REPLACED with the 2026-09-22 post-mortem's
+   own attribution — the gap cascade (reply tail median 7004 ms against a
+   1500 ms gap, turn 15 closed by turn 14's BotStoppedSpeaking, 2317 orphan
+   marks), not the duty cycle. No run; the post-mortem already exists in this
+   notebook at 2026-09-22.
+3. The 45 % correction above.
+4. Turn-1 idle TypeError, idle-window bug and teardown determinism fixed
+   before P9. TEARDOWN IS NOW BOUNDED IDENTICALLY for every run at 5 s with a
+   3 s device-settle, because two of four P5 arms exited hard at 15 s and two
+   drained — an asymmetry in how long the audio device was held, unrelated to
+   the arm. run_complete is written and fsynced before the bound is armed.
+5. REACTIVE-with-worker is NOT run. It stays a Discussion item: the orphan
+   afflicts REACTIVE's fixed-offset partials identically, so the field's
+   baseline would get faster, and every REACTIVE number here was taken without
+   it.
+6. Order after P9 and pass 2k: passes 8 (2 reps), 6, 7, 9, 1r. Writing begins
+   when the last lands.

@@ -67,7 +67,16 @@ GATE_TIMEOUT_S = 60.0
 # contended — on 2026-09-15 a finished 64-turn run held the mic for 2h47m that
 # way, and the next run wedged against it. Results are flushed per line, so
 # after this budget the process reports and exits rather than hanging.
-TEARDOWN_TIMEOUT_S = 15.0
+# TEARDOWN IS BOUNDED THE SAME WAY FOR EVERY RUN, deliberately. The output
+# thread blocks in pyaudio.write at teardown on some runs and not others, which
+# made two of the four P5 arms exit hard at 15 s and two drain normally — an
+# asymmetry between arms in how long the audio device was held, for no reason
+# connected to the arm. run_complete is written and fsynced before this is
+# armed, so the bound costs nothing and a short one costs nothing extra.
+TEARDOWN_TIMEOUT_S = 5.0
+# How long the device is given to settle after the process exits, so the next
+# run in a sequence does not open it while the previous one is still releasing.
+DEVICE_SETTLE_S = 3.0
 
 
 def arm_hard_exit(seconds: float, run_dir: Path) -> None:
@@ -82,10 +91,13 @@ def arm_hard_exit(seconds: float, run_dir: Path) -> None:
     def guard() -> None:
         time.sleep(seconds)
         sys.stderr.write(
-            f"teardown exceeded {seconds:.0f}s (stacks in {run_dir}/teardown_stacks.txt); "
-            "exiting hard\n"
+            f"teardown bounded at {seconds:.0f}s (stacks in {run_dir}/teardown_stacks.txt); "
+            "exiting — results are complete and fsynced\n"
         )
         sys.stderr.flush()
+        # Give the audio device the same release window on every run, whether
+        # the drain finished or not, so back-to-back arms start from one state.
+        time.sleep(DEVICE_SETTLE_S)
         os._exit(0)
 
     threading.Thread(target=guard, daemon=True, name="hard-exit").start()
