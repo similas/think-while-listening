@@ -55,7 +55,7 @@ from pipecat.utils.time import time_now_iso8601
 from twl.clock import now_ns
 from twl.commit import LocalAgreementCommitter, Word
 from twl.config import SttConfig
-from twl.hypothesis_worker import HypothesisWorker
+from twl.hypothesis_worker import HypothesisWorker, WorkerPool
 from twl.pacing import FixedTickIssuer, SelfPacedIssuer
 from twl.telemetry import (
     read_faults,
@@ -154,7 +154,7 @@ class StreamingWhisperSTT(STTService):
         self.hypotheses_killed = 0
         self.hypotheses_lost = 0
         self.turns_opened_without_worker = 0
-        self._hyp_worker: HypothesisWorker | None = None
+        self._pool: WorkerPool | None = None
         self.spans_done = 0
         # Issued = decodes started (the cost). Emitted = frames pushed while
         # the user was still speaking (the decision window). They differ, and
@@ -177,15 +177,15 @@ class StreamingWhisperSTT(STTService):
 
     async def stop(self, frame: EndFrame) -> None:
         """Take the child down with the pipeline, so no run leaves one behind."""
-        if self._hyp_worker is not None:
-            await asyncio.to_thread(self._hyp_worker.stop)
-            self._hyp_worker = None
+        if self._pool is not None:
+            await asyncio.to_thread(self._pool.stop)
+            self._pool = None
         await super().stop(frame)
 
     async def cancel(self, frame: CancelFrame) -> None:
-        if self._hyp_worker is not None:
-            await asyncio.to_thread(self._hyp_worker.stop)
-            self._hyp_worker = None
+        if self._pool is not None:
+            await asyncio.to_thread(self._pool.stop)
+            self._pool = None
         await super().cancel(frame)
 
     async def ensure_loaded(self) -> None:
@@ -229,19 +229,32 @@ class StreamingWhisperSTT(STTService):
             # The child holds its OWN tiny engine. The in-process one above
             # stays loaded so residency is unchanged between the two arms and
             # the comparison is kill-vs-race, not one engine against two.
-            self._hyp_worker = HypothesisWorker(
-                model_name=self._cfg.partial_model or self._cfg.model,
-                cpu_threads=self._cfg.partial_cpu_threads,
-                cpus=list(self._cfg.partial_cpus),
-                language=self._cfg.language,
-                sample_rate=self.sample_rate,
-                compute_type=self._cfg.compute_type,
-            )
-            await asyncio.to_thread(self._hyp_worker.start)
-            log.info(
-                "stt: preemptible hypothesis worker ready=%s in %.0f ms",
-                self._hyp_worker.ready,
-                self._hyp_worker.last_spawn_ms,
+            # P9b: TWO children, active and spare, in both arms.
+            def make(name: str) -> HypothesisWorker:
+                return HypothesisWorker(
+                    model_name=self._cfg.partial_model or self._cfg.model,
+                    cpu_threads=self._cfg.partial_cpu_threads,
+                    cpus=list(self._cfg.partial_cpus),
+                    language=self._cfg.language,
+                    sample_rate=self.sample_rate,
+                    compute_type=self._cfg.compute_type,
+                    on_event=self._turns.note_worker_event,
+                    name=name,
+                )
+
+            self._pool = WorkerPool(make)
+            await asyncio.to_thread(self._pool.start)
+            # RESPAWN AT audio_out_first, the first instant after every
+            # interval TTFA measures; at turn close for a turn with no reply.
+            # Never at the endpoint, which is where P9 put it.
+            self._turns.add_stage_listener("audio_out_first", self._pool.respawn_dead_async)
+            self._turns.add_stage_listener("turn_closed", self._pool.respawn_dead_async)
+            log.warning(
+                "stt: hot-spare pool ready=%s/%s spawn_ms=%s mem_available_delta_mb=%s",
+                self._pool.workers[0].ready,
+                self._pool.workers[1].ready,
+                [round(w.last_spawn_ms) for w in self._pool.workers],
+                self._pool.mem_available_delta_mb,
             )
 
     async def warmup(self, *, request_hugepages_after: bool = False) -> None:
@@ -448,7 +461,7 @@ class StreamingWhisperSTT(STTService):
             prompt = self._committer.prompt() if commit.use_initial_prompt else ""
             t0 = now_ns()
             async with self._hyp_lock:
-                if self._hyp_worker is not None:
+                if self._pool is not None:
                     words = await asyncio.to_thread(
                         self._decode_words_in_worker, buf, committed_end, prompt, report
                     )
@@ -631,12 +644,15 @@ class StreamingWhisperSTT(STTService):
         a killed decode must leave ``decoding`` False, or the watchdog and the
         playback gate wait on a process that no longer exists.
         """
-        assert self._hyp_worker is not None
+        assert self._pool is not None
+        # Bound to the worker that was active at ISSUE. A promotion mid-decode
+        # must not redirect this call to the spare.
+        worker = self._pool.active
         started = now_ns()
         with self._activity_lock:
             self._decode_starts.append(started)
         try:
-            got = self._hyp_worker.decode(
+            got = worker.decode(
                 audio,
                 base_s=base_s,
                 initial_prompt=prompt,
@@ -786,24 +802,35 @@ class StreamingWhisperSTT(STTService):
                 else:
                     self._audio = np.zeros(0, dtype=np.float32)
             self._speaking = True
-            if self._hyp_worker is not None and not self._hyp_worker.ready:
-                # A turn that opens on a worker still loading would issue no
-                # hypothesis at all and look like a clean fast arm. Counted, so
-                # the run can be read for it rather than fooled by it.
-                self.turns_opened_without_worker += 1
-                log.warning(
-                    "stt: turn opened with no hypothesis worker ready "
-                    "(last spawn %.0f ms) — this turn commits nothing",
-                    self._hyp_worker.last_spawn_ms,
-                )
+            worker_ok = True
+            if self._pool is not None:
+                active = self._pool.active
+                worker_ok = active.ready_idle
+                self._turns.note_worker_state_at_open(ready=worker_ok, busy=active.busy)
+                if not worker_ok:
+                    # NOPARTIAL FOR THIS TURN, by design (P9b): no in-process
+                    # fallback, because that is the thread a kill cannot reach.
+                    self.turns_opened_without_worker += 1
+                    log.warning(
+                        "stt: turn opened with no worker ready and idle "
+                        "(ready=%s busy=%s) — no hypotheses this turn",
+                        active.ready,
+                        active.busy,
+                    )
             if self._cfg.commit.enabled:
                 if self._hyp_task is None:
+                    # Reset EVERY turn, task or not: a turn with no hypotheses
+                    # must not inherit the last turn's committed_end_s, or its
+                    # final would skip audio nobody decoded.
                     self._committer.reset()
                     self._twotier.reset()
                     self._span_queued_ns.clear()
                     self._issuer.reset()
                     self._last_decode_end_ns = now_ns()
-                    self._hyp_task = asyncio.get_running_loop().create_task(self._hypothesis_loop())
+                    if worker_ok:
+                        self._hyp_task = asyncio.get_running_loop().create_task(
+                            self._hypothesis_loop()
+                        )
             elif self._cfg.partial_offsets_s and self._partial_task is None:
                 self._partial_task = asyncio.get_running_loop().create_task(self._partial_loop())
 
@@ -815,11 +842,13 @@ class StreamingWhisperSTT(STTService):
                 # do. The final starts on cores nothing else is holding.
                 self._hyp_task.cancel()
                 self._hyp_task = None
-                if self._hyp_worker is not None:
-                    if self._hyp_worker.kill_if_busy():
+                if self._pool is not None:
+                    killed, _promoted = self._pool.kill_and_promote()
+                    if killed:
                         self.hypotheses_killed += 1
-                    # Respawn inside the reply, where there is nothing to starve.
-                    self._hyp_worker.respawn_async()
+                        self._turns.note_hyp_killed()
+                    # NO RESPAWN HERE. It runs at audio_out_first (see
+                    # ensure_loaded); P9 spawned at this line and lost 1.6 s.
             elif self._hyp_task is not None and self._cfg.commit.at_endpoint == "race":
                 # RACE: the tail final starts now and any hypothesis still
                 # decoding is discarded. Its cost is already paid and its

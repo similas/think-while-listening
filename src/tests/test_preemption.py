@@ -104,3 +104,132 @@ def test_pending_agreement_counts_the_hypotheses_held() -> None:
     assert c.pending_agreement == 0
     c.offer([Word(text="one two", start_s=0.0, end_s=1.0)], 2.0)
     assert c.pending_agreement == 1
+
+
+# ---- P9b: the hot spare ---------------------------------------------------
+
+import json  # noqa: E402
+import sys  # noqa: E402
+import threading  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from twl.clock import now_ns  # noqa: E402
+from twl.hypothesis_worker import WorkerPool, _spawn_pinned  # noqa: E402
+from twl.records import RunMeta  # noqa: E402
+from twl.turns import TurnManager  # noqa: E402
+
+
+class FakeWorker:
+    """Just the surface WorkerPool touches; no process is ever started."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.ready_idle = True
+        self.busy = False
+        self.dead = False
+        self.started = threading.Event()
+        self._on_event = None
+
+    def kill_if_busy(self) -> bool:
+        if not self.busy:
+            return False
+        self.busy, self.ready_idle, self.dead = False, False, True
+        return True
+
+    def start(self) -> bool:
+        self.started.set()
+        return True
+
+    def stop(self) -> None:
+        return
+
+
+def pool() -> WorkerPool:
+    return WorkerPool(FakeWorker)  # type: ignore[arg-type]
+
+
+def test_a_busy_active_is_killed_and_the_spare_takes_over() -> None:
+    p = pool()
+    first = p.active
+    first.busy = True  # type: ignore[attr-defined]
+    assert p.kill_and_promote() == (True, True)
+    assert p.active is not first
+    assert p.promotions == 1
+
+
+def test_an_idle_active_is_left_alone() -> None:
+    """Nothing in flight, nothing killed, nothing to respawn -- P9's bug was
+    replacing a healthy worker at every endpoint anyway."""
+    p = pool()
+    first = p.active
+    assert p.kill_and_promote() == (False, False)
+    assert p.active is first
+
+
+def test_no_promotion_when_the_spare_is_not_ready() -> None:
+    p = pool()
+    p.active.busy = True  # type: ignore[attr-defined]
+    p.spare.ready_idle = False  # type: ignore[attr-defined]
+    assert p.kill_and_promote() == (True, False)
+
+
+def test_respawn_touches_only_dead_workers() -> None:
+    p = pool()
+    p.workers[0].dead = True  # type: ignore[attr-defined]
+    p.respawn_dead_async()
+    assert p.workers[0].started.wait(2.0)  # type: ignore[attr-defined]
+    assert not p.workers[1].started.is_set()  # type: ignore[attr-defined]
+
+
+def test_the_spawn_thread_hides_main_file_and_restores_it() -> None:
+    """The child must not re-import the parent's __main__ (P9b pinning)."""
+    main = sys.modules["__main__"]
+    had = getattr(main, "__file__", None)
+    main.__file__ = "/tmp/fake_main.py"
+    seen: list[object] = []
+
+    class Proc:
+        def start(self) -> None:
+            seen.append(getattr(sys.modules["__main__"], "__file__", None))
+
+    try:
+        _spawn_pinned(Proc(), [])
+        assert seen == [None]
+        assert main.__file__ == "/tmp/fake_main.py"
+    finally:
+        if had is None:
+            del main.__file__
+        else:
+            main.__file__ = had
+
+
+META = RunMeta(
+    run_id="t",
+    wall_time="2026-10-06T00:00:00-0400",
+    git_commit="0",
+    config_hash="0",
+    config_path="c",
+    nvpmodel="x",
+    jetson_clocks="x",
+    software={},
+)
+
+
+def test_worker_events_and_stage_listeners_reach_the_record(tmp_path: Path) -> None:
+    m = TurnManager("t", tmp_path / "turns.jsonl", META, {})
+    fired: list[str] = []
+    m.add_stage_listener("audio_out_first", lambda: fired.append("aof"))
+    m.turn_started(now_ns())
+    m.note_worker_state_at_open(ready=False, busy=True)
+    m.note_worker_event("kill", ns=now_ns(), pid=7, extra={"worker": "a"})
+    m.note_hyp_killed()
+    m.mark("audio_out_first")
+    assert fired == ["aof"]
+    m.finish_turn()
+    lines = [json.loads(x) for x in (tmp_path / "turns.jsonl").read_text().splitlines()]
+    ev = [x for x in lines if x["kind"] == "worker_event"]
+    assert ev and ev[0]["event"] == "kill" and ev[0]["t_ms"] >= 0
+    tr = next(x for x in lines if x["kind"] == "turn_record")
+    assert tr["hyp_killed"] is True
+    assert tr["worker_ready_at_open"] == 0 and tr["worker_busy_at_open"] == 1
+    assert tr["origin_ns"] > 0

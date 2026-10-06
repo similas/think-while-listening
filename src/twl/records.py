@@ -27,7 +27,8 @@ def to_jsonl(
     | PartialRecord
     | DecisionRecord
     | HypothesisRecord
-    | SpanRecord,
+    | SpanRecord
+    | WorkerEvent,
 ) -> str:
     """One record → one JSON line (no trailing newline)."""
     d = asdict(record)
@@ -45,7 +46,8 @@ def write_jsonl(
     | PartialRecord
     | DecisionRecord
     | HypothesisRecord
-    | SpanRecord,
+    | SpanRecord
+    | WorkerEvent,
 ) -> None:
     """Append one record to an open text file and flush (crash-safe logs)."""
     fh.write(to_jsonl(record) + "\n")
@@ -228,8 +230,39 @@ class TurnRecord:
     proc_swap_mb: dict[str, float] = field(default_factory=dict)
     pressure_swap_mb: dict[str, float] = field(default_factory=dict)
     zram_growth_mb: float = 0.0
+    # P9b, the hot spare. Whether the decode in flight at this turn's endpoint
+    # was SIGKILLed, and the pool's state when the turn opened. -1 = no pool.
+    # busy-at-open is separate from ready-at-open because a worker still
+    # finishing an orphan is alive and loaded but cannot take this turn.
+    hyp_killed: bool = False
+    worker_ready_at_open: int = -1
+    worker_busy_at_open: int = -1
+    # The turn clock's raw perf_counter origin. Offsets alone cannot place an
+    # event that crosses a turn boundary, such as a respawn that starts in one
+    # turn's reply and finishes in the next turn's listening window.
+    origin_ns: int = 0
 
     kind: str = field(default="turn_record", init=False)
+
+
+@dataclass(frozen=True)
+class WorkerEvent:
+    """One thing that happened to a hypothesis worker process.
+
+    Written as it happens, with the RAW perf_counter time, so the scorer can
+    test whether any spawn interval overlaps any turn's scored window -- the
+    check P9 could not make, because nothing about the respawn was recorded.
+    """
+
+    run_id: str
+    turn: int
+    event: str  # kill | promote | spawn_start | spawn_ready | spawn_failed | first_decode
+    ns: int
+    t_ms: float  # offset on the open turn's clock, -1.0 if no turn is open
+    pid: int = -1
+    extra: dict[str, Any] = field(default_factory=dict)
+
+    kind: str = field(default="worker_event", init=False)
 
 
 @dataclass(frozen=True)

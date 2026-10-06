@@ -35,6 +35,7 @@ from twl.records import (
     SpanRecord,
     StageEvent,
     TurnRecord,
+    WorkerEvent,
     endpoint_after_final,
     write_jsonl,
 )
@@ -236,6 +237,14 @@ class TurnManager:
         self._file_index_fn: Callable[[], int] | None = None
         self._utterance = -1
         self._last_playback_done_ns = 0
+        self._hyp_killed = False
+        self._worker_ready_at_open = -1
+        self._worker_busy_at_open = -1
+        # Callbacks keyed by stage name, fired after the mark is written. The
+        # hot spare respawns on "audio_out_first", the first instant after
+        # every interval TTFA measures.
+        self._stage_listeners: dict[str, list[Callable[[], None]]] = {}
+        self._worker_event_lock = threading.Lock()
         self._closed = False
         self._idle_mw = -1.0
         # How the last turn ended. The playback gate refuses to release on an
@@ -275,6 +284,48 @@ class TurnManager:
             return None
         return self._last_playback_done_ns + IDLE_SETTLE_NS
 
+    def add_stage_listener(self, stage: str, fn: Callable[[], None]) -> None:
+        """Call ``fn`` after every mark of ``stage`` (or "turn_closed")."""
+        self._stage_listeners.setdefault(stage, []).append(fn)
+
+    def _fire(self, stage: str) -> None:
+        for fn in self._stage_listeners.get(stage, ()):
+            try:
+                fn()
+            except Exception:  # a listener must never take the recorder down
+                log.exception("stage listener for %s failed", stage)
+
+    def note_worker_state_at_open(self, *, ready: bool, busy: bool) -> None:
+        self._worker_ready_at_open = int(ready)
+        self._worker_busy_at_open = int(busy)
+
+    def note_hyp_killed(self) -> None:
+        self._hyp_killed = True
+
+    def note_worker_event(
+        self, event: str, *, ns: int, pid: int = -1, extra: dict[str, Any] | None = None
+    ) -> None:
+        """Record a worker event with its raw time and its place on the turn clock.
+
+        Thread-safe in the sense that matters: write_jsonl writes one line per
+        call, and events arrive from the respawn thread as well as the loop.
+        """
+        clock = self._clock
+        t_ms = (ns - clock.origin_ns) / 1e6 if clock is not None else -1.0
+        with self._worker_event_lock:
+            write_jsonl(
+                self._fh,
+                WorkerEvent(
+                    run_id=self._run_id,
+                    turn=self._turn,
+                    event=event,
+                    ns=ns,
+                    t_ms=round(t_ms, 1),
+                    pid=pid,
+                    extra=dict(extra or {}),
+                ),
+            )
+
     def set_file_index_source(self, fn: Callable[[], int]) -> None:
         """Supply the playing file's 1-based index (FileFrameSource)."""
         self._file_index_fn = fn
@@ -302,6 +353,9 @@ class TurnManager:
         # Read at OPEN: both halves of a split read the same file, which is
         # what makes a split visible in the records instead of inferable.
         self._utterance = self._file_index_fn() if self._file_index_fn is not None else -1
+        self._hyp_killed = False
+        self._worker_ready_at_open = -1
+        self._worker_busy_at_open = -1
         self._transcript = ""
         self._stt_audio_s = -1.0
         self._stt_minflt = -1
@@ -363,6 +417,7 @@ class TurnManager:
         write_jsonl(
             self._fh, StageEvent(run_id=self._run_id, turn=self._turn, stage=stage, t_ms=m.t_ms)
         )
+        self._fire(stage)
 
     def has_mark(self, stage: str) -> bool:
         """True if the open turn already carries this stage (once-marks only)."""
@@ -920,12 +975,17 @@ class TurnManager:
             proc_swap_mb={k: round(v, 3) for k, v in own_swap.items()},
             pressure_swap_mb={k: round(v, 3) for k, v in pressure_swap.items()},
             zram_growth_mb=round(ambient, 3),
+            hyp_killed=self._hyp_killed,
+            worker_ready_at_open=self._worker_ready_at_open,
+            worker_busy_at_open=self._worker_busy_at_open,
+            origin_ns=clock.origin_ns,
         )
         write_jsonl(self._fh, record)
         self.turns_written += 1
         if invalid_reason:
             self.invalid_turns += 1
             log.warning("turn %d INVALID: %s", self._turn, invalid_reason)
+        self._fire("turn_closed")
 
     def close(self, notes: str = "") -> None:
         """Close the open turn, mark the log complete, and fsync it.
