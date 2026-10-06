@@ -19,6 +19,7 @@ Invariants:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import re
 from typing import TYPE_CHECKING
@@ -112,31 +113,41 @@ class LlamaChatProcessor(FrameProcessor):
         await self.push_frame(LLMFullResponseStartFrame())
         first_ns: list[int] = []
         try:
-            if self._answer_mode == "completion":
-                result = await self._client.stream_completion_chat(
-                    gemma_prompt(self._answer_system_prompt, text),
-                    max_tokens=self._cfg.max_tokens,
-                    temperature=self._cfg.temperature,
-                    on_first_token_ns=first_ns,
-                    on_delta=self._on_delta,
-                )
-            else:
-                result = await self._client.stream_chat(
-                    [
-                        {"role": "system", "content": self._cfg.system_prompt},
-                        {"role": "user", "content": text},
-                    ],
-                    max_tokens=self._cfg.max_tokens,
-                    temperature=self._cfg.temperature,
-                    on_first_token_ns=first_ns,
-                    on_delta=self._on_delta,
-                )
-        except Exception:
-            log.exception("llm: generation failed")
-            await self.push_frame(LLMFullResponseEndFrame())
-            return
-        if first_ns:
-            self._turns.mark("llm_first_token", at_ns=first_ns[0], once=True)
+            try:
+                if self._answer_mode == "completion":
+                    result = await self._client.stream_completion_chat(
+                        gemma_prompt(self._answer_system_prompt, text),
+                        max_tokens=self._cfg.max_tokens,
+                        temperature=self._cfg.temperature,
+                        on_first_token_ns=first_ns,
+                        on_delta=self._on_delta,
+                    )
+                else:
+                    result = await self._client.stream_chat(
+                        [
+                            {"role": "system", "content": self._cfg.system_prompt},
+                            {"role": "user", "content": text},
+                        ],
+                        max_tokens=self._cfg.max_tokens,
+                        temperature=self._cfg.temperature,
+                        on_first_token_ns=first_ns,
+                        on_delta=self._on_delta,
+                    )
+            except Exception:
+                log.exception("llm: generation failed")
+                await self.push_frame(LLMFullResponseEndFrame())
+                return
+        finally:
+            # THE FIRST TOKEN IS MARKED WHERE IT ARRIVED, not where the stream
+            # happened to end. A generation cut short by teardown, timeout or
+            # cancellation has still measured its first token, and dropping the
+            # mark costs the turn its stage decomposition for a reason that has
+            # nothing to do with the turn. long_digit turn 21, 2026-10-05: three
+            # COMMIT-WL reps replied and were recorded as if they never started,
+            # because the run ended while the stream was still open.
+            if first_ns:
+                with contextlib.suppress(ValueError):
+                    self._turns.mark("llm_first_token", at_ns=first_ns[0], once=True)
         self._turns.mark("llm_done", once=True)
         # Prefix preservation, measured: how much of THIS request's prompt the
         # server found already in the slot, i.e. left behind by the speculation

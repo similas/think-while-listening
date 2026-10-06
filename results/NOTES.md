@@ -5495,3 +5495,144 @@ The predicate lives in ONE place and both callers use it, so runs written
 before the flag existed (pass 1n, pass 2) are scored by exactly the same rule
 as runs written after it (pass 3 onward). No run is re-executed and no number
 is restated by hand. make check: 246 passed.
+
+## 2026-10-06 — PASS 2 SCORED. P3 FAILS, P7 FALSIFIED, P4 PASSES, P6 NOT MET ON TWO SETS
+
+COMMIT-WL (one-tier tiny a=2, guard 0.3, segments, duty 0.6, at_endpoint race)
+against REACTIVE-NOPARTIAL, 4 sets x 3 reps each arm, scored by
+src/scripts/pass2_score.py. Paired on the item: per arm each item's value is
+the median over its 3 reps, the difference is taken per item, and the CI is a
+percentile bootstrap over ITEMS (4000 resamples).
+
+### The item had to be recovered before anything could be paired
+
+NOTHING IN A TURN RECORD SAYS WHICH FILE IT HEARD. ``utterance`` is -1 and
+``reference`` is empty in every run ever written, and score_run.py maps turn k
+to the k-th file positionally. That is correct only while turns and files stay
+in step, and they do not: multi_step produces 94 turns from 80 files because a
+VAD split gives one file two turns. After the first split a positional map
+reads the wrong reference for every remaining turn.
+
+So the item is recovered by a MONOTONE alignment (files play in a known order,
+turns open in a known order, a file may absorb more than one consecutive turn
+but never fewer than one), by DP over WER. The alignment reports its own
+quality, and it is good: median WER of the aligned turns is 0.000 on sixteen
+and short_digit, 0.143 on long_digit, 0.013/0.025 on multi_step. A misalignment
+would show as WER near 1.0, so this is a check and not an assumption.
+
+### P3 — COMMIT-WL TTFA. FAILED.
+
+Paired TTFA, NOPARTIAL minus COMMIT-WL; POSITIVE WOULD BE A SAVING.
+
+    set          NOPARTIAL   COMMIT-WL      paired            CI            n
+    sixteen       3360.0 ms   3666.4 ms    -394.5 ms   [-526.8, -253.2]    16
+    short_digit   3781.2      3801.0        -34.4      [-413.5,  +11.2]    20
+    long_digit    3892.4      4167.5       -323.7      [-594.1,  -81.8]    17
+    multi_step    4379.2      4551.6       -155.1      [-486.6,  +59.1]    62
+
+PRIMARY (amended 2026-10-04): median reduction >= 300 ms on multi_step with a
+CI excluding 0. OBSERVED -155.1 ms -- a REGRESSION, not a reduction -- with a
+CI spanning 0. NOT MET. The point estimate is not in the 350-450 ms bracket my
+own arithmetic predicted; it is on the other side of zero.
+SECONDARY >= 1000 ms: no. DEV SET >= 200 ms: -394.5 ms, CI excluding 0, a
+significant REGRESSION. MONOTONE IN DURATION: no (-395, -34, -324, -155).
+
+COMMIT-WL IS SLOWER THAN THE BASELINE IT WAS BUILT TO BEAT, on every set, and
+significantly so on two of four.
+
+### Why, and it is not that the mechanism failed to fire
+
+    set          committed_end_s   final tail_s   NOPARTIAL tail_s
+    sixteen             0.00           2.45            2.45
+    multi_step          6.86           8.72           15.22
+
+ON MULTI_STEP THE COMMITTER WORKS: it commits 6.86 s of a 15.2 s utterance and
+hands the final a tail 43 % shorter. THE FINAL STILL TAKES LONGER (+122 ms,
+paired). The audio removed from the final is paid for again, with interest, in
+contention between the hypothesis decodes and everything else in the turn.
+
+ON SIXTEEN THE COMMITTER NEVER FIRES: committed_end_s is 0.00 and the tail is
+the whole 2.45 s utterance. At a=2 agreement with a 0.3 s tail guard there is
+nothing to commit before a 2.5 s utterance ends, so COMMIT-WL does all of
+NOPARTIAL's work plus the hypothesis decodes and buys nothing. That is the full
+explanation of the -394.5 ms dev-set regression, and it is a property of the
+design at short durations, not an artefact.
+
+### P4 — COMMIT-WL WER. PASSES.
+
+Paired dWER = WER(COMMIT-WL) - WER(NOPARTIAL) per item:
+
+    set          n    median      mean     worse  better  same
+    sixteen     16   +0.0000   +0.0000       0      0      16
+    short_digit 20   +0.0000   +0.0000       0      0      20
+    long_digit  18   +0.0000   +0.0000       0      0      18
+    multi_step  62   +0.0000   +0.0082      17      7      38
+
+Bar is <= +2.0 points on every split; worst is +0.82 points. PASSES. The mean
+is reported beside the median because the median is 0 on every set by
+construction -- most items are transcribed identically -- and the median alone
+would hide the 17 items multi_step degrades. P4 passing is not a result on its
+own: accuracy was never the thing at risk, and it is held while the latency the
+arm exists to buy is not delivered.
+
+### P6 — Bounded final. NOT MET ON TWO SETS, FALSIFIED ON NONE.
+
+final_ms against the offline model of its own tail, 1384 + 74 x tail_s
+(2026-09-17, B2). Bar <= 1.3x, falsified > 1.6x.
+
+    sixteen      1.33x  CI [1.29, 1.41]   n= 48    over
+    short_digit  1.11x  CI [1.07, 1.23]   n= 60    met
+    long_digit   1.28x  CI [1.21, 1.34]   n= 57    met
+    multi_step   1.31x  CI [1.16, 1.46]   n=211    over, CI includes 1.3
+
+### P7 — Energy. FALSIFIED.
+
+Raw J/turn, paired, COMMIT-WL minus NOPARTIAL: sixteen +4.8, short_digit +5.4,
+long_digit +8.1, multi_step +24.2 J with CI [+21.5, +25.8]. HIGHER ON EVERY
+SET, CI EXCLUDING 0 ON MULTI_STEP. FALSIFIED as pre-registered.
+
+    THE "NET OF IDLE" FORM IS NOT USABLE and is reported rather than quietly
+    replaced. Subtracting idle_power_mw x turn span gives NOPARTIAL a net of
+    -7.05 J on multi_step. Negative net energy is not physical; the idle
+    baseline (median 5274 mW) is sampled at a moment that does not represent
+    the turn's floor. The direction and the conclusion are the same in both
+    forms, and the raw paired difference is what is claimed.
+
+### Exclusions, per arm, per set
+
+    set          items   NOPARTIAL excluded            COMMIT-WL excluded
+    sixteen      16/16   none                          none
+    short_digit  20/20   no_ttfa 1                     no_ttfa 1
+    long_digit   18/20   split 3 items, no_ttfa 4      split 3 items, no_ttfa 3
+    multi_step   62/80   split 36 items, no_ttfa 6,    split 35 items, no_ttfa 4,
+                         endpoint_after_final 3        endpoint_after_final 3
+
+Split rates are the finding, not a defect: multi_step loses ~45 % of its items
+to VAD splits in BOTH arms, which is why the arms are compared only on the 62
+items both scored. long_digit keeps 18 of 20, above the 12/20 floor.
+
+### WHAT PASS 2 MEANS
+
+v3 §5.4 named this outcome in advance: "If P3 fails, the paper is 'the silence
+belongs to the recognizer and neither consumer's speculation helps on this
+device', carried by P1/P2." That is now the paper. The listener's window was
+allocated to the recognizer, the recognizer used it -- 45 % of the utterance
+committed before the endpoint on multi_step -- and THE USER WAITED LONGER
+ANYWAY, at 24 J more per turn. The mechanism works and does not pay.
+
+### DECISION — mark the first token where it arrives
+
+long_digit turn 21, all three COMMIT-WL reps, replied but had no
+llm_first_token. CAUSE: the mark was taken after the stream RETURNED, from a
+timestamp captured at the first token. The harness tears down after the last
+file, the arm is slower, so the last turn's stream was still open and the
+already-measured timestamp was discarded. NOPARTIAL finishes in time, which is
+why it looked arm-specific; the fault is the instrumentation's, triggered by a
+harness end condition, and it would hit any arm slow enough.
+
+ALTERNATIVES: (a) make the harness wait for the last generation; (b) mark on
+arrival. CHOSEN (b), a finally block in LlamaChatProcessor._generate, because
+(a) fixes one end condition and leaves timeouts and cancellations losing a mark
+they had already taken. The three turns stay excluded from pass 2's TTFA either
+way -- they have no audio_out_first -- and the fix lands before pass 3.
+make check: 246 passed.
