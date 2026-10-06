@@ -150,6 +150,12 @@ class HypothesisWorker:
         self.kills = 0
         self.spawns = 0
         self.last_spawn_ms = 0.0
+        # EVERY spawn's wall time, not just the last. If a respawn outlasts the
+        # reply the next turn opens with no worker, every hypothesis returns
+        # None, and the kill arm quietly becomes NOPARTIAL -- which would read
+        # as a P9 pass for the wrong reason. The distribution is reported, and
+        # ``ready`` is asserted at turn open.
+        self.spawn_ms: list[float] = []
 
     # ---- lifecycle -------------------------------------------------------
 
@@ -173,6 +179,7 @@ class HypothesisWorker:
                 ok = False
         self.spawns += 1
         self.last_spawn_ms = (now_ns() - t0) / 1e6
+        self.spawn_ms.append(self.last_spawn_ms)
         if ok:
             self._ready.set()
             log.info("hypothesis worker: ready in %.0f ms (pid %s)", self.last_spawn_ms, proc.pid)

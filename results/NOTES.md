@@ -5794,3 +5794,60 @@ check. Drafting prose is the only work that continues. The previous rule said
 "no compute"; I read editing and committing as not-compute, which is how nine
 files changed under a running arm. The rule is now: NO WRITES TO THE REPO AND
 NO PROCESSES, until run_complete is written.
+
+## 2026-10-06 — P5 RERUN, pre-registered before the runs
+
+Four arms, one rep each, on p5_long20 (20 longest multi_step items, 8.3 min of
+audio, median 24.3 s), ALL ON ONE COMMIT with `make check` passed, clocks
+pinned with --clocks, and no repo activity between run start and teardown.
+
+    REACTIVE-NOPARTIAL   src/configs/reactive_nopartial.yaml
+    NAIVE-1.0            src/configs/p5_naive_10.yaml
+    CONTROLLED-0.6       src/configs/commit_wl.yaml
+    CONTROLLED-0.8       src/configs/p5_controlled_08.yaml
+
+### The REACTIVE arm is not an addition, it is the comparator P5 already named
+
+P5's criterion is "VAD starvation on >= 20 % of TURNS: turns != files, OR
+endpoint delay > 2x REACTIVE". The second disjunct needs a REACTIVE run ON THIS
+SUBSET and no such run exists; the first needs per-turn file attribution, which
+only landed on 2026-10-06. Neither disjunct has ever been evaluated. The
+voided 10:36 NAIVE run could not have scored either one: its records carry
+utterance -1 on all 29 turns.
+
+A SPLIT RATE WITHOUT A BASELINE IS NOT EVIDENCE. Pass 2 measured ~45 % of
+multi_step items split in BOTH arms, NOPARTIAL included, and NOPARTIAL issues
+no hypotheses at all. On that evidence splitting is a property of this corpus
+under this VAD before any pacing rule is applied, and the voided NAIVE run's
+0.35 is BELOW the rate the same corpus shows with the listener switched off.
+Whatever NAIVE does must be read against REACTIVE on the same 20 items.
+
+### Scoring, stated before the data
+
+    PRIMARY, per arm: fraction of TURNS showing starvation, where a turn is
+    starved if its recorded utterance index is shared with another turn (the
+    file split) OR its endpoint delay exceeds 2x REACTIVE's median on this
+    subset. Both disjuncts reported separately as well as combined.
+    P5 HOLDS if NAIVE >= 20 % and both CONTROLLED arms < 20 %.
+    P5 FAILS if NAIVE < 20 %, or if either CONTROLLED arm >= 20 %.
+    IF 0.8 STARVES AND 0.6 HOLDS, the boundary is reported as the bracket
+    (0.6, 0.8) -- a bracket, not a point, because two arms cannot do better.
+
+    CONTROLLER-VARIES (from the original P5): CONTROLLED's ACHIEVED cadence
+    must vary across turns, or P5 is reported NOT TESTABLE rather than passing.
+    Reported as the per-arm IQR of achieved cadence.
+
+    n IS 20 ITEMS PER ARM, one rep. Every rate is a proportion over turns with
+    a Wilson interval, and a 20-item single rep cannot separate 20 % from 30 %.
+    THE INTERVALS WILL BE WIDE AND THE VERDICT MAY BE "UNDERPOWERED"; that is
+    stated now rather than discovered after.
+
+### Device state, recorded rather than fixed
+
+The voided runs reported `device state: desktop`, against CLAUDE.md §5's
+preference for multi-user.target. The box is driven remotely and switching
+targets would cut that session, so the state is NOT changed: all four arms run
+in the same desktop state, which keeps the comparison internally valid, and
+the absolute idle floor (5.1-6.7 W) carries that caveat. Clocks ARE pinned,
+because a free-running governor on cores 3-5 is a direct confound on a duty
+cycle and --clocks costs nothing.

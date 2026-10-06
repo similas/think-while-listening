@@ -153,6 +153,7 @@ class StreamingWhisperSTT(STTService):
         self.hypotheses_infeasible = 0
         self.hypotheses_killed = 0
         self.hypotheses_lost = 0
+        self.turns_opened_without_worker = 0
         self._hyp_worker: HypothesisWorker | None = None
         self.spans_done = 0
         # Issued = decodes started (the cost). Emitted = frames pushed while
@@ -785,6 +786,16 @@ class StreamingWhisperSTT(STTService):
                 else:
                     self._audio = np.zeros(0, dtype=np.float32)
             self._speaking = True
+            if self._hyp_worker is not None and not self._hyp_worker.ready:
+                # A turn that opens on a worker still loading would issue no
+                # hypothesis at all and look like a clean fast arm. Counted, so
+                # the run can be read for it rather than fooled by it.
+                self.turns_opened_without_worker += 1
+                log.warning(
+                    "stt: turn opened with no hypothesis worker ready "
+                    "(last spawn %.0f ms) — this turn commits nothing",
+                    self._hyp_worker.last_spawn_ms,
+                )
             if self._cfg.commit.enabled:
                 if self._hyp_task is None:
                     self._committer.reset()

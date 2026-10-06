@@ -50,8 +50,10 @@ def main() -> None:
     p.add_argument("--glob", default="results/raw/*/*/turns.jsonl")
     args = p.parse_args()
 
-    by_arm: dict[str, list[float]] = {}
     unwired = 0
+    no_baseline = 0
+    raw_by_arm: dict[str, list[float]] = {}
+    net_by_arm: dict[str, list[float]] = {}
     for path in sorted(glob.glob(args.glob)):
         arm = "unknown"
         with open(path, encoding="utf-8") as fh:
@@ -71,10 +73,23 @@ def main() -> None:
                     unwired += 1
                     continue
                 window_s = (st.get("audio_out_first", 0.0) - 0.0) / 1000.0
-                net = e - (idle_mw / 1000.0) * window_s if idle_mw >= 0 else e
-                by_arm.setdefault(arm, []).append(net)
+                raw_by_arm.setdefault(arm, []).append(e)
+                # A TURN WITH NO USABLE BASELINE IS NOT NETTED, IT IS LEFT OUT.
+                # The previous line fell back to raw joules for such a turn and
+                # put it in the same column as netted ones, so a run whose
+                # first turn has no preceding quiet window (there is no reply
+                # to clear yet) reported turn 1 raw and the rest net, unlabelled.
+                # Since 2026-10-06 idle_mw also returns -1.0 whenever the quiet
+                # window is too short to have a median, which makes the gap
+                # common rather than rare.
+                if idle_mw >= 0:
+                    net_by_arm.setdefault(arm, []).append(e - (idle_mw / 1000.0) * window_s)
+                else:
+                    no_baseline += 1
 
     print(f"turns with no energy recorded: {unwired}")
+    print(f"turns with no usable idle baseline (excluded from net): {no_baseline}")
+    by_arm = net_by_arm
     if not by_arm:
         print("\nNO TURN CARRIES AN ENERGY MEASUREMENT.")
         print("Expected until Phase 5: the integration is wired in the sampler")
@@ -82,11 +97,17 @@ def main() -> None:
         print("telemetry clock origin was never written down. See the module")
         print("docstring; this is a missing measurement, not a missing script.")
         return
-    print(f"\n{'arm':>22} {'n':>5} {'J/turn net of idle':>26}")
-    for arm, vals in sorted(by_arm.items()):
-        lo, hi = boot_ci(vals)
-        med = statistics.median(vals)
-        print(f"{arm:>22} {len(vals):>5} {f'{med:.2f} [{lo:.2f}, {hi:.2f}]':>26}")
+    print(f"\n{'arm':>22} {'n raw':>6} {'J/turn raw':>24} {'n net':>6} {'J/turn net of idle':>26}")
+    for arm in sorted(set(raw_by_arm) | set(net_by_arm)):
+        raw, net = raw_by_arm.get(arm, []), net_by_arm.get(arm, [])
+        rl, rh = boot_ci(raw) if len(raw) > 1 else (float("nan"), float("nan"))
+        nl, nh = boot_ci(net) if len(net) > 1 else (float("nan"), float("nan"))
+        rm = statistics.median(raw) if raw else float("nan")
+        nm = statistics.median(net) if net else float("nan")
+        print(
+            f"{arm:>22} {len(raw):>6} {f'{rm:.2f} [{rl:.2f}, {rh:.2f}]':>24} "
+            f"{len(net):>6} {f'{nm:.2f} [{nl:.2f}, {nh:.2f}]':>26}"
+        )
     print("\n  Net of idle: energy_j - idle_power_mw/1000 x window_s, where the")
     print("  window is [turn opened, first audio out]. CIs bootstrap over turns.")
     print("  Raw and baseline are both in the record, so this netting is undoable.")
