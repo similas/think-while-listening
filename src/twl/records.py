@@ -346,3 +346,23 @@ def read_jsonl(path: str) -> list[dict[str, Any]]:
             if line:
                 out.append(json.loads(line))
     return out
+
+
+def endpoint_after_final(stages_ms: dict[str, float]) -> bool:
+    """Did this turn's recognizer finish before the turn's endpoint was marked?
+
+    A turn cannot be transcribed before the user has stopped speaking. When
+    ``stt_final`` precedes ``vad_user_stopped`` on the same clock, the two marks
+    belong to different stretches of speech: the endpoint that produced the
+    final landed on the previous turn, and the ``vad_user_stopped`` recorded
+    here is the NEXT boundary. Every offset on that clock is then measured from
+    the wrong zero, TTFA included, so the turn cannot be scored.
+
+    Observed on 2026-10-05 in both arms, on the same item, in every rep: a
+    second onset arrives while a decode is in flight, the turn rolls over
+    underneath it, and the final is marked on the turn that has just opened.
+    The first half is caught by the split flag; this is the half that is not.
+    """
+    f = stages_ms.get("stt_final")
+    v = stages_ms.get("vad_user_stopped")
+    return f is not None and v is not None and f < v

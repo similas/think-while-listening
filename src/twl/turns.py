@@ -35,6 +35,7 @@ from twl.records import (
     SpanRecord,
     StageEvent,
     TurnRecord,
+    endpoint_after_final,
     write_jsonl,
 )
 from twl.schedule import PlannedTurn
@@ -778,6 +779,14 @@ class TurnManager:
             invalid_reason = (invalid_reason + ";" if invalid_reason else "") + inherited
         if self._turn in self._split_turns:
             invalid_reason = (invalid_reason + ";" if invalid_reason else "") + "vad_split"
+        # THE OTHER HALF OF A SPLIT, the one the split flag does not reach: a
+        # turn whose final was marked before its own endpoint is reading two
+        # different stretches of speech off one clock. See
+        # records.endpoint_after_final for why it cannot be scored.
+        if endpoint_after_final(clock.as_dict()):
+            invalid_reason = (
+                invalid_reason + ";" if invalid_reason else ""
+            ) + "endpoint_after_final"
         # A TURN WITH NO FINAL OF ITS OWN IS A CASCADE unless it is the first
         # half of a split, where having no final is the definition. That is the
         # 2026-09-22 shape: a turn closed before its final, whose decode then

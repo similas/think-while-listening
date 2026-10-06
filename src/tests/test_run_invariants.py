@@ -176,3 +176,30 @@ def test_close_is_idempotent_so_the_abort_path_can_record_first(tmp_path: Path) 
     ]
     assert len(completes) == 1
     assert completes[0]["notes"] == "RUN INVALID: something"
+
+
+def test_endpoint_after_final_flags_a_final_that_precedes_its_endpoint() -> None:
+    """The half of a VAD split the split flag does not reach.
+
+    Turn 17 of the 2026-10-05 multi_step runs, in both arms and every rep: the
+    final lands 1.5 s before the turn's own endpoint mark, because the decode
+    was in flight when the turn rolled over.
+    """
+    from twl.records import endpoint_after_final
+
+    assert endpoint_after_final({"stt_final": 1536.8, "vad_user_stopped": 3022.4})
+
+
+def test_endpoint_after_final_passes_a_well_formed_turn() -> None:
+    from twl.records import endpoint_after_final
+
+    assert not endpoint_after_final({"stt_final": 7115.2, "vad_user_stopped": 4999.5})
+
+
+def test_endpoint_after_final_needs_both_marks() -> None:
+    """A missing mark is a different fault, reported separately, not this one."""
+    from twl.records import endpoint_after_final
+
+    assert not endpoint_after_final({"stt_final": 1.0})
+    assert not endpoint_after_final({"vad_user_stopped": 1.0})
+    assert not endpoint_after_final({})

@@ -5400,3 +5400,98 @@ puts it back.
 batch 3.0 is also the least stable arm measured (+0.010 to +0.069 across three
 reps), which is recorded because a single rep of it would have looked like the
 best result in this table.
+
+## 2026-10-06 — pass 2 pre-scoring audit: the LLM is not issued early, but three turns per arm are mis-clocked
+
+Pass 2 (COMMIT-WL, 4 sets x 3 reps) completed 2026-10-05T16:48. Both audits
+below ran on the idle box afterwards, from src/scripts/llm_issue_audit.py over
+the 12 pass-2 run dirs and the 12 pass-1n (NOPARTIAL) run dirs.
+
+### 1. Does COMMIT-WL ever issue the LLM before the endpoint?
+
+NO, AND IT STRUCTURALLY CANNOT. TranscriptionFrame is pushed at exactly one
+site, inside the endpoint handler on the line after stt_final is marked
+(src/twl/stt.py); LlamaChatProcessor starts generating only on that frame
+(src/twl/services.py). InterimTranscriptionFrame, which is what the commit path
+emits, is a SIBLING class of TranscriptionFrame, not a subclass, so it never
+reaches the LLM. COMMIT-WL moves recognizer work only.
+
+    THE REQUEST TIME IS NOT RECORDED. Nothing writes the moment the POST leaves
+    the process, and the turn clock is perf_counter_ns with only offsets
+    persisted, so pass 2's turns cannot be aligned to llama-server's own log
+    after the fact. The direct measurement is NOT TESTABLE on this data. What
+    is measurable is a lower bound: stt_final <= request < llm_first_token, so
+    stt_final - vad_user_stopped bounds the request's offset from below and the
+    unmeasured residual (frame push + one processor hop) can only move the
+    request later. A violation cannot hide beneath it.
+
+Over valid turns, pooled across all four sets:
+
+    arm          stt_final - endpoint        llm_first_token - endpoint
+    NOPARTIAL    median 2347.5 ms  n=378     median 2585.6 ms  n=378
+    COMMIT-WL    median 2301.1 ms  n=379     median 2546.7 ms  n=376
+
+### 2. Three valid turns per arm ARE mis-clocked, and it is not the arm
+
+    arm          turns with final BEFORE endpoint, on a VALID turn
+    NOPARTIAL    3   (turn 17, all 3 multi_step reps, -1022 / -1101 / -1125 ms)
+    COMMIT-WL    3   (turn 17, all 3 multi_step reps, -1442 / -1486 / -1462 ms)
+
+SAME ITEM, SAME TURN NUMBER, EVERY REP, BOTH ARMS. The count being equal in an
+arm that cannot issue early is what rules out early issue as the cause.
+
+THE CAUSE, from turn 16/17 of reactive-20261005-145416-dac216: turn 16 is the
+first half of a VAD split and is flagged. Turn 17 opens on a real onset, but
+the decode belonging to the previous burst is still in flight; it completes
+after the rollover and marks stt_final at 1536.8 ms on TURN 17's clock. Turn
+17's own vad_user_stopped is then the NEXT boundary, at 3022.4 ms -- after its
+own reply has already played. The split flag catches the first half; this is
+the half it does not reach. It is the 2026-09-22 cascade shape surviving in a
+milder form that the no-final-of-its-own invariant cannot see, because turn 17
+does have a final -- just not its own.
+
+WHAT IT DOES TO THE HEADLINE NUMBER. TTFA is audio_out_first - speech_end_est
+(src/scripts/score_run.py), so a mis-clocked turn contributes a tiny TTFA
+rather than a negative one, which is why it was never conspicuous:
+
+    arm          contaminated TTFAs      median as scored   flagged out   shift
+    NOPARTIAL    625 / 445 / 446 ms      4044.9 (n=373)     4049.8 (370)  +4.9
+    COMMIT-WL     83 / 147 / 108 ms      4105.2 (n=374)     4111.8 (371)  +6.6
+
+Both arms move the same way and the paired difference moves by ~1.7 ms. The
+contamination is real and is now removed; it does not change pass 2's result.
+
+### 3. The 'marked before turn origin' scan
+
+One incident in the 12 pass-2 logs (multi_step rep 1, 'llm_first_token marked
+158.2ms before turn origin'), zero in the 12 pass-1n logs. It landed on turn
+92, ALREADY INVALID: vad_split. NO HIT ON A VALID TURN, so the stage
+decomposition carries no hole from this cause. Same mechanism as section 2 --
+mark() resolves against whichever turn is current -- but here the guard caught
+it and the turn was excluded anyway.
+
+Separately, 3 COMMIT-WL valid turns are missing llm_first_token entirely:
+long_digit turn 21 in all three reps, the run's last turn, closed by
+bot_stopped after stt_final with no LLM at all. These contribute stt_ms but no
+TTFA (score_run drops a turn with no audio_out_first), so the hole is on the
+STT side only. NOPARTIAL has none. Recorded, not yet explained.
+
+### DECISION — flag the mis-clocked half, at record time and in scoring
+
+ALTERNATIVES: (a) widen the split flag so a rollover during an in-flight decode
+flags the receiving turn too; (b) flag on the evidence in the record -- a final
+that precedes its own endpoint; (c) leave it, since the shift is ~5 ms.
+
+CHOSEN (b), records.endpoint_after_final, called from turns.finish_turn at
+record time AND from score_run before scoring. (a) needs the recogniser to know
+about turn boundaries it does not currently see, and would have to be right
+about every rollover shape rather than about the one thing that cannot be true
+of a well-formed turn. (c) is unacceptable because the size of the error is not
+the point: a turn whose marks come from two different stretches of speech is
+not a measurement, and leaving it in means the valid set contains turns that
+TTFA happens to survive and some other metric may not.
+
+The predicate lives in ONE place and both callers use it, so runs written
+before the flag existed (pass 1n, pass 2) are scored by exactly the same rule
+as runs written after it (pass 3 onward). No run is re-executed and no number
+is restated by hand. make check: 246 passed.

@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from twl.metrics import median, summarize
-from twl.records import read_jsonl
+from twl.records import endpoint_after_final, read_jsonl
 from twl.wer import wer
 
 REPO = Path(__file__).resolve().parents[2]
@@ -69,6 +69,10 @@ def score(run_dir: Path, wav_dir: Path) -> dict[str, Any]:
         if not r["valid"]:
             continue
         st = r["stages_ms"]
+        # Applied here as well as at record time so runs written before the
+        # flag existed are scored by the same rule as runs written after it.
+        if endpoint_after_final(st):
+            continue
         idx = (r["turn"] - 1) % len(names) if names else -1
         reference = refs.get(names[idx], "") if idx >= 0 else ""
         turn_span_ms = st.get("playback_done", st.get("audio_out_first", 0))
