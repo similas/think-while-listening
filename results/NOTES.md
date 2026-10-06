@@ -6542,3 +6542,59 @@ scored on the re-run alone.
 
 If P9b holds: pass 2k as pre-registered. If not: decision (b), then passes 8,
 6, 7, 9, 1r.
+
+## 2026-10-06 — P9b RE-RUN: check 1 voids 2 of 3 KILL runs again. Design not met; decision to the user
+
+Build 9ce5f77 (src identical to 51b59dd), interleaved K,R x 3, 15:19-15:51,
+scored by p9b_score.py on the re-run's six runs only. Windows are now RECORDED
+(final_window events), not inferred.
+
+    KILL 091fee   check 1: 1 intersection   -> VOID
+    KILL d2ae66   check 1: 0                -> valid
+    KILL 40cce7   check 1: 2 intersections  -> VOID
+    RACE 4ef534, fc84c0, b5e948: 0 each     -> valid
+    unready 0/72 both arms; kills KILL 40, RACE 0; affinity 3-5 on all 49 spawns
+
+### My justification for change 1 was wrong
+
+The declaration said "at audio_out_first no final can be pending, because
+finals are served in endpoint order". On a VAD split it can: the first half's
+reply begins (its audio_out_first) while the second half's endpoint has
+already fired and its final is still decoding. All three intersections are of
+that kind, on invalid turns:
+
+    40cce7  final on turn 7 (vad_split; endpoint_after_final), item 6:
+            spawn +960..+2886 ms after its endpoint, final at +2953
+    40cce7  final on turn 16 (endpoint_after_final), item 13:
+            spawn +1007..+2962, final at +3056
+    091fee  final on turn 16 (endpoint_after_final), item 13:
+            spawn +797..+2682, final at +2751
+
+No scored item is touched; every affected turn is already invalid. The rule
+voids the runs regardless, as it should.
+
+### What the pre-registered scorer prints, and why it is not reported as a pass
+
+With two KILL runs void, p9b_score.py scores what survives -- ONE KILL rep
+against THREE RACE reps -- and prints:
+
+    P9b-a  KILL 0.94x [0.91, 0.96]           -> holds
+    P9b-b  paired TTFA +250 ms [+8, +650] n=16 -> holds
+    secondary: LLM TTFT -2 ms [-3, -1]; TTS first -8 ms [-21, +25]
+    T-EPA: MemAvailable -110.0 MB (n=6); PSS 117.2 MB at ready, 179.3 MB
+           after first decode; spawn 1218 ms median, max 1955 (n=49)
+
+The pre-registration says one intersection voids the run and is silent on how
+many runs must survive. The scorer was written to proceed whenever each arm
+keeps at least one run, so literally it says HOLDS. But the design registered
+was K,R x 3 and the power figure (~91 ms detectable) was computed for 3 reps a
+side; one KILL rep is a different, weaker experiment, and the CI's lower bound
+of +8 ms shows it. Whether a 1-of-3 survivor counts is a question the
+pre-registration did not answer, and answering it now, after seeing which way
+it points, is the user's call, not mine.
+
+THE ROOT CAUSE IS THE SAME BOTH TIMES: a respawn rule keyed to a single stage
+event, which on a split does not mean the recognizer is idle. The rule that
+would hold is "respawn only when the recognizer is idle -- no endpoint whose
+final is pending and no turn being spoken -- at or after an audio_out_first",
+which the STT service can know directly rather than infer from stage order.
