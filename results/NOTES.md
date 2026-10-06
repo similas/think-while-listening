@@ -6232,3 +6232,141 @@ four E501 lines in src/scripts/p9_score.py. It is the same trap recorded on
 next commit; make check passes (256). From here the gate's exit code is
 captured into a variable and tested before any commit, never read through a
 pipe.
+
+## 2026-10-06 — PRE-REGISTRATION: P9b, the hot spare. Committed before any P9b code
+
+P9 was falsified at 2.06x, and the run tested my respawn bug rather than the
+kill: a >=4 s process spawn at EVERY endpoint, on the final's cores. P9b takes
+the respawn out of the scored window. Build must be green by end of
+2026-10-07, else decision (b). Writing starts 2026-10-10 either way. Reviewed
+before commit (9 findings, all resolved into the text below).
+
+### Design
+
+TWO tiny worker processes resident, ACTIVE and SPARE, in BOTH arms, so
+residency is identical and the arms differ only in the kill.
+
+    KILL  at the endpoint: if the active worker is decoding, SIGKILL it and
+          promote the spare. The killed worker is respawned AT audio_out_first
+          -- inside the reply and after the last stage TTFA measures
+          (audio_out_first - speech_end_est), so a respawn cannot sit inside
+          any scored interval. If a turn never reaches audio_out_first, the
+          respawn starts when that turn closes. Never at the endpoint.
+    RACE  no kill, no promotion; a decode in flight at the endpoint runs to
+          completion in its child, as in P9's control.
+
+PINNING. With the spawn start method the child unpickles its target and
+re-imports the parent's __main__ BEFORE any code of ours runs, on whatever
+affinity it inherited. So the affinity is set on the SPAWNING THREAD, a
+dedicated short-lived thread pinned to cores 3-5 before proc.start(), which the
+child inherits from its first instruction; and the parent's __main__ is not
+re-imported by the child (its import is a plausible share of the >=4 s P9
+respawn). The child's actual affinity is read from /proc at spawn_ready and
+recorded.
+
+A TURN THAT OPENS WITH NO WORKER READY AND IDLE issues no hypotheses for that
+whole turn -- NOPARTIAL for that turn -- and is counted. No in-process
+fallback: it would reintroduce the thread that cannot be preempted. A worker
+alive but still finishing a RACE orphan at turn open is NOT ready; busy-at-open
+is recorded separately.
+
+RECORDED, in results/raw: per turn, hyp_killed, worker_ready_at_open,
+worker_busy_at_open and the turn's raw origin ns; per worker event (kill,
+promote, spawn_start, spawn_ready, spawn_failed), the raw ns, the turn it fell
+in and its offset on that turn's clock; spawn_ready also carries wall time,
+child affinity, RSS and PSS; each worker's RSS and PSS after its FIRST decode;
+and system MemAvailable before and after the second worker's startup spawn.
+
+### Verdicts, fixed before the data
+
+Selection set: single_step_set, 20 items, median wav duration 10.39 s
+(measured from the files; the "10.6 s" quoted in earlier entries is not that
+quantity and is not used here). Interleaved K,R x 3, one clean build, clocks
+pinned, scored by src/scripts/p9_score.py.
+
+PRIMARY ANALYSIS: every valid, non-split turn as assigned, including turns that
+opened unready. SENSITIVITY, reported beside it: items with an unready turn
+dropped from BOTH arms. Unready turns are NOPARTIAL turns and score near the
+model, so leaving them in would let KILL pass P9b-a by inertness; the
+sensitivity line is how a reader checks it did not.
+
+P9b-a FINAL BOUND. KILL's final is <= 1.1x the solo model of its own tail
+   (1384 + 74 x tail_s, 2026-09-17 B2, carried over); FALSIFIED if >= 1.3x.
+   Applied to the item-median point estimate; CI reported beside it.
+   EXPECTED: 0.91x [0.91, 0.96] -- the per-item median of P9 RACE turns with
+   nothing in flight, n=9 items (src/scripts/p9b_power.py). The pooled 0.92x
+   used in the draft was the figure withdrawn as tail-confounded.
+
+P9b-b TTFA. Paired TTFA, RACE minus KILL, per item (median over reps,
+   bootstrap over items). HOLDS IF AND ONLY IF the point estimate is >= 150 ms
+   AND the CI's lower bound is > 0.
+   EXPECTED: ~200 ms, from P9's paired within-item orphan price +0.11x
+   [+0.03, +0.50] (n=7) of a ~1.9 s solo decode.
+   POWER, from P9's raw runs (p9b_power.py): within-item TTFA spread across
+   reps is 216 ms; the null paired-CI half-width at 16 items x 3 reps is
+   ~64 ms; the minimum detectable difference at 80 % power is ~91 ms. The
+   design can see the expected effect. A null would exclude effects above
+   ~91 ms; it could not exclude smaller ones. (Approximate: the null is RACE
+   resampled against itself from 3 reps, which slightly understates spread.)
+
+P9b HOLDS ONLY IF BOTH HOLD. EVERY OTHER OUTCOME ROUTES TO DECISION (b) --
+including P9b-a in the unscored 1.1-1.3x band, P9b-b >= 150 ms with a CI
+reaching 0, P9b-b < 150 ms with a CI excluding 0, and the not-testable
+outcomes below. Nothing is decided after the data.
+
+SECONDARY (mechanism, reported, not scored): paired deltas of LLM TTFT
+   (llm_first_token - stt_final) and TTS first chunk (tts_first_audio -
+   llm_first_token). With the respawn moved past audio_out_first these
+   intervals carry no spawn; the orphan's cores (3-5) are not the LLM's (0-2),
+   but the board shares memory bandwidth, so a small positive RACE-minus-KILL
+   delta is possible and would be reported as that path.
+
+### Validity checks, which can void rather than fail
+
+1. NO SPAWN INTERVAL [spawn_start, spawn_ready or spawn_failed] INTERSECTS
+   [vad_user_stopped, stt_final] OF ANY TURN, in either arm. One intersection
+   voids the run it occurred in. Reported-only: intersections with
+   [stt_final, audio_out_first].
+2. Kills > 0 in KILL and = 0 in RACE.
+3. Overhang past the endpoint when a decode is in flight (P9: KILL 40 ms,
+   RACE 2079 ms) reported per arm.
+4. Turns opened not-ready > 10 % of an arm's turns: that arm is degraded
+   toward NOPARTIAL and P9b is NOT TESTABLE, which routes to (b).
+5. Child affinity at spawn_ready is {3,4,5} for every spawn.
+
+T-EPA: the MemAvailable drop across the second worker's startup spawn is the
+headline memory cost; each worker's RSS and PSS at spawn_ready and after its
+first decode are reported beside it. PSS splits shared pages with the sibling
+and the parent, so it is not on its own the "memory delta of the second
+worker".
+
+### If P9b holds: pass 2k
+
+COMMIT-WL-K + feasibility gate against REACTIVE-NOPARTIAL, multi_step and dev
+(sixteen), 3 reps, NOPARTIAL RE-RUN in the same session and INTERLEAVED with
+the arm -- not paired against pass 1n, which ran on an older build. ~31 min per
+multi_step run, ~3.5 h for the pass.
+
+THE GATE'S PRIOR is the set's median WAV duration, the quantity the thinker's
+expected_duration_s uses, DERIVED FROM THE WAV DIRECTORY AT RUN START and
+logged in run_meta rather than typed into a config: multi_step measures
+15.4 s, dev 1.59 s. The gate's elapsed time is buffered audio since VAD onset,
+which includes pre-roll and the 0.8 s hangover, while the prior includes the
+files' leading and trailing silence; the two units differ in both directions
+and the net bias is not known. On dev it cannot matter: the first hypothesis
+has nothing pending, so k=2 and needed = (1/0.6 + 1) x 1.41 s = 3.8 s, longer
+than every dev utterance whether measured as 1.59 s of wav or ~2.4 s of
+buffered audio. The gate abstains on every dev turn by its own arithmetic.
+
+    P3 PRIMARY, unchanged as the expectation: median TTFA reduction >= 300 ms
+    on multi_step. THE MECHANISM CLAIM is the CI excluding 0. Both reported.
+    DEV: predicted ~0. A dev regression as large as pass 2's -394.5 ms means
+    the gate is not abstaining and is reported as the gate failing.
+    P7 as restated 2026-10-06: joules per millisecond saved, raw and net, the
+    net against the repaired quiescent idle baseline.
+
+### If P9b fails, is not testable, or the build is not green by end of 2026-10-07
+
+Decision (b): P9 and P9b go in the paper as the measured cost of
+non-preemptible speculation and what it takes to remove it. Then passes 8, 6,
+7, 9, 1r.
