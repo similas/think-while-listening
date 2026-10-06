@@ -62,26 +62,66 @@ def spawn_intervals(L: list[dict]) -> list[tuple[int, int, str]]:
     return out
 
 
+# A stop more than this long before the next final is treated as one that
+# produced no final (too-short audio returns early; a final marked with no turn
+# open is dropped). Without the resync one such stop shifts every later
+# pairing. The slowest final in P9 and P9b's twelve runs is 4.1 s.
+RESYNC_NS = 6_000_000_000
+
+
+def final_windows(L: list[dict]) -> tuple[list[tuple[int, int]], list[tuple[int, int]], str]:
+    """(endpoint_ns, final_ns) per final, and (final_ns, audio_out_first_ns).
+
+    PAIRED ACROSS TURN RECORDS. The first P9b scorer looked for both marks in
+    one turn record, and on a VAD split the endpoint is on turn N and its final
+    on turn N+1 -- exactly the windows the check exists for were skipped.
+    Recorded final_window events are used when present (ground truth from the
+    STT handler); older runs fall back to pairing each final with the oldest
+    unanswered endpoint, resynchronised by RESYNC_NS.
+    """
+    origin = {r["turn"]: r["origin_ns"] for r in L if r["kind"] == "turn_record"}
+    recorded = [
+        (r["extra"]["endpoint_ns"], r["ns"])
+        for r in L
+        if r["kind"] == "worker_event" and r["event"] == "final_window"
+    ]
+    ev = sorted(
+        (origin[r["turn"]] + int(r["t_ms"] * 1e6), r["stage"])
+        for r in L
+        if r["kind"] == "stage_event"
+        and r["stage"] in ("vad_user_stopped", "stt_final", "audio_out_first")
+        and origin.get(r["turn"])
+    )
+    finals_to_aof: list[tuple[int, int]] = []
+    last_final = None
+    for t, st in ev:
+        if st == "stt_final":
+            last_final = t
+        elif st == "audio_out_first" and last_final is not None:
+            finals_to_aof.append((last_final, t))
+            last_final = None
+    if recorded:
+        return recorded, finals_to_aof, "recorded"
+    q: list[int] = []
+    pairs: list[tuple[int, int]] = []
+    for t, st in ev:
+        if st == "vad_user_stopped":
+            q.append(t)
+        elif st == "stt_final":
+            while q and t - q[0] > RESYNC_NS:
+                q.pop(0)
+            if q:
+                pairs.append((q.pop(0), t))
+    return pairs, finals_to_aof, "inferred"
+
+
 def validity(d: Path) -> dict:
     L = lines(d)
-    marks = first_marks(L)
     turns = [r for r in L if r["kind"] == "turn_record"]
     spawns = spawn_intervals(L)
-    hit_final, hit_reply = 0, 0
-    for t in turns:
-        m, o = marks.get(t["turn"], {}), t.get("origin_ns", 0)
-        if not o:
-            continue
-        stop, fin, aof = m.get("vad_user_stopped"), m.get("stt_final"), m.get("audio_out_first")
-        for s0, s1, _w in spawns:
-            if stop is not None and fin is not None:
-                a, b = o + stop * 1e6, o + fin * 1e6
-                if s0 < b and s1 > a:
-                    hit_final += 1
-            if fin is not None and aof is not None:
-                a, b = o + fin * 1e6, o + aof * 1e6
-                if s0 < b and s1 > a:
-                    hit_reply += 1
+    windows, replies, source = final_windows(L)
+    hit_final = sum(1 for a, b in windows for s0, s1, _ in spawns if s0 < b and s1 > a)
+    hit_reply = sum(1 for a, b in replies for s0, s1, _ in spawns if s0 < b and s1 > a)
     ev = [r for r in L if r["kind"] == "worker_event"]
     ready = [r for r in ev if r["event"] == "spawn_ready"]
     pool = next((r["extra"] for r in ev if r["event"] == "pool_ready"), {})
@@ -98,6 +138,7 @@ def validity(d: Path) -> dict:
         "spawn_ms": [r["extra"].get("spawn_ms") for r in ready],
         "affinity_bad": sum(1 for r in ready if r["extra"].get("affinity") != "3-5"),
         "hit_final": hit_final,
+        "window_source": source,
         "hit_reply": hit_reply,
         "mem_delta_mb": pool.get("mem_available_delta_mb"),
         "pss_ready": [r["extra"].get("pss_mb") for r in ready],
@@ -197,7 +238,8 @@ def main() -> None:
         print(
             f"  {arm} {d.name}: turns {v['turns']} unready {v['unready']} kills {v['kills']} "
             f"promotions {v['promotions']} spawns {v['spawns']} affinity-bad {v['affinity_bad']} "
-            f"spawn-in-[stop,final] {v['hit_final']} spawn-in-[final,aof] {v['hit_reply']}"
+            f"spawn-in-[stop,final] {v['hit_final']} spawn-in-[final,aof] {v['hit_reply']} "
+            f"(windows {v['window_source']})"
             f"{'  -> VOID' if void else ''}"
         )
         unready[arm][0] += v["unready"]
@@ -240,6 +282,13 @@ def main() -> None:
         print(
             f"  spawn wall time: median {statistics.median(s):.0f} ms, max {s[-1]:.0f}, n={len(s)}"
         )
+
+    arms_left = {arm_of(d) for d in good}
+    if arms_left != {"KILL", "RACE"}:
+        missing = sorted({"KILL", "RACE"} - arms_left)
+        print(f"\nEVERY RUN OF {', '.join(missing)} IS VOID (check 1): no paired data.")
+        print("P9b: NOT TESTABLE -> ROUTES TO (b)")
+        return
 
     for label, drop in (("PRIMARY", set()), ("SENSITIVITY (unready items dropped)", unready_items)):
         med = item_medians(good, drop)

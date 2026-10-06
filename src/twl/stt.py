@@ -244,8 +244,13 @@ class StreamingWhisperSTT(STTService):
 
             self._pool = WorkerPool(make)
             await asyncio.to_thread(self._pool.start)
-            # RESPAWN AT audio_out_first, the first instant after every
-            # interval TTFA measures; at turn close for a turn with no reply.
+            # RESPAWN AT audio_out_first ONLY, the first instant after every
+            # interval TTFA measures. NOT at turn close: P9b's pre-registered
+            # fallback did that, and a split's first half closes while its
+            # final is still decoding on the next turn, so the spawn landed
+            # on that final in every KILL run (NOTES 2026-10-06). At
+            # audio_out_first no final can be pending, because finals are
+            # served in endpoint order and this turn's has already landed.
             # Never at the endpoint, which is where P9 put it.
             # T-EPA, into the record rather than only the console: what the
             # second resident worker took from the system.
@@ -259,7 +264,6 @@ class StreamingWhisperSTT(STTService):
                 },
             )
             self._turns.add_stage_listener("audio_out_first", self._pool.respawn_dead_async)
-            self._turns.add_stage_listener("turn_closed", self._pool.respawn_dead_async)
             log.warning(
                 "stt: hot-spare pool ready=%s/%s spawn_ms=%s mem_available_delta_mb=%s",
                 self._pool.workers[0].ready,
@@ -847,6 +851,10 @@ class StreamingWhisperSTT(STTService):
 
         elif isinstance(frame, _STOPPED):
             self._speaking = False
+            # The endpoint this final will answer, in raw ns. The stage marks
+            # cannot pair them across a split (endpoint on turn N, final on
+            # N+1), and P9b's validity check missed exactly those windows.
+            stopped_ns = now_ns()
             if self._hyp_task is not None and self._cfg.commit.at_endpoint == "kill":
                 # PREEMPT. The task is cancelled as in "race", and then the
                 # decode itself is stopped, which is the part a thread cannot
@@ -920,6 +928,10 @@ class StreamingWhisperSTT(STTService):
             vm_after = read_vmstat()
             sm_after = read_smaps_summary(pid)
             self._turns.mark("stt_final", at_ns=at)
+            if self._pool is not None:
+                self._turns.note_worker_event(
+                    "final_window", ns=at, extra={"endpoint_ns": stopped_ns}
+                )
             self._turns.set_transcript(text)
             # The audio the FINAL consumed, which under COMMIT-WL is the tail
             # only. The full utterance is recoverable from the saved segment.
