@@ -6181,3 +6181,44 @@ needs a respawn that does not land on the final (after kills only, deferred
 past stt_final or onto other cores, or a hot spare), which is a new design and
 a new pre-registration, not a re-run of this one. Pass 2k is conditional on P9
 holding, so it does not run. That decision is the user's.
+
+## 2026-10-06 — CORRECTION to the P9 entry above (appended, not edited)
+
+The reviewer caught these before the report went out. Every figure below is now
+printed by src/scripts/p9_score.py.
+
+1. THE ORPHAN'S PRICE IS ~0.1x, NOT ~0.4x. The 1.31x vs 0.92x comparison pooled
+   DIFFERENT ITEMS across reps, and the in-flight turns have shorter tails
+   (6.40 s vs 7.78 s), where the model's fixed 1384 ms intercept inflates the
+   ratio. Paired within item on the RACE arm:
+
+       in-flight minus not:  +0.11x [+0.03, +0.50]   n=7 items
+
+   That is the ceiling a clean kill could recover, roughly a quarter of what
+   the entry above stated. The pooled 0.4 is withdrawn as confounded by tail
+   length.
+
+2. "KILL turns that killed nothing are exactly as slow" rested on a pooled
+   comparison. Paired within item it is -0.02x [-0.16, +0.05] on n=3 items:
+   consistent with no difference, too small to support "exactly".
+
+3. Overhang, conditional on a decode actually in flight (turns, pooled):
+   KILL 40 ms [39, 43] n=31, RACE 2079 ms [1668, 2270] n=35. The 35 / 1558 ms
+   quoted above were per-item medians diluted by turns with nothing in flight.
+
+4. THE RESPAWN ATTRIBUTION IS BY ELIMINATION. Kill and respawn are the only
+   code differences between the arms and nothing in the run separates them in
+   time: no per-turn respawn start/ready timestamp was recorded against
+   stt_final. "The respawn caused it" becomes "consistent with the respawn, by
+   elimination".
+
+5. THE 4.0-4.6 s RESPAWN FIGURE IS A LOWER-BOUND SAMPLE, not "a respawn costs".
+   It is the predecessor's last_spawn_ms, read from WARNING lines that fire
+   only when a turn opened early, from a scratchpad log rather than
+   results/raw. HypothesisWorker.spawn_ms held every spawn and was never
+   written to the record. Kills were not recorded either; the in-flight count
+   (31) is their upper bound.
+
+PRECONDITIONS FOR ANY P9b: spawn_ms and kill count written to run_complete;
+per-turn respawn start and ready timestamps against stt_final; and the
+pre-registered effect sized to the paired +0.11x, not the withdrawn 0.4x.

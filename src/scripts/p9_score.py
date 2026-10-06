@@ -42,6 +42,12 @@ def boot(vals: list[float], reps: int = 4000, seed: int = 0) -> tuple[float, flo
     return m[int(0.025 * reps)], m[int(0.975 * reps) - 1]
 
 
+def read_turns(d: Path) -> tuple[str, list[dict]]:
+    """Per-TURN rows (one per valid non-split turn), each tagged with its item."""
+    arm, items = read_run(d)
+    return arm, [{"item": u, **v} for u, v in items.items()]
+
+
 def read_run(d: Path) -> tuple[str, dict[int, dict]]:
     lines = [json.loads(x) for x in (d / "turns.jsonl").read_text().splitlines() if x.strip()]
     notes = next(r for r in lines if r["kind"] == "run_meta").get("notes", "")
@@ -161,6 +167,53 @@ def main() -> None:
         print(
             f"  paired RACE - KILL {key:>12}: {statistics.median(d):+.2f} [{lo:+.2f}, {hi:+.2f}]  n={len(d)}"
         )
+    # ---- the attribution evidence, which the verdict alone does not carry ----
+    turns: dict[str, list[dict]] = {"KILL": [], "RACE": []}
+    for d in a.runs:
+        arm, rows = read_turns(d)
+        turns[arm].extend(rows)
+    print("\nOVERHANG CONDITIONAL ON A DECODE IN FLIGHT (turns, pooled over reps):")
+    for arm in ("KILL", "RACE"):
+        v = [t["overhang_ms"] for t in turns[arm] if t["inflight"]]
+        lo, hi = boot(v)
+        print(f"  {arm}: {statistics.median(v):.0f} ms [{lo:.0f}, {hi:.0f}]  n={len(v)}")
+    print("\nRATIO BY IN-FLIGHT, per turn, POOLED (different items in each cell):")
+    for arm in ("KILL", "RACE"):
+        for f in (0.0, 1.0):
+            v = [t["ratio"] for t in turns[arm] if t["inflight"] == f]
+            tail = statistics.median([t["tail_s"] for t in turns[arm] if t["inflight"] == f])
+            print(
+                f"  {arm} in-flight={int(f)}: {statistics.median(v):.2f}x  n={len(v)}  tail {tail:.2f} s"
+            )
+    print("\nRATIO BY IN-FLIGHT, PAIRED WITHIN ITEM (items seen both ways across reps):")
+    for arm in ("KILL", "RACE"):
+        by: dict[int, dict[float, list[float]]] = defaultdict(lambda: defaultdict(list))
+        for t in turns[arm]:
+            by[t["item"]][t["inflight"]].append(t["ratio"])
+        d = [
+            statistics.median(v[1.0]) - statistics.median(v[0.0])
+            for v in by.values()
+            if v[1.0] and v[0.0]
+        ]
+        lo, hi = boot(d)
+        med_d = statistics.median(d) if d else float("nan")
+        print(
+            f"  {arm} in-flight minus not: {med_d:+.2f}x [{lo:+.2f}, {hi:+.2f}]  n={len(d)} items"
+        )
+    print("\nPER ARM (turns): in-flight rate, kills, orphan records")
+    for arm in ("KILL", "RACE"):
+        n = len(turns[arm])
+        inf = sum(1 for t in turns[arm] if t["inflight"])
+        orph = sum(t["orphaned"] for t in turns[arm])
+        kills = (
+            f"{inf} (every in-flight decode is SIGKILLed)"
+            if arm == "KILL"
+            else "0 (none by design)"
+        )
+        print(
+            f"  {arm}: in-flight {inf}/{n} = {inf / n:.2f}; kills {kills}; orphaned records {orph:.0f}"
+        )
+
     k = statistics.median([med["KILL"][u]["ratio"] for u in common])
     verdict = (
         "HOLDS" if k <= 1.1 else ("FALSIFIED" if k >= 1.3 else "IN THE UNSCORED BAND (1.1, 1.3)")
