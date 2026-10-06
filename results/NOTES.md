@@ -6370,3 +6370,92 @@ buffered audio. The gate abstains on every dev turn by its own arithmetic.
 Decision (b): P9 and P9b go in the paper as the measured cost of
 non-preemptible speculation and what it takes to remove it. Then passes 8, 6,
 7, 9, 1r.
+
+## 2026-10-06 — P9b HOLDS. Preempting the orphan, with the respawn out of the scored window, wins 435 ms
+
+Interleaved K,R x 3 on single_step_set, build 8d8a854 clean, clocks pinned,
+scored by src/scripts/p9b_score.py exactly as pre-registered (b2c6f71), with
+mechanism detail from src/scripts/p9_score.py over the same six runs:
+reactive-20261006-140054-ab1376, -141127-236c6f, -142155-b1ac96 (KILL);
+-140608-bb744a, -141637-997d1f, -142712-5b9791 (RACE).
+
+### Validity: all clean
+
+    unready turns        KILL 0/72   RACE 0/72      (limit 10 %)
+    kills                KILL 38     RACE 0
+    promotions           KILL 35     (3 kills found no ready spare)
+    spawn intervals intersecting any turn's [vad_user_stopped, stt_final]: 0
+    ... intersecting any turn's [stt_final, audio_out_first]:              0
+    spawn affinity       3-5 on all 47 spawns
+    No run voided. Primary and sensitivity analyses are therefore identical.
+
+### Verdicts
+
+    P9b-a  KILL final / solo model  0.94x [0.93, 0.96]  n=16 items  -> HOLDS
+           (expected 0.91x [0.91, 0.96]; bar <= 1.1x)
+    P9b-b  paired TTFA RACE - KILL  +435 ms [+161, +652]  n=16    -> HOLDS
+           (expected ~200 ms; bar >= 150 ms with CI lower > 0)
+
+    P9b HOLDS. Per the pre-registration, pass 2k runs.
+
+### Where the 435 ms comes from: the recognizer, all of it
+
+                                KILL                  RACE
+    final_ms                    1794 [1660, 1846]     2227 [1953, 2553]
+    TTFA                        3190 [3055, 3341]     3587 [3408, 3983]
+    overhang, decode in flight  24 ms [23, 26] n=29   1810 ms [1400, 2206] n=33
+    committed audio             4.00 s                4.00 s
+
+    paired RACE - KILL  final_ms   +450 [+59, +796]  n=17
+                        TTFA       +435 [+161, +652] n=16
+                        LLM TTFT     -1 [-2, +1]     n=16   (secondary)
+                        TTS first   +15 [-15, +49]   n=16   (secondary)
+
+The TTFA gain equals the final-decode gain to within 15 ms, and the reply side
+does not move: the LLM's time to first token is unchanged to the millisecond
+and the TTS first chunk within noise. THE SAVING IS ENTIRELY IN THE LISTENER'S
+FINAL DECODE, which is what the thesis says the silence is for.
+
+Committed audio is identical between arms (paired +0.00 s), so the gain is not
+the kill arm committing more: it is the same tail, decoded on cores no orphan
+is holding.
+
+### The gain is about twice the expectation, and the expectation was the weak part
+
+The ~200 ms expectation came from P9's within-item contrast, in-flight minus
+not-in-flight on the RACE arm: +0.11x on n=7 items. That contrast is
+estimable only on items seen both ways across reps, which are the items on the
+margin of having an orphan, and it is noisy (CI +0.03 to +0.50, i.e. ~60 to
+~940 ms). The ARM contrast is the better estimator and it is what P9b measured:
+KILL 0.94x against RACE 1.21x at ~1.85 s of solo decode is ~500 ms, matching
+the measured +450 ms on the final. The observed effect sits inside the P9 CI
+the expectation was drawn from. The expectation was low, not the result high.
+
+### The respawn, measured this time
+
+    spawn wall time      median 1274 ms, max 1978, n=47
+    (P9: >= 4.0-4.6 s, a lower-bound sample; the difference is consistent with
+    the child no longer re-importing the parent's __main__, which is the
+    change made between them -- not separately tested)
+
+All 47 spawns started at audio_out_first or at startup and none overlapped a
+scored interval. KILL's in-flight rate at the endpoint is lower than RACE's
+(0.47 vs 0.71 per item); not explained, recorded.
+
+### T-EPA: the second resident worker
+
+    MemAvailable drop across its startup spawn   median 106.8 MB, n=6 runs
+    PSS at spawn_ready                           median 117.3 MB, n=47
+    PSS after its first decode                   median 179.4 MB, n=41
+
+Headline memory cost of the hot spare: ~107 MB of system memory at rest,
+rising toward ~180 MB of proportional set once it has decoded.
+
+### What P9 and P9b establish together
+
+Non-preemptible speculation in the recognizer costs ~450 ms of final decode on
+this set (P9's RACE vs P9b's KILL, same design, same build family), because a
+cancelled hypothesis keeps the cores the final needs. Removing it takes a
+second resident engine (~107 MB) and a respawn kept outside every scored
+interval. Done naively -- respawning at the endpoint, as P9 did -- the remedy
+costs 1.6 s more than the disease.
