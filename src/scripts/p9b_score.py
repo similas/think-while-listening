@@ -246,13 +246,16 @@ def main() -> None:
         unready[arm][1] += v["turns"]
         kills[arm] += v["kills"]
         unready_items |= v["unready_items"]
+        if void:
+            # NOTHING FROM A VOID RUN IS CITED, T-EPA included. Its validity
+            # counts above are printed because they are why it is void.
+            continue
+        good.append(d)
         if v["mem_delta_mb"] is not None:
             mem.append(v["mem_delta_mb"])
         pss_r += [x for x in v["pss_ready"] if x is not None]
         pss_f += [x for x in v["pss_first"] if x is not None]
         spawn_ms += [x for x in v["spawn_ms"] if x is not None]
-        if not void:
-            good.append(d)
 
     testable = True
     for arm in ("KILL", "RACE"):
@@ -267,7 +270,7 @@ def main() -> None:
         print("  kill counts break the manipulation check -> NOT TESTABLE")
         testable = False
 
-    print("\nT-EPA (second worker)")
+    print("\nT-EPA (second worker), VALID RUNS ONLY")
     if mem:
         print(
             "  MemAvailable drop across its startup spawn: "

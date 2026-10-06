@@ -6598,3 +6598,35 @@ event, which on a split does not mean the recognizer is idle. The rule that
 would hold is "respawn only when the recognizer is idle -- no endpoint whose
 final is pending and no turn being spoken -- at or after an audio_out_first",
 which the STT service can know directly rather than infer from stage order.
+
+## 2026-10-06 — CORRECTION to the re-run entry above (reviewer, 4 findings)
+
+1. T-EPA WAS COMPUTED OVER VOID RUNS, breaking the rule that their figures are
+   not cited. p9b_score.py accumulated memory and spawn figures before the void
+   test; fixed. Valid runs only (d2ae66 + three RACE):
+       MemAvailable drop    110.0 MB, n=4 runs
+       PSS at spawn_ready   117.2 MB, n=17
+       PSS after 1st decode 183.8 MB, n=13   (not 179.3)
+       spawn wall time      1186 ms median, max 1449, n=17   (not 1218 / 1955)
+   The same applies to the first attempt: the T-EPA and spawn figures in the
+   "P9b HOLDS" entry and its correction came from runs now void and are not
+   cited either. The counts "kills 40", "affinity 3-5 on all 49 spawns" above
+   span all six runs and are validity counts only.
+
+2. THE SURVIVING KILL REP IS NOT A RANDOM ONE OF THREE. Both voids came from
+   respawns after kills next to split items 6 and 13; d2ae66 killed on none of
+   those turns. Kills on scored items: d2ae66 8/17, 40cce7 11/17, 091fee 12/17;
+   kills/promotions 10/9, 15/14, 15/15. The survivor is the least-treated KILL
+   rep, kept because of how it was treated -- a selection on the manipulation,
+   on top of the power loss. Its direction of bias is not signable.
+
+3. "The CI's lower bound of +8 ms shows it" is replaced: the CI [+8, +650] is
+   ~640 ms wide against the ~128 ms null width registered for 3 reps a side;
+   the ~91 ms detectable-effect figure does not apply to a 1-vs-3 design.
+
+4. KILL WITHOUT PROMOTION occurred twice in this re-run (kills 40, promotions
+   38 across KILL runs). In d2ae66 worker b was killed at 18.2 s on turn 21 and
+   not respawned until 33.8 s; worker a was then killed at 31.6 s with no
+   spare, leaving no worker alive from 31.6 s to 35.0 s. A stricter respawn
+   rule lengthens such gaps, so the unready check is a live failure route for
+   any further attempt.
