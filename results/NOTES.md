@@ -5934,3 +5934,129 @@ the attribution of those 94 turns to the cadence now has a competing
 explanation that was never controlled for, and pass 2's ~45 % split under
 NOPARTIAL points the same way. FLAGGED, not withdrawn: refuting it needs
 REACTIVE and NAIVE on multi_step under one build, which has not been run.
+
+## 2026-10-06 — CORRECTION to the P5 entry above. Four errors, appended not edited
+
+The reviewer caught these before the result went out. The entry above stands as
+written; everything below supersedes it.
+
+### 1. THE STARVATION RATE WAS TRANSCRIBED FROM THE WRONG COLUMN
+
+I reported "starved/turns 14/29, rate 0.48". The script prints `late 14` and
+`starved/turns 29/29, rate 1.00`. I copied the `late` column into the starved
+column, in the draft AND in the entry above. The primary metric was reported as
+its complement. The script's verbatim output is:
+
+    arm                  turns items split-items late starved/turns  rate [95% Wilson]  cadence IQR
+    REACTIVE-NOPARTIAL      29    20           6   14         29/29  1.00 [0.88, 1.00]  n=0
+    NAIVE-1.0               29    20           6   14         29/29  1.00 [0.88, 1.00]  206 ms (n=321)
+    CONTROLLED-0.6          29    20           6   14         29/29  1.00 [0.88, 1.00]  301 ms (n=174)
+    CONTROLLED-0.8          29    20           6   14         29/29  1.00 [0.88, 1.00]  228 ms (n=251)
+
+THE 1.00 IS AN ARTEFACT OF THE BROKEN (b) BAR, not a finding: the bar is
+-160 ms and sits below every arm's MINIMUM delay, so every turn is "late".
+Disjunct (a) alone is the scoreable number:
+
+    split turns 15/29 = 0.52 [0.34, 0.69] in ALL FOUR ARMS
+    excluding turn 1: 15/28 = 0.54 [0.36, 0.70] in all four
+
+### 2. THE REASON P5 FAILS WAS STATED BACKWARDS
+
+I wrote "P5 FAILS. NAIVE does not starve." The rule is "P5 HOLDS if NAIVE
+>= 20 % AND both CONTROLLED < 20 %". NAIVE starves on 52 % by (a) alone --
+well ABOVE its bar. P5 fails on the SECOND clause: both CONTROLLED arms are
+also at 52 %, and so is a baseline that issues no hypotheses at all.
+
+    P5 fails because the criterion cannot separate the arms, not because NAIVE
+    came in low.
+
+### 3. ACHIEVED DUTY WAS LOGGED ALL ALONG AND I SCORED CADENCE IQR INSTEAD
+
+Every hypothesis_record carries `duty`. The manipulation check is decisive and
+I never looked at it:
+
+    arm               n_hyp   duty median      q1      q3
+    NAIVE-1.0           348        0.950   0.946   0.956
+    CONTROLLED-0.8      278        0.791   0.779   0.800
+    CONTROLLED-0.6      197        0.609   0.595   0.616
+
+NON-OVERLAPPING QUARTILES. The manipulation worked exactly as designed, and
+NAIVE REPRODUCED THE 0.95 DUTY THAT pacing.py BLAMES FOR STARVATION, to within
+a point -- AND STARVED NOTHING. That is a far stronger result than the one I
+reported.
+
+WITHDRAWN: "NAIVE's IQR is 206 ms, which a fixed tick should not have ... the
+ablation is partly self-paced and weaker than intended ... a defect in the
+arm." The arm is not weak. Cadence IQR was simply the wrong instrument, and
+CONTROLLER-VARIES is a clause with no threshold that anything non-zero passes
+(the supposedly fixed arm posts 206 ms on the same measure). Duty replaces it
+as the manipulation check; any future variance clause states its threshold
+before the run.
+
+Also corrected: the hypothesis counts. 348 / 278 / 197 are the record counts;
+the 321 / 251 / 174 I reported were rows with cadence_ms > 0, i.e. hypotheses
+after the first of each turn. NAIVE issues 1.77x CONTROLLED-0.6, saving 151
+decodes, not 1.84x and 147.
+
+### 4. THE NULL HAD NO EFFECT SIZE ATTACHED
+
+"No difference in outcome" and "the arm that settles it" are both overclaims.
+What is true: the four arms are BIT-IDENTICAL on every outcome -- 29 turns, the
+same six split items {9, 10, 13, 14, 19, 20}, the same per-item counts, endpoint
+delays within 2 ms -- under a duty manipulation of 0.61 -> 0.95. That is 0 of
+20 items discordant, which bounds a per-item split-rate difference at 95 % CI
+[0.00, 0.16].
+
+    A DIFFERENCE ABOVE ~16 POINTS IS EXCLUDED. BELOW IT IS NOT. One rep of 20
+    items cannot say more, and "settles it" is withdrawn.
+
+### 5. TURN 1 IS DAMAGED IN ALL FOUR ARMS, by my own bug
+
+The idle-power TypeError propagated out of turns.turn_started into
+observer.on_push_frame's catch-all, so everything after the idle call was
+skipped for turn 1 in every arm: mark("vad_user_started") -- verified absent,
+turn 1 is the only turn missing that stage in all four runs -- plus
+speculation.reset_turn, detector.begin_turn and _swap_at_start. Turn 1 also
+carries the largest hypothesis count of any turn in each arm (NAIVE 30, C08 22,
+C06 17) with its speculation state unreset.
+
+The verdict does not hinge on it: excluding turn 1 gives 15/28 = 0.54 in all
+four arms, identical as before.
+
+### 6. idle_power_mw IN THESE FOUR DIRS IS WRONG, NOT MISSING
+
+I said "usable raw, not net". The field is worse than absent: -1.0 on turn 1
+then 6899-9279 mW on later turns, ABOVE this box's 5.1-6.7 W idle floor,
+because window_s held a nanosecond value and since_ns was never applied. A
+downstream script would net against it silently and plausibly.
+
+    DO NOT NET ENERGY AGAINST THESE FOUR RUN DIRS:
+    reactive-20261006-110228-2e8de2, -111308-7a242e, -112336-e9ef9e, -113422-e83751
+
+### 7. Limitations now named rather than left implicit
+
+ACROSS-RUN PAIRING. Four runs in fixed order over 42 minutes, one rep, no
+interleaving -- the design schedule.py exists to forbid. Run-level shift is
+visible in these dirs (recorded idle 6899 mW for REACTIVE against 9279 for
+NAIVE, though that field is itself wrong per §6). It happens not to matter for
+a zero-variance outcome, but the (b) distributions and every energy number are
+exposed. Whether the issue rule can be interleaved the way budgets are is open
+and must be settled before a P5 successor.
+
+ENDPOINT DELAY IS MIS-NAMED. The subtrahend is the WHOLE WAV DURATION, not an
+end-of-speech annotation, and the minuend is on the turn clock whose zero is
+VAD onset rather than playback start. So the quantity mixes leading silence,
+onset lag, the 0.8 s hangover and trailing padding. -80 ms is not an endpoint
+delay, and the trailing padding I attributed it to is never measured (the data
+imply ~0.88 s; that figure was asserted, not measured). (b)'s unscoreability
+stands, but the stated reason was a guess.
+
+CONFIG PROVENANCE. The 0.6 arm ran src/configs/commit_wl.yaml; no
+p5_controlled_06.yaml exists. p5_naive_10.yaml carries an inert duty_max: 0.6
+that FixedTickIssuer ignores, and tick_s is never set in any config -- the
+"1.0" in NAIVE-1.0 is a dataclass default, unpinned by the config hash.
+
+TEARDOWN ASYMMETRY. REACTIVE and CONTROLLED-0.6 each wrote
+teardown_stacks.txt (10 s timeout, playback thread blocked in pyaudio.write);
+NAIVE and CONTROLLED-0.8 did not. Unexplained, and to be made deterministic
+before the P9 run.
