@@ -273,9 +273,9 @@ class StreamingWhisperSTT(STTService):
             self._turns.add_stage_listener("audio_out_first", self._pool.respawn_dead_async)
             self._turns.add_stage_listener("playback_done", self._on_playback_done)
             log.warning(
-                "stt: hot-spare pool ready=%s/%s spawn_ms=%s mem_available_delta_mb=%s",
-                self._pool.workers[0].ready,
-                self._pool.workers[1].ready,
+                "stt: hypothesis pool of %d ready=%s spawn_ms=%s mem_available_delta_mb=%s",
+                len(self._pool.workers),
+                [w.ready for w in self._pool.workers],
                 [round(w.last_spawn_ms) for w in self._pool.workers],
                 self._pool.mem_available_delta_mb,
             )
