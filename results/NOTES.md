@@ -6839,3 +6839,94 @@ deadlock); what the corpus does not offer is the idle time it assumes.
     (b) is the only choice not expected to void.
 
 Driver headers corrected (SIGSTOP/SIGCONT, not SIGKILL) in both snapshots.
+
+## 2026-10-07 — P9c: AMENDMENTS to the final attempt (3894a8c), committed before the run
+
+User decision. P9c is the final preemption attempt; WHATEVER ITS OUTCOME, NO
+FURTHER PREEMPTION ATTEMPT FOLLOWS. Then passes 8, 6, 7, 9, 1r. Everything in
+3894a8c not amended below stands: design, predictions, bars, 3 vs 3
+interleaved, scored once, checks 3-5.
+
+### 1. CHECK 2 AMENDED: unready turns are permitted, counted, and their bias stated
+
+UNREADY = worker_stopped_at_open == 1 OR worker_busy_at_open == 1.
+worker_ready_at_open is NOT used (it reads 1 for a busy worker). A turn that
+opens unready is permitted; it no longer voids. Stopped and busy counts are
+reported separately, per arm, over all turns and over scored turns.
+
+    DIRECTION OF BIAS, PER PREDICTION -- they run opposite ways:
+    P9b-b (TTFA): AGAINST STOP. A STOP turn opening on a stopped worker issues
+      no hypotheses, so its final decodes the whole utterance; RACE has no
+      stopped state.
+    P9b-a (ratio): TOWARD HOLDS. That same turn's final runs with no
+      hypothesis contending and is compared with the solo model of its own
+      (whole-utterance) tail, so its ratio sits near the model, below the
+      1.1x bar.
+    Busy-at-open, in either arm, only delays the turn's first hypothesis (the
+    issuer waits on in_flight).
+
+The PRIMARY analysis includes unready turns, as registered. A SENSITIVITY line
+dropping, from both arms, every item that ever opened unready is reported
+beside it FOR BOTH PREDICTIONS and is NOT the verdict. Split halves are excluded from scoring as
+before.
+
+### 2. POLICY, as built (A2 off)
+
+At a new turn with a stopped worker: it stays stopped; no hypotheses that
+turn. It is resumed only when the recognizer is idle after playback_done (no
+final pending, no decode owed, a playback_done since the stop), evaluated at
+every transition. Stale results are discarded by sequence number. A turn
+opening with a busy (not stopped) worker starts its hypothesis loop gated by
+in_flight, as registered in 3894a8c. NEW IN THIS BUILD: a decode whose sequence
+number is already stale is never stopped a second time (the 3894a8c build would
+have re-stopped a resumed stale decode at a later endpoint and marked
+hyp_stopped on a turn whose own decode was never frozen).
+
+### 3. GATE PAUSE 3 s, a harness constant equal across arms
+
+THE GATE'S OWN POST-REPLY QUIET PERIOD, GATE_QUIET_MS = 3000 in both arms
+(1000 in every earlier run), set by a new --gate-quiet-ms option and written
+into run_meta. The playback gate releases the next file only after the turn has
+closed AND every recognizer decode (a resumed stale decode included) and the
+model have been idle for this long, and the clock restarts whenever any of them
+is busy -- so this is idle time AFTER the reply and after the stale decode's
+completion. DRAIN_MS (2000, after an abnormal close) is unchanged. --gap-ms
+stays 1000: it is the silence played straight after a file's audio, BEFORE the
+gate, so it overlaps the final, the LLM and the TTS and is not a post-reply
+pause (its help text, which says "after the reply", is corrected in this
+build). A smoke confirms the value lands in run_meta; the scorer requires it
+identical in all six runs, and a mismatch fails check 5.
+
+The pause does nothing for endpoints that arrive in bursts within one file
+(splits, item 13), which is why check 2 is amended rather than expected to
+hold.
+
+### 4. CHECK 1 AMENDED: voids only on a scored item
+
+A continued segment runs from a cont to the EARLIER of the next stop of that
+worker and the stale result being received. An intersection of such a segment
+with an endpoint-to-final window counts against validity only if the window is
+ON A SCORED ITEM: its final_window event's turn (the turn current when the
+final was marked, recorded on the event) is a valid turn whose item produced
+exactly one turn in that run, AND that item is in the verdict's paired common
+set. ANY SUCH INTERSECTION -> NOT TESTABLE -> (b). Intersections on every
+other window are counted and reported.
+
+EXPECTED: none. Under the registered policy a stale decode is resumed only
+when no final is pending and nobody is speaking, and the playback gate waits
+for it to finish before the next file; it can reach a window only if it
+outlasts all of that.
+
+### Verdict, restated
+
+P9b-a: STOP final / solo model <= 1.1x holds, >= 1.3x falsified.
+P9b-b: paired TTFA RACE - STOP >= 150 ms with CI lower > 0.
+P9c HOLDS iff both hold and checks 1 (amended), 3, 4, 5 (including identical
+GATE_QUIET_MS across the six runs) pass. Every other outcome -> (b). Scored
+once, on this attempt alone.
+
+ORDER: this amendment is committed first; then the build that implements it
+(the --gate-quiet-ms option and its run_meta field, the re-stop guard, the
+scorer changes, drivers with --gate-quiet-ms 3000) with make check passing;
+then one smoke; then the run. Reviewed before commit (6 findings, resolved
+into the text above).
