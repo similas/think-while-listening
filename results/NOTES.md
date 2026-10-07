@@ -6795,3 +6795,47 @@ Two drivers are snapshotted for 2026-10-08, identical but for the STOP config:
 results/raw/script_snapshots/p9c_spec.sh (as registered) and p9c_a2.sh (A2).
 Which one runs is the user's decision; the registration stands as written
 unless it is amended before the run.
+
+## 2026-10-07 — A2 IS ALSO EXPECTED TO VOID, through check 1. Both options expected NOT TESTABLE
+
+Reviewer finding on the decision request, verified from the re-run's recorded
+final_window events. Under A2 a frozen decode is continued when the STT
+handles the next VAD start, which lands at about the previous final. At items
+6 and 13 the NEXT ENDPOINT follows that final almost at once:
+
+    run       final -> next endpoint   decode in flight at the endpoint
+    RACE 4ef534   item 6  +33 ms        ran 2583 ms past it
+                  item 13 +37 ms        ran  642 ms past it
+    RACE fc84c0   item 6  +33 ms        ran 2196 ms past it
+                  item 13 +68 ms        ran  554 ms past it
+    RACE b5e948   item 6  +35 ms        ran 2227 ms past it
+    KILL 091fee   item 13 +129 ms       (killed; remainder not observable)
+    KILL 40cce7   item 6  +289 ms, item 13 +173 ms   (killed)
+
+The RACE remainders are contended and an uncontended one would be shorter,
+but a tiny decode is ~0.9-1.4 s and no plausible remainder fits in 33-289 ms.
+The continued decode would still be running at the next endpoint, inside that
+endpoint's final window: CHECK 1 FAILS. Not certain at every instance -- a
+decode nearly done at its stop could finish in time -- but expected in most or
+all STOP runs.
+
+TWO FURTHER COSTS OF A2, not in the decision request as drafted: (1) while the
+continued stale decode runs, the next turn's own hypotheses are denied
+(in_flight), so its final decodes a longer tail -- a cost RACE never pays, and
+item 13's turn 16 is scored; (2) a stale decode still busy at the next
+endpoint would be SIGSTOPped again under its old sequence number, marking
+hyp_stopped on a turn whose own decode was never stopped.
+
+THE STRUCTURAL FINDING. On this corpus endpoints arrive in bursts -- a split's
+two halves, or an endpoint 33-289 ms after the previous final -- so there is
+no idle window in which a frozen decode can be continued without either
+leaving the next turn unready (as registered: check 2) or running into the
+next turn's final (A2: check 1). The mechanism itself works (smokes: stop
+0.1 ms after the endpoint, stale results discarded by sequence number, no
+deadlock); what the corpus does not offer is the idle time it assumes.
+
+    Spec: expected NOT TESTABLE via check 2 (routes 1 and 2).
+    A2:   expected NOT TESTABLE via check 1 (items 6 and 13).
+    (b) is the only choice not expected to void.
+
+Driver headers corrected (SIGSTOP/SIGCONT, not SIGKILL) in both snapshots.
