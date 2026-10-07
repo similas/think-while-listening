@@ -6630,3 +6630,139 @@ which the STT service can know directly rather than infer from stage order.
    spare, leaving no worker alive from 31.6 s to 35.0 s. A stricter respawn
    rule lengthens such gaps, so the unready check is a live failure route for
    any further attempt.
+
+## 2026-10-07 — PRE-REGISTRATION: P9b FINAL ATTEMPT, SIGSTOP/SIGCONT. Committed before any of its code
+
+User decision (iii), refined to SIGSTOP/SIGCONT. This is the LAST P9b attempt,
+scored on this attempt alone. Build green by end of 2026-10-07; run the morning
+of 2026-10-08, ~35 min. If it holds: pass 2k. If not: (b), then passes 8, 6,
+7, 9, 1r.
+
+### Design
+
+ONE tiny worker process in BOTH arms (residency identical; the in-process tiny
+and base engines stay resident as in P9 and P9b).
+
+    STOP  at the endpoint, if the worker is decoding: SIGSTOP. The decode is
+          frozen, holding its memory and no CPU. SIGCONT only when the
+          recognizer is idle: no final pending, no decode owed, and
+          playback_done -- never earlier. The stale decode then finishes and
+          its result is DISCARDED BY SEQUENCE NUMBER: every request carries a
+          sequence number, the child echoes it, and a reply for any request
+          but the current one is dropped and counted.
+    RACE  one worker, no stop: a decode in flight at the endpoint runs to
+          completion, as in P9's control.
+
+No process is ever killed or spawned during a run, so the respawn -- the cause
+of both earlier voids -- does not exist in this design.
+
+DEFINITIONS, fixed now:
+  FINAL PENDING: the STT service has received an endpoint and not yet marked
+    the stt_final it owes (set on entry to the endpoint handler, cleared when
+    its final is marked or the handler returns without one).
+  DECODE OWED: a turn is being spoken (VAD has opened it and not yet stopped),
+    so a final will be owed.
+  SIGCONT PREDICATE: the worker is stopped AND no final is pending AND no
+    decode is owed AND a playback_done has been marked since the stop. It is
+    EVALUATED AT EVERY TRANSITION -- a final marked, a VAD stop, a VAD start,
+    a playback_done -- and fires the first time it is true. (The draft keyed
+    it to the playback_done event alone. On item 17, whose split first half
+    has a decode in flight in every P9 run, the only playback_done after the
+    stop falls while the next turn is still being spoken, so the predicate
+    would never fire, the frozen decode would hold the turn gate, and the run
+    would void at the 60 s gate timeout. Reviewer, verified in the code.)
+  A STOPPED DECODE IS NOT "BUSY". While frozen it does not count toward
+    stt.decoding, the turn gate, the progress watchdog or DECODE_HANG_MS: it
+    consumes no CPU and must not hold the pipeline. Once continued it counts
+    again, as any decode does.
+  WORKER READY AT TURN OPEN is written as "loaded and NOT SIGSTOPped", with a
+    separate worker_stopped_at_open field; the scorer reads that field for
+    check 2. A worker still finishing a continued stale decode is ready, and
+    A TURN THAT OPENS BUSY NOW STARTS ITS HYPOTHESIS TASK, gated by in_flight
+    as every pre-P9b arm was -- a change from P9b, where busy-at-open denied
+    the task, applied identically to both arms. worker_busy_at_open is
+    recorded separately.
+  "TURN OPEN" for every worker decision means the STT service's handling of
+    the VAD-start frame, which runs after any preceding final (frames are
+    processed in order). The turn RECORD can open 170-440 ms after an
+    endpoint and 1.3-2.5 s before that endpoint's final; it is not used.
+
+RECORDED, in results/raw: per turn hyp_stopped, worker_ready_at_open,
+worker_busy_at_open, origin_ns; worker events stop (with the endpoint's ns),
+cont (with how long the worker was stopped), stale_discarded (with the
+sequence numbers), and final_window (endpoint ns -> final ns, from the STT
+handler, as in the P9b re-run).
+
+### Predictions -- unchanged from P9b (b2c6f71), 3 vs 3 interleaved
+
+Selection set (single_step_set, 20 items), STOP,RACE x 3 interleaved, one
+clean build, clocks pinned.
+
+P9b-a FINAL BOUND. STOP's final <= 1.1x the solo model of its own tail
+   (1384 + 74 x tail_s); FALSIFIED >= 1.3x. Item-median point estimate.
+P9b-b TTFA. Paired RACE - STOP, per item: HOLDS iff point >= 150 ms AND CI
+   lower > 0.
+P9b HOLDS ONLY IF BOTH HOLD. EVERY OTHER OUTCOME -> (b).
+
+EXPECTED VALUES are the ones registered in b2c6f71 (0.91x; ~200 ms). The
+figures measured in the two voided attempts are not used, here or anywhere.
+
+POWER is as registered (~91 ms detectable at 3 vs 3), and it holds only if all
+six runs survive -- which the stop rule below requires anyway.
+
+### Validity -- ANY failure voids the run and makes P9b NOT TESTABLE -> (b)
+
+1. No CONTINUED stale decode -- its running segment [cont, stale result
+   received] -- intersects any endpoint-to-final window (recorded
+   final_window events), in either arm. The frozen decode's pre-stop segment
+   overlaps its own endpoint by the stop latency by construction; that
+   latency is REPORTED (median, max), not counted as an intersection.
+2. ZERO TURNS OPENED UNREADY, in either arm (user's pre-registration: the
+   design has no mechanism for one; any such turn is a defect).
+3. Stops > 0 in STOP and = 0 in RACE.
+4. Every reply received for a stale sequence number is discarded (stale
+   results entering the committer: 0).
+5. One clean build for all six runs; no repo activity between run start and
+   teardown.
+
+### TWO KNOWN ROUTES TO FAILING CHECK 2, measured before the build
+
+Census from P9's six valid single-worker runs (65550d5) and the P9b re-run's
+six runs (9ce5f77), whose recorded final_window events include STT endpoints
+that fall while no turn is open -- which P9 does not record, and which is how
+the second route was missed in the draft.
+
+ROUTE 1, SPLITS. A split's second half opens right after the first half's
+final, before any playback_done. If the first half's endpoint stopped the
+worker, the second half opens on a stopped worker. Item 17's split first half
+(turn 20) had a hypothesis in flight at its endpoint in all six P9 runs and all
+six re-run runs; P9 counts per run 1, 2, 1, 2, 2, 1. These turns are invalid
+split halves.
+
+ROUTE 2, ITEM 13, A NON-SPLIT TURN. In all six re-run runs turn 16 opens
+~240 ms after an STT endpoint whose final is still pending, with no
+playback_done in between (turn 15 closed before its own endpoint). A
+hypothesis was in flight at that endpoint in 4 of 6 runs. Turn 16 is not a
+split -- endpoint_after_final in five runs, VALID AND SCORED in 4ef534.
+
+    AS SPECIFIED, CHECK 2 IS EXPECTED TO FAIL IN MOST OR ALL STOP RUNS, AND P9b
+    IS EXPECTED TO BE NOT TESTABLE FOR A REASON UNRELATED TO THE HYPOTHESIS.
+    "The design has no mechanism to produce an unready turn" does not hold on
+    this corpus: endpoints arrive while a final is pending, and a stopped
+    worker cannot be continued under the registered predicate in that gap.
+
+AMENDMENT A1 (exclude split second halves from check 2) DOES NOT RESCUE ROUTE
+2 and is withdrawn from the menu.
+
+AMENDMENT A2, defined precisely, IS THE ONE REMAINING OPTION, AND IS NOT ADOPTED
+HERE: SIGCONT ALSO fires when the STT service handles a VAD-start frame and
+finds the worker stopped. That handling runs after the preceding final, so no
+final is pending at that instant; the continued stale decode then runs during
+the new turn's listening, and check 1 still forbids it from reaching any
+endpoint-to-final window. Under A2 neither route produces an unready turn. It
+breaks "never earlier than playback_done".
+
+THE BUILD CARRIES A2 AS A CONFIG SWITCH, OFF. Which configuration runs on
+2026-10-08 is the user's decision, recorded here as an amendment before any
+data; unless amended, the registration stands as written and is expected to
+route to (b) through check 2.
