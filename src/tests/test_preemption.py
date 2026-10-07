@@ -233,3 +233,124 @@ def test_worker_events_and_stage_listeners_reach_the_record(tmp_path: Path) -> N
     assert tr["hyp_killed"] is True
     assert tr["worker_ready_at_open"] == 0 and tr["worker_busy_at_open"] == 1
     assert tr["origin_ns"] > 0
+
+
+# ---- P9b final attempt: SIGSTOP / SIGCONT ---------------------------------
+
+import subprocess  # noqa: E402
+import time  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
+
+from twl.hypothesis_worker import DecodeReply  # noqa: E402
+from twl.stt import StreamingWhisperSTT  # noqa: E402
+
+
+def _proc_state(pid: int) -> str:
+    with open(f"/proc/{pid}/stat", encoding="ascii") as fh:
+        return fh.read().rsplit(")", 1)[1].split()[0]
+
+
+def test_stop_freezes_a_busy_worker_and_cont_releases_it() -> None:
+    """A real process, really stopped: state T after SIGSTOP, running after SIGCONT."""
+    child = subprocess.Popen(["sleep", "30"])
+    try:
+        w = HypothesisWorker("tiny", 1, [], "en")
+        w._proc, w._busy, w._inflight_seq = child, True, 4
+        assert w.stop_if_busy(endpoint_ns=0)
+        time.sleep(0.05)
+        assert _proc_state(child.pid) == "T"
+        assert w.stopped and 4 in w._stale_seqs
+        assert not w.stop_if_busy(endpoint_ns=0), "a stopped worker is not stopped twice"
+        assert w.cont("test")
+        time.sleep(0.05)
+        assert _proc_state(child.pid) in ("S", "R")
+        assert not w.stopped
+    finally:
+        child.kill()
+
+
+def test_an_idle_worker_is_not_stopped() -> None:
+    w = HypothesisWorker("tiny", 1, [], "en")
+    w._proc = SimpleNamespace(pid=999999)
+    assert not w.stop_if_busy(endpoint_ns=0)
+
+
+class FakeConn:
+    def __init__(self, reply: DecodeReply) -> None:
+        self.reply = reply
+
+    def send(self, _req: object) -> None:
+        return
+
+    def recv(self) -> DecodeReply:
+        return self.reply
+
+
+def test_a_stale_reply_is_discarded_by_sequence_number() -> None:
+    w = HypothesisWorker("tiny", 1, [], "en")
+    w._ready.set()
+    w._proc = SimpleNamespace(pid=None)
+    w._stale_seqs.add(1)  # the next request gets seq 1, already marked stale
+    w._conn = FakeConn(DecodeReply(words=[("hi", 0.0, 0.5)], decode_ms=1.0, seq=1))
+    got = w.decode(
+        np.zeros(1600, dtype=np.float32), base_s=0.0, initial_prompt="", want_words=False
+    )
+    assert got is None
+    assert w.stale_discarded == 1
+    assert not w.busy
+
+
+def test_a_busy_worker_refuses_a_second_request() -> None:
+    w = HypothesisWorker("tiny", 1, [], "en")
+    w._ready.set()
+    w._conn, w._busy = FakeConn(DecodeReply(words=[], decode_ms=1.0, seq=1)), True
+    got = w.decode(
+        np.zeros(1600, dtype=np.float32), base_s=0.0, initial_prompt="", want_words=False
+    )
+    assert got is None
+
+
+def _stt_like(**kw: object) -> SimpleNamespace:
+    calls: list[str] = []
+    active = SimpleNamespace(stopped=True, cont=lambda reason: calls.append(reason) or True)
+    ns = SimpleNamespace(
+        _pool=SimpleNamespace(active=active),
+        _final_pending=False,
+        _speaking=False,
+        _turns=SimpleNamespace(speech_in_progress=False),
+        _playback_since_stop=True,
+        calls=calls,
+    )
+    for k, v in kw.items():
+        setattr(ns, k, v)
+    return ns
+
+
+def test_cont_fires_only_when_the_recognizer_is_idle() -> None:
+    idle = _stt_like()
+    StreamingWhisperSTT._maybe_cont(idle, "x")  # type: ignore[arg-type]
+    assert idle.calls == ["idle@x"]
+    for blocker in (
+        {"_final_pending": True},
+        {"_speaking": True},
+        {"_turns": SimpleNamespace(speech_in_progress=True)},
+        {"_playback_since_stop": False},
+    ):
+        busy = _stt_like(**blocker)
+        StreamingWhisperSTT._maybe_cont(busy, "x")  # type: ignore[arg-type]
+        assert busy.calls == [], f"must not continue while {blocker}"
+
+
+def test_a_frozen_decode_is_not_counted_as_busy() -> None:
+    """Counting it would hold the turn gate until the 60 s timeout voids the run."""
+    import threading as _t
+
+    ns = SimpleNamespace(
+        _pool=SimpleNamespace(active=SimpleNamespace(stopped=True)),
+        _activity_lock=_t.Lock(),
+        _decode_starts=[10, 20],
+        _worker_decode_start=20,
+    )
+    assert StreamingWhisperSTT._live_decode_starts(ns) == [10]  # type: ignore[arg-type]
+    ns._pool.active.stopped = False
+    assert StreamingWhisperSTT._live_decode_starts(ns) == [10, 20]  # type: ignore[arg-type]

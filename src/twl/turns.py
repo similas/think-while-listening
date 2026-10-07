@@ -238,8 +238,10 @@ class TurnManager:
         self._utterance = -1
         self._last_playback_done_ns = 0
         self._hyp_killed = False
+        self._hyp_stopped = False
         self._worker_ready_at_open = -1
         self._worker_busy_at_open = -1
+        self._worker_stopped_at_open = -1
         # Callbacks keyed by stage name, fired after the mark is written. The
         # hot spare respawns on "audio_out_first", the first instant after
         # every interval TTFA measures.
@@ -295,12 +297,22 @@ class TurnManager:
             except Exception:  # a listener must never take the recorder down
                 log.exception("stage listener for %s failed", stage)
 
-    def note_worker_state_at_open(self, *, ready: bool, busy: bool) -> None:
+    def note_worker_state_at_open(self, *, ready: bool, busy: bool, stopped: bool = False) -> None:
         self._worker_ready_at_open = int(ready)
         self._worker_busy_at_open = int(busy)
+        self._worker_stopped_at_open = int(stopped)
 
     def note_hyp_killed(self) -> None:
         self._hyp_killed = True
+
+    def note_hyp_stopped(self) -> None:
+        self._hyp_stopped = True
+
+    @property
+    def speech_in_progress(self) -> bool:
+        """A turn is open and its user has not yet stopped speaking (VAD view)."""
+        clock = self._clock
+        return clock is not None and clock.first("vad_user_stopped") is None
 
     def note_worker_event(
         self, event: str, *, ns: int, pid: int = -1, extra: dict[str, Any] | None = None
@@ -354,8 +366,10 @@ class TurnManager:
         # what makes a split visible in the records instead of inferable.
         self._utterance = self._file_index_fn() if self._file_index_fn is not None else -1
         self._hyp_killed = False
+        self._hyp_stopped = False
         self._worker_ready_at_open = -1
         self._worker_busy_at_open = -1
+        self._worker_stopped_at_open = -1
         self._transcript = ""
         self._stt_audio_s = -1.0
         self._stt_minflt = -1
@@ -978,6 +992,8 @@ class TurnManager:
             hyp_killed=self._hyp_killed,
             worker_ready_at_open=self._worker_ready_at_open,
             worker_busy_at_open=self._worker_busy_at_open,
+            worker_stopped_at_open=self._worker_stopped_at_open,
+            hyp_stopped=self._hyp_stopped,
             origin_ns=clock.origin_ns,
         )
         write_jsonl(self._fh, record)

@@ -237,6 +237,10 @@ class TurnRecord:
     hyp_killed: bool = False
     worker_ready_at_open: int = -1
     worker_busy_at_open: int = -1
+    # SIGSTOP design: the worker was frozen when this turn opened (check 2's
+    # field), and whether this turn's endpoint froze a decode in flight.
+    worker_stopped_at_open: int = -1
+    hyp_stopped: bool = False
     # The turn clock's raw perf_counter origin. Offsets alone cannot place an
     # event that crosses a turn boundary, such as a respawn that starts in one
     # turn's reply and finishes in the next turn's listening window.

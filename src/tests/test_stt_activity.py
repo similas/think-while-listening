@@ -26,9 +26,14 @@ class Probe:
         self._decode_starts: list[int] = []
         self._blocked = threading.Event()
         self._entered = threading.Event()
+        # No hypothesis worker: nothing can be SIGSTOPped, so every decode in
+        # flight counts, exactly as before the SIGSTOP design.
+        self._pool = None
+        self._worker_decode_start = None
 
     decoding = StreamingWhisperSTT.decoding
     oldest_decode_ms = StreamingWhisperSTT.oldest_decode_ms
+    _live_decode_starts = StreamingWhisperSTT._live_decode_starts
 
     def _transcribe(self, audio: Any, model: Any) -> str:
         self._entered.set()

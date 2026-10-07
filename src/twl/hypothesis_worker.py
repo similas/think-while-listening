@@ -61,12 +61,17 @@ class DecodeRequest:
     base_s: float
     initial_prompt: str
     want_words: bool
+    # Echoed in the reply. A decode frozen by SIGSTOP at an endpoint finishes
+    # after SIGCONT, long after its turn; the sequence number is how its
+    # result is recognised as stale and dropped (P9b final attempt).
+    seq: int = 0
 
 
 @dataclass(frozen=True)
 class DecodeReply:
     words: list[tuple[str, float, float]]
     decode_ms: float
+    seq: int = 0
 
 
 def _child_main(
@@ -119,7 +124,7 @@ def _child_main(
             log.exception("hypothesis worker: decode failed")
             words = []
         try:
-            conn.send(DecodeReply(words=words, decode_ms=(now_ns() - t0) / 1e6))
+            conn.send(DecodeReply(words=words, decode_ms=(now_ns() - t0) / 1e6, seq=req.seq))
         except (BrokenPipeError, OSError):
             return
 
@@ -220,6 +225,14 @@ class HypothesisWorker:
         self._ready = threading.Event()
         self._spawning = False
         self._decoded_once = False
+        # SIGSTOP/SIGCONT (P9b final attempt).
+        self._seq = 0
+        self._inflight_seq = -1
+        self._stale_seqs: set[int] = set()
+        self._stopped = False
+        self._stopped_ns = 0
+        self.stops = 0
+        self.stale_discarded = 0
         self._on_event = on_event
         self.name = name
         self.kills = 0
@@ -313,18 +326,23 @@ class HypothesisWorker:
         if not self._ready.is_set():
             return None
         a = np.ascontiguousarray(audio, dtype=np.float32)
+        with self._lock:
+            conn, proc = self._conn, self._proc
+            # One request at a time: a frozen or still-finishing decode owns the
+            # pipe until its reply is read.
+            if conn is None or self._busy:
+                return None
+            self._busy = True
+            self._seq += 1
+            seq = self._inflight_seq = self._seq
         req = DecodeRequest(
             audio=a.tobytes(),
             n_samples=a.size,
             base_s=base_s,
             initial_prompt=initial_prompt,
             want_words=want_words,
+            seq=seq,
         )
-        with self._lock:
-            conn, proc = self._conn, self._proc
-            if conn is None:
-                return None
-            self._busy = True
         try:
             conn.send(req)
             reply = conn.recv()
@@ -334,6 +352,15 @@ class HypothesisWorker:
             with self._lock:
                 self._busy = False
         if not isinstance(reply, DecodeReply):
+            return None
+        with self._lock:
+            stale = reply.seq in self._stale_seqs or reply.seq != seq
+            self._stale_seqs.discard(reply.seq)
+        if stale:
+            # DISCARDED BY SEQUENCE NUMBER. Its turn has had its final; these
+            # words describe audio that is already transcribed.
+            self.stale_discarded += 1
+            self._event("stale_discarded", now_ns(), seq=reply.seq)
             return None
         if not self._decoded_once and proc is not None and proc.pid is not None:
             # The working set a decode actually touches, which spawn_ready's
@@ -369,6 +396,54 @@ class HypothesisWorker:
         return True
 
     @property
+    def stopped(self) -> bool:
+        with self._lock:
+            return self._stopped
+
+    def stop_if_busy(self, *, endpoint_ns: int) -> bool:
+        """SIGSTOP a decode in flight at the endpoint. Returns whether one was.
+
+        The process keeps its memory and its loaded engine and uses no CPU, so
+        the final runs on quiet cores and nothing has to be respawned. The
+        decode's sequence number is marked stale here, so whatever it produces
+        after SIGCONT is dropped rather than committed.
+        """
+        from twl.clock import now_ns
+
+        with self._lock:
+            proc, busy = self._proc, self._busy
+            if proc is None or not busy or self._stopped:
+                return False
+            try:
+                os.kill(proc.pid, signal.SIGSTOP)
+            except (ProcessLookupError, TypeError):
+                return False
+            self._stopped = True
+            self._stopped_ns = now_ns()
+            self._stale_seqs.add(self._inflight_seq)
+            seq = self._inflight_seq
+        self.stops += 1
+        self._event("stop", self._stopped_ns, endpoint_ns=endpoint_ns, seq=seq)
+        return True
+
+    def cont(self, reason: str) -> bool:
+        """SIGCONT a stopped worker. Returns whether it was stopped."""
+        from twl.clock import now_ns
+
+        with self._lock:
+            proc = self._proc
+            if proc is None or not self._stopped:
+                return False
+            try:
+                os.kill(proc.pid, signal.SIGCONT)
+            except (ProcessLookupError, TypeError):
+                return False
+            self._stopped = False
+            stopped_ms = (now_ns() - self._stopped_ns) / 1e6
+        self._event("cont", now_ns(), reason=reason, stopped_ms=round(stopped_ms, 1))
+        return True
+
+    @property
     def dead(self) -> bool:
         """Not loaded and not on its way to being loaded."""
         return not self.ready and not self.spawning
@@ -380,6 +455,11 @@ class HypothesisWorker:
             self._proc = self._conn = None
             self._busy = False
         self._ready.clear()
+        if proc is not None and self._stopped:
+            # A frozen child cannot read _DIE or exit; continue it first.
+            with contextlib.suppress(ProcessLookupError, TypeError):
+                os.kill(proc.pid, signal.SIGCONT)
+            self._stopped = False
         if conn is not None:
             with contextlib.suppress(BrokenPipeError, OSError):
                 conn.send(_DIE)
@@ -405,19 +485,21 @@ class WorkerPool:
     only in whether ``kill_and_promote`` is ever called.
     """
 
-    def __init__(self, make: Callable[[str], HypothesisWorker]) -> None:
-        self.workers = [make("a"), make("b")]
+    def __init__(self, make: Callable[[str], HypothesisWorker], n: int = 2) -> None:
+        # n=2: P9b's hot spare. n=1: the SIGSTOP design, where nothing is
+        # ever killed or respawned and no spare is needed.
+        self.workers = [make(name) for name in "ab"[:n]]
         self._active = 0
         self.promotions = 0
         self.mem_available_delta_mb: float | None = None
 
     def start(self) -> bool:
-        """Load both. The second's MemAvailable drop is the T-EPA figure."""
+        """Load all. The LAST worker's MemAvailable drop is the T-EPA figure."""
         from twl.telemetry import read_mem_available_mb
 
-        ok = self.workers[0].start()
+        ok = all([w.start() for w in self.workers[:-1]])
         before = read_mem_available_mb()
-        ok = self.workers[1].start() and ok
+        ok = self.workers[-1].start() and ok
         after = read_mem_available_mb()
         if before >= 0 and after >= 0:
             self.mem_available_delta_mb = round(before - after, 1)
@@ -429,7 +511,7 @@ class WorkerPool:
 
     @property
     def spare(self) -> HypothesisWorker:
-        return self.workers[1 - self._active]
+        return self.workers[(self._active + 1) % len(self.workers)]
 
     def kill_and_promote(self) -> tuple[bool, bool]:
         """KILL arm, at the endpoint. Returns (killed, promoted)."""
@@ -438,8 +520,8 @@ class WorkerPool:
         killed = self.active.kill_if_busy()
         if not killed:
             return False, False
-        if self.spare.ready_idle:
-            self._active = 1 - self._active
+        if len(self.workers) > 1 and self.spare.ready_idle:
+            self._active = (self._active + 1) % len(self.workers)
             self.promotions += 1
             ev = self.active._on_event
             if ev is not None:

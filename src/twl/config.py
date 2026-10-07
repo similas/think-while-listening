@@ -116,6 +116,13 @@ class CommitConfig:
     # at_endpoint "kill"; available to "race" so the two can be compared with
     # the process boundary held constant.
     hypothesis_process: bool = False
+    # Resident hypothesis children: 2 is P9b's hot spare (active + spare);
+    # 1 is the SIGSTOP design, where nothing is killed or respawned.
+    hypothesis_workers: int = 2
+    # P9b final attempt, amendment A2 -- OFF unless the user adopts it. When
+    # on, a worker found SIGSTOPped when the STT service handles a VAD start
+    # is continued there; that handling runs after any preceding final.
+    cont_at_turn_open: bool = False
     # Expected utterance length for THIS SET, a prior and nothing more, used by
     # the listener feasibility gate (twl.pacing). 0.0 disables the gate.
     duration_prior_s: float = 0.0
@@ -276,8 +283,15 @@ def load_config(path: Path) -> TwlConfig:
         raise ValueError(f"{path}: llm.backend must be one of {VALID_LLM_BACKENDS}")
     if cfg.stt.commit.issue_rule not in ("controlled", "naive"):
         raise ValueError(f"{path}: stt.commit.issue_rule must be controlled or naive")
-    if cfg.stt.commit.at_endpoint not in ("race", "wait", "kill"):
-        raise ValueError(f"{path}: stt.commit.at_endpoint must be race, wait or kill")
+    if cfg.stt.commit.at_endpoint not in ("race", "wait", "kill", "stop"):
+        raise ValueError(f"{path}: stt.commit.at_endpoint must be race, wait, kill or stop")
+    if cfg.stt.commit.at_endpoint == "stop" and not cfg.stt.commit.hypothesis_process:
+        raise ValueError(
+            f"{path}: at_endpoint 'stop' needs hypothesis_process true — SIGSTOP "
+            f"reaches a process, not a thread"
+        )
+    if cfg.stt.commit.hypothesis_workers not in (1, 2):
+        raise ValueError(f"{path}: stt.commit.hypothesis_workers must be 1 or 2")
     if cfg.stt.commit.at_endpoint == "kill" and not cfg.stt.commit.hypothesis_process:
         raise ValueError(
             f"{path}: at_endpoint 'kill' needs hypothesis_process true — a thread "

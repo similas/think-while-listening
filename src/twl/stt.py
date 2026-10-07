@@ -154,6 +154,13 @@ class StreamingWhisperSTT(STTService):
         self.hypotheses_killed = 0
         self.hypotheses_lost = 0
         self.turns_opened_without_worker = 0
+        # SIGSTOP design (P9b final attempt): the recognizer-idle predicate's
+        # inputs, and the worker decode's start so a FROZEN decode can be
+        # left out of "busy".
+        self._final_pending = False
+        self._playback_since_stop = True
+        self._worker_decode_start: int | None = None
+        self.hypotheses_stopped = 0
         self._pool: WorkerPool | None = None
         self.spans_done = 0
         # Issued = decodes started (the cost). Emitted = frames pushed while
@@ -242,7 +249,7 @@ class StreamingWhisperSTT(STTService):
                     name=name,
                 )
 
-            self._pool = WorkerPool(make)
+            self._pool = WorkerPool(make, n=self._cfg.commit.hypothesis_workers)
             await asyncio.to_thread(self._pool.start)
             # RESPAWN AT audio_out_first ONLY, the first instant after every
             # interval TTFA measures. NOT at turn close: P9b's pre-registered
@@ -264,6 +271,7 @@ class StreamingWhisperSTT(STTService):
                 },
             )
             self._turns.add_stage_listener("audio_out_first", self._pool.respawn_dead_async)
+            self._turns.add_stage_listener("playback_done", self._on_playback_done)
             log.warning(
                 "stt: hot-spare pool ready=%s/%s spawn_ms=%s mem_available_delta_mb=%s",
                 self._pool.workers[0].ready,
@@ -666,6 +674,7 @@ class StreamingWhisperSTT(STTService):
         started = now_ns()
         with self._activity_lock:
             self._decode_starts.append(started)
+            self._worker_decode_start = started
         try:
             got = worker.decode(
                 audio,
@@ -677,6 +686,8 @@ class StreamingWhisperSTT(STTService):
             done = now_ns()
             with self._activity_lock:
                 self._decode_starts.remove(started)
+                if self._worker_decode_start == started:
+                    self._worker_decode_start = None
             if on_boundaries is not None:
                 on_boundaries(started, done)
         if got is None:
@@ -790,8 +801,7 @@ class StreamingWhisperSTT(STTService):
         and closing or advancing strands it on the following turn (run 3,
         2026-09-22).
         """
-        with self._activity_lock:
-            return bool(self._decode_starts)
+        return bool(self._live_decode_starts())
 
     @property
     def oldest_decode_ms(self) -> float:
@@ -802,10 +812,43 @@ class StreamingWhisperSTT(STTService):
         run instead of flagging one turn — the failure the watchdog exists to
         prevent, reintroduced through its own definition of health.
         """
+        live = self._live_decode_starts()
+        return (now_ns() - min(live)) / 1e6 if live else 0.0
+
+    def _live_decode_starts(self) -> list[int]:
+        """Decodes in flight, LEAVING OUT one frozen by SIGSTOP.
+
+        A stopped decode uses no CPU. Counting it as busy would hold the turn
+        gate and silence the progress watchdog for as long as it stays
+        stopped -- on item 17 that is until the 60 s gate timeout voids the
+        run (pre-registration 2026-10-07). Once continued it counts again.
+        """
+        stopped = self._pool is not None and self._pool.active.stopped
         with self._activity_lock:
-            if not self._decode_starts:
-                return 0.0
-            return (now_ns() - min(self._decode_starts)) / 1e6
+            return [
+                s for s in self._decode_starts if not (stopped and s == self._worker_decode_start)
+            ]
+
+    def _maybe_cont(self, transition: str) -> None:
+        """SIGCONT when the recognizer is idle; evaluated at every transition.
+
+        Idle = no final pending, no decode owed (no turn being spoken), and a
+        playback_done since the stop. Never earlier.
+        """
+        if self._pool is None or not self._pool.active.stopped:
+            return
+        # "No decode owed" from BOTH views: this service's own (it learns of a
+        # VAD start only when it reaches that frame, which can be after a
+        # final) and the turn recorder's, which the observer updates as the
+        # VAD fires.
+        owed = self._speaking or self._turns.speech_in_progress
+        if self._final_pending or owed or not self._playback_since_stop:
+            return
+        self._pool.active.cont(reason=f"idle@{transition}")
+
+    def _on_playback_done(self) -> None:
+        self._playback_since_stop = True
+        self._maybe_cont("playback_done")
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
@@ -817,11 +860,24 @@ class StreamingWhisperSTT(STTService):
                 else:
                     self._audio = np.zeros(0, dtype=np.float32)
             self._speaking = True
+            self._maybe_cont("vad_start")
             worker_ok = True
             if self._pool is not None:
                 active = self._pool.active
-                worker_ok = active.ready_idle
-                self._turns.note_worker_state_at_open(ready=worker_ok, busy=active.busy)
+                if self._cfg.commit.cont_at_turn_open and active.stopped:
+                    # AMENDMENT A2 (off unless adopted). This handling runs
+                    # after any preceding final, so none is pending here.
+                    active.cont(reason="turn_open")
+                if self._cfg.commit.hypothesis_workers == 1:
+                    # SIGSTOP design: ready = loaded and not stopped. A worker
+                    # still finishing a continued stale decode is ready; the
+                    # issuer waits on in_flight, as every pre-P9b arm did.
+                    worker_ok = active.ready and not active.stopped
+                else:
+                    worker_ok = active.ready_idle
+                self._turns.note_worker_state_at_open(
+                    ready=worker_ok, busy=active.busy, stopped=active.stopped
+                )
                 if not worker_ok:
                     # NOPARTIAL FOR THIS TURN, by design (P9b): no in-process
                     # fallback, because that is the thread a kill cannot reach.
@@ -855,7 +911,20 @@ class StreamingWhisperSTT(STTService):
             # cannot pair them across a split (endpoint on turn N, final on
             # N+1), and P9b's validity check missed exactly those windows.
             stopped_ns = now_ns()
-            if self._hyp_task is not None and self._cfg.commit.at_endpoint == "kill":
+            self._final_pending = True
+            if self._cfg.commit.at_endpoint == "stop":
+                # FREEZE, don't kill: the decode keeps its memory and engine
+                # and uses no CPU; nothing is ever respawned in this design.
+                if self._hyp_task is not None:
+                    self._hyp_task.cancel()
+                    self._hyp_task = None
+                if self._pool is not None and self._pool.active.stop_if_busy(
+                    endpoint_ns=stopped_ns
+                ):
+                    self.hypotheses_stopped += 1
+                    self._playback_since_stop = False
+                    self._turns.note_hyp_stopped()
+            elif self._hyp_task is not None and self._cfg.commit.at_endpoint == "kill":
                 # PREEMPT. The task is cancelled as in "race", and then the
                 # decode itself is stopped, which is the part a thread cannot
                 # do. The final starts on cores nothing else is holding.
@@ -880,6 +949,9 @@ class StreamingWhisperSTT(STTService):
             with self._lock:
                 audio, self._audio = self._audio, np.zeros(0, dtype=np.float32)
             if len(audio) < 0.08 * self.sample_rate:
+                # No final will come for this endpoint.
+                self._final_pending = False
+                self._maybe_cont("no_final")
                 return
             pid = os.getpid()
             faults_before = read_faults(pid)
@@ -932,6 +1004,8 @@ class StreamingWhisperSTT(STTService):
                 self._turns.note_worker_event(
                     "final_window", ns=at, extra={"endpoint_ns": stopped_ns}
                 )
+            self._final_pending = False
+            self._maybe_cont("final")
             self._turns.set_transcript(text)
             # The audio the FINAL consumed, which under COMMIT-WL is the tail
             # only. The full utterance is recoverable from the saved segment.

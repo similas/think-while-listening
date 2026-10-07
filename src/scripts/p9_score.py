@@ -52,7 +52,9 @@ def read_run(d: Path) -> tuple[str, dict[int, dict]]:
     lines = [json.loads(x) for x in (d / "turns.jsonl").read_text().splitlines() if x.strip()]
     # From the config that ran, not the free-text notes (a label is an assertion).
     cfg = next(r for r in lines if r["kind"] == "run_meta").get("config_path", "")
-    arm = "KILL" if "kill" in Path(cfg).name else "RACE"
+    # The treatment arm is whichever preempts the decode in flight: KILL
+    # (P9, P9b) or STOP (P9b final attempt).
+    arm = "KILL" if ("kill" in Path(cfg).name or "stop" in Path(cfg).name) else "RACE"
     stop: dict[int, float] = {}
     for r in lines:
         if r["kind"] == "stage_event" and r["stage"] == "vad_user_stopped":
