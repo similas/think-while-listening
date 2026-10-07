@@ -6766,3 +6766,32 @@ THE BUILD CARRIES A2 AS A CONFIG SWITCH, OFF. Which configuration runs on
 2026-10-08 is the user's decision, recorded here as an amendment before any
 data; unless amended, the registration stands as written and is expected to
 route to (b) through check 2.
+
+## 2026-10-07 — P9b final attempt: BUILD GREEN. Awaiting the A2 decision before the run
+
+Build 1e56c76 (b3ef727 + a log-line fix the smoke caught). make check: 268
+passed. Pre-registration 3894a8c was committed before any of this code.
+
+SMOKES, MECHANICS ONLY -- on the 4-item smoke set (the four longest
+single_step_set items), not the selection set, so that the A2 decision is not
+taken with outcome data in view. No latency figure from them is cited.
+
+    STOP as registered (commit_wl_stop)   660b26: stops 3, SIGCONT 2 (both
+        idle@playback_done, 3.3 s and 4.1 s after the stop), stale results
+        discarded 2 by sequence number, no continued decode in any window,
+        stop 0.1 ms after the STT endpoint. ONE TURN OPENED STOPPED: turn 5,
+        a split's first half, froze the worker and its second half (turn 6)
+        opened on it -> CHECK 2 FAILS. Route 1 of the pre-registration,
+        reproduced on a set that was not used to predict it.
+    STOP with A2 (commit_wl_stop_a2)      33b737: stops 3, SIGCONT 3 (one at
+        turn_open), discarded 3, stopped-at-open 0, continued-in-window 0.
+        Checks 1, 2, 4 pass.
+    RACE (commit_wl_proc1)                4c830a: stops 0, as designed.
+
+The bug the smoke caught -- a startup log line that assumed two workers --
+would have aborted every STOP run at load. Fixed before any measured run.
+
+Two drivers are snapshotted for 2026-10-08, identical but for the STOP config:
+results/raw/script_snapshots/p9c_spec.sh (as registered) and p9c_a2.sh (A2).
+Which one runs is the user's decision; the registration stands as written
+unless it is amended before the run.
