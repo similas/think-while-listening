@@ -68,6 +68,9 @@ class RunMeta:
     software: dict[str, str]
     capture: dict[str, str] = field(default_factory=dict)
     notes: str = ""
+    # Harness timing constants as RUN, so a scorer can require them equal
+    # across arms instead of trusting a driver's command line (P9c).
+    harness: dict[str, Any] = field(default_factory=dict)
 
     kind: str = field(default="run_meta", init=False)
 

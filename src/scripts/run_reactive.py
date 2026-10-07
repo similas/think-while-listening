@@ -56,6 +56,8 @@ REPO = Path(__file__).resolve().parents[2]
 # The gate's definition of quiet, and the point at which waiting is itself a
 # fault. SETTLE_MS in the observer is 800; the gate waits a little longer so
 # the turn is closed before the next file starts, never concurrently.
+# Default post-reply quiet period of the playback gate; overridable with
+# --gate-quiet-ms (P9c ran 3000 in both arms) and recorded in run_meta.
 GATE_QUIET_MS = 1000.0
 # After an abnormal close the pipeline may still be finishing work the turn
 # never waited for, so idleness is required for longer before the next file.
@@ -321,6 +323,12 @@ async def run(args: argparse.Namespace) -> None:
         meta = build_run_meta(
             run_id=run_id,
             config_path=args.config,
+            harness={
+                "gate_quiet_ms": args.gate_quiet_ms,
+                "drain_ms": DRAIN_MS,
+                "gap_ms": args.gap_ms,
+                "gate_timeout_s": GATE_TIMEOUT_S,
+            },
             notes=(
                 f"REACTIVE {'live-mic' if args.live else 'file-playback'} run; "
                 f"agent affinity={sorted(cfg.stt.cpu_affinity)}; "
@@ -374,7 +382,7 @@ async def run(args: argparse.Namespace) -> None:
                     if idle_since is None:
                         idle_since = time.monotonic()
                     settled = (time.monotonic() - idle_since) * 1000.0
-                    if settled >= (DRAIN_MS if abnormal else GATE_QUIET_MS):
+                    if settled >= (DRAIN_MS if abnormal else args.gate_quiet_ms):
                         return
                 else:
                     idle_since = None
@@ -864,9 +872,18 @@ def main() -> None:
         "--gap-ms",
         type=int,
         default=1000,
-        help="silence AFTER the reply has finished, before the next file. This is "
-        "NOT how files are isolated from each other — the playback gate is — and "
-        "raising it cannot fix an overlap",
+        help="silence played straight after each file's audio, BEFORE the playback "
+        "gate is awaited -- so it overlaps the final, the LLM and the TTS and is NOT "
+        "a post-reply pause (that is --gate-quiet-ms). Files are isolated by the "
+        "gate, not by this.",
+    )
+    p.add_argument(
+        "--gate-quiet-ms",
+        type=float,
+        default=GATE_QUIET_MS,
+        help="the playback gate's post-reply quiet period: the next file waits until "
+        "the turn has closed and every decode and the model have been idle this long "
+        "(restarting whenever any is busy). Recorded in run_meta.harness.",
     )
     p.add_argument("--live", action="store_true", help="live mic instead of files")
     p.add_argument("--live-seconds", type=float, default=300.0)

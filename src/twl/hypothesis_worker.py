@@ -412,7 +412,11 @@ class HypothesisWorker:
 
         with self._lock:
             proc, busy = self._proc, self._busy
-            if proc is None or not busy or self._stopped:
+            # Never re-stop a decode already marked stale: after SIGCONT it is
+            # only finishing work whose result will be dropped, and stopping
+            # it again would mark hyp_stopped on a turn whose own decode was
+            # never frozen (P9c amendment 2).
+            if proc is None or not busy or self._stopped or self._inflight_seq in self._stale_seqs:
                 return False
             try:
                 os.kill(proc.pid, signal.SIGSTOP)

@@ -354,3 +354,35 @@ def test_a_frozen_decode_is_not_counted_as_busy() -> None:
     assert StreamingWhisperSTT._live_decode_starts(ns) == [10]  # type: ignore[arg-type]
     ns._pool.active.stopped = False
     assert StreamingWhisperSTT._live_decode_starts(ns) == [10, 20]  # type: ignore[arg-type]
+
+
+def test_a_stale_decode_is_never_stopped_twice() -> None:
+    """After SIGCONT a stale decode is busy and not stopped; a later endpoint
+    must not freeze it again and mark a turn whose own decode never was (P9c)."""
+    child = subprocess.Popen(["sleep", "30"])
+    try:
+        w = HypothesisWorker("tiny", 1, [], "en")
+        w._proc, w._busy, w._inflight_seq = child, True, 7
+        assert w.stop_if_busy(endpoint_ns=0)
+        assert w.cont("test")
+        assert w.busy and not w.stopped
+        assert not w.stop_if_busy(endpoint_ns=1), "seq 7 is stale; it must not be re-stopped"
+    finally:
+        child.kill()
+
+
+def test_the_gate_pause_is_recorded_in_run_meta() -> None:
+    from twl.records import RunMeta
+
+    m = RunMeta(
+        run_id="r",
+        wall_time="w",
+        git_commit="c",
+        config_hash="h",
+        config_path="p",
+        nvpmodel="n",
+        jetson_clocks="j",
+        software={},
+        harness={"gate_quiet_ms": 3000.0},
+    )
+    assert m.harness["gate_quiet_ms"] == 3000.0

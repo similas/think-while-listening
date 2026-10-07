@@ -17,6 +17,7 @@ import uuid
 from importlib import metadata
 from pathlib import Path
 from time import strftime
+from typing import Any
 
 from twl.audio_device import capture_path_info
 from twl.clock import wall_iso
@@ -100,6 +101,7 @@ def build_run_meta(
     notes: str = "",
     extra_software: dict[str, str] | None = None,
     capture_channel: int | None = None,
+    harness: dict[str, Any] | None = None,
 ) -> RunMeta:
     """Assemble the provenance header for one run."""
     return RunMeta(
@@ -113,4 +115,5 @@ def build_run_meta(
         software=software_versions(extra_software),
         capture=capture_path_info(capture_channel),
         notes=notes,
+        harness=dict(harness or {}),
     )
