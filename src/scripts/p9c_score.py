@@ -176,6 +176,9 @@ def main() -> None:
             f"{f' = {sei / sn:.2f}' if sn else ''}"
         )
 
+    if not common:
+        print("  no item is scored in both arms: no paired data")
+        ok = False
     if not ok:
         print("\nP9c: NOT TESTABLE -> ROUTES TO (b)")
         return
