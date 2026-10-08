@@ -7035,3 +7035,132 @@ Per the decision of 2026-10-07, this was the final preemption attempt.
    shorter pause or in live use. And each of the 34 resumed stale decodes ran
    to completion only to be discarded: their CPU and energy are spent for
    nothing, which any energy accounting of this design must carry.
+
+## 2026-10-08 — PASS 2k: pre-registered amendment, committed before any of its code and before the run
+
+User decision after P9c HOLDS. The record pointed two ways -- 3894a8c "if it
+holds: pass 2k" against the P9c instruction "then passes 8, 6, 7, 9, 1r" --
+and the user resolved it for pass 2k AFTER seeing P9c's result. Recorded as
+such. Passes 8, 6, 7, 9, 1r follow tomorrow. Approved runtime ~4 h, run today,
+scored once. This amends the pass 2k sections of the P9b registration
+(b2c6f71) and 3894a8c; where they differ, this text governs.
+
+### Arms and design
+
+    TREATMENT   COMMIT-WL-STOP + feasibility gate (src/configs/commit_wl_stop_gate.yaml):
+                one tiny worker, SIGSTOP at the endpoint, SIGCONT at recognizer
+                idle after playback_done, stale results discarded by sequence
+                number -- the P9c design, unchanged -- plus the gate.
+    COMPARATOR  REACTIVE-NOPARTIAL (src/configs/reactive_nopartial.yaml), RE-RUN
+                in this session. Pass 1n's NOPARTIAL ran at gate_quiet_ms 1000
+                and is NOT reused.
+
+Both arms at --gate-quiet-ms 3000, a harness constant equal across arms,
+verified in every run_meta. Sets: multi_step (80 items) and dev (sixteen, 16
+items) ONLY; the digit sets cannot commit and are uninformative. 3 reps per
+arm per set, INTERLEAVED, in this fixed 12-run sequence (also in the driver
+snapshot):
+
+    rep 1: multi_step S, multi_step N, dev S, dev N
+    rep 2: multi_step N, multi_step S, dev N, dev S
+    rep 3: multi_step S, multi_step N, dev S, dev N
+
+The arm that goes first alternates between reps, within each set.
+
+### The feasibility gate's prior
+
+duration_prior_s is DERIVED AT RUN START as the MEDIAN DURATION of the wav
+files in the run's --wav-dir, and recorded in run_meta (harness). It is not a
+constant in any config. Expected values: multi_step ~15.4 s, dev ~1.59 s.
+
+The prior is WAV duration; the gate's elapsed time is buffered audio since VAD
+onset (pre-roll in, 0.8 s hangover in). The two units differ in both
+directions and the net bias is not known; stated, not corrected. On dev the
+gate must abstain by its own arithmetic whatever the prior's exact value: the
+first hypothesis has nothing pending, so k=2 and needed = (1/0.6 + 1) x
+~1.41 s = ~3.8 s, longer than every dev utterance.
+
+### Validity
+
+    CHECK 1 VOIDS THE RUN: a resumed stale decode -- [cont, earlier of next
+    stop / stale result received] -- intersecting an endpoint-to-final window
+    ON A SCORED ITEM (the final_window's turn is valid, its item produced one
+    turn in that run, and the item is in that set's paired common set). Other
+    intersections reported.
+    CHECK 2 REPORT-ONLY: unready = worker stopped OR busy at turn open, per
+    arm, all turns and scored turns. Bias directions: P3 (TTFA) AGAINST STOP --
+    an unready turn issues no hypotheses; P6 (final / solo model) TOWARD
+    HOLDING -- that turn's final runs uncontended against its whole-utterance
+    tail. A sensitivity line drops every item ever opened unready, for P3 and
+    P6, not the verdict.
+    SPLITS flagged and excluded from scoring, as standing. CASCADE RULE as
+    standing (the harness aborts on an invariant error; run_complete written
+    first). endpoint_after_final turns excluded, as standing.
+    CHECK 3, PER SET: on multi_step, stops > 0 in STOP and = 0 in NOPARTIAL.
+    On dev the gate is predicted to abstain, so STOP must show stops = 0 AND
+    hypotheses issued = 0; that is reported as the direct gate check, not as
+    a check-3 failure. Checks 4-5 stand: every resumed stale result discarded,
+    one clean build and identical gate_quiet_ms in every run.
+    A VOID RUN is reported with its cause and not re-run. ANY VOID RUN ON A SET
+    MAKES THAT SET'S PREDICTIONS NOT TESTABLE; surviving reps are not scored
+    (a survivor can be selected on the manipulation -- P9b re-run, 2026-10-06).
+    A void on one set does not affect the other set's verdicts.
+
+### Pairing
+
+Scored by src/scripts/p2k_score.py, written and committed BEFORE the run.
+Items are identified by the RECORDED utterance index (file ground truth), not
+by alignment. An item's value in an arm is the median over its VALID reps; an
+item is in a set's paired common set iff it has at least one valid rep in each
+arm. The paired difference is taken per item and bootstrapped over items (4000
+resamples); n is stated. "Scored item" in check 1 means an item in this set.
+
+### Predictions
+
+P3 PRIMARY (multi_step): median TTFA reduction, NOPARTIAL minus STOP, >= 300 ms
+   with a CI excluding 0. The point estimate is reported against the 350-450 ms
+   bracket. SECONDARY: >= 1000 ms.
+   POWER, stated now: expected n ~62-68 items (11-12 of 80 split per rep).
+   Pass 2's multi_step paired CI was ~545 ms wide (half-width ~270 ms, n=62),
+   so the minimum detectable reduction at 80 % power is ~385 ms -- ABOVE the
+   300 ms bar. A true effect at the bar has roughly even odds of a CI that
+   reaches 0. A failure will be worded "not detectable below ~385 ms", never
+   "no effect".
+DEV: the gate abstains, so the arm is NOPARTIAL plus an idle resident worker.
+   The rule is on the POINT ESTIMATE: paired TTFA difference within +/-100 ms;
+   CI reported. Pass 2's sixteen CI was ~270 ms wide, so the null half-width
+   is ~+/-135 ms: "within +/-100" is a statement about the point, not proof of
+   no effect. ATTRIBUTION of a regression beyond -100 ms: "THE GATE FAILING"
+   only if STOP issued hypotheses on dev turns; with 0 issued it is reported as
+   the cost of the resident worker and the STOP code path, not of the gate.
+P4: dWER, STOP minus NOPARTIAL, mean and median per item, <= +0.020 on each
+   set. Falsified if > +0.050 on either.
+P6: STOP's final <= 1.3x the solo model of its own tail (1384 + 74 x tail_s),
+   falsified > 1.6x, scored on multi_step AND dev separately. ESTIMATOR
+   AMENDED: the item-median point estimate with its CI (as in P9c), where pass
+   2 scored P6 pooled over turns; the turn-pooled median is reported beside it
+   for comparability with pass 2.
+P7: JOULES PER MILLISECOND SAVED on multi_step. J per turn is the energy over
+   [turn open, first audio out] PLUS, for STOP, the energy of any stale decode
+   that turn's endpoint froze and that was later resumed and discarded.
+   PRIMARY FIGURE: the RATIO OF PAIRED MEDIANS, median over items of
+   (J_STOP - J_NOPARTIAL) divided by median over items of (TTFA_NOPARTIAL -
+   TTFA_STOP), over the whole common item set with NO exclusion, bootstrapped
+   jointly over items. SECONDARY: the median of per-item ratios over items
+   with a positive saving, with the excluded count. Both raw and net of the
+   quiescent idle baseline; an item whose idle baseline is -1.0 (fewer than 3
+   quiet samples) is out of the NET figures only.
+   THE STALE DECODES' OWN COST, reported separately as the cost of this
+   preemption design: integrated live from VDD_IN over [SIGCONT, result
+   received] and recorded on the stale_discarded event, raw and net of the
+   frozen turn's quiescent idle baseline. VDD_IN is whole-board power, so the
+   raw figure includes the board's floor; the net figure is the claim. If the
+   field is missing from the records, the stale cost is NOT TESTABLE, not
+   estimated.
+
+### Runtime
+
+multi_step ~31-34 min per run x 6, dev ~3 min x 6: ~3.5-3.8 h. Each
+multi_step run exceeds 30 min; the user approved ~4 h for the pass.
+
+Reviewed before commit (10 findings, resolved into the text above).
