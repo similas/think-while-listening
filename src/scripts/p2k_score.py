@@ -128,7 +128,20 @@ def read_run(d: Path, refs: list[str]) -> dict:
         "stops": len(stops),
         "conts": len(conts),
         "discarded": len(disc),
-        "stale": [x["extra"] for x in disc],
+        "stale": [{**x["extra"], "_ns": x["ns"]} for x in disc],
+        "turn_windows": [
+            (
+                t["turn"],
+                t["origin_ns"],
+                # [open, playback done]: a stale decode resumed while another
+                # turn's LLM is still generating or its reply still playing
+                # mixes that work into the stale window's energy.
+                t["origin_ns"]
+                + int(t["stages_ms"].get("playback_done", t["stages_ms"]["audio_out_first"]) * 1e6),
+            )
+            for t in turns
+            if t.get("origin_ns") and "audio_out_first" in (t.get("stages_ms") or {})
+        ],
         "hyps_total": sum(hyps.values()),
         "turns": len(turns),
         "unready_all": sum(
@@ -314,6 +327,15 @@ def main() -> None:
             if (dw <= 0.020 and mean_dw <= 0.020)
             else ("FALSIFIED" if max(dw, mean_dw) > 0.050 else "DOES NOT HOLD")
         )
+        if name == "dev" and sum(r["hyps_total"] for r in stop_runs) == 0:
+            p4 += " BY INERTNESS (0 hypotheses issued; uninformative about the mechanism)"
+        if len(dv) > 1:
+            rng = random.Random(0)
+            ms = sorted(statistics.fmean(rng.choice(dv) for _ in dv) for _ in range(4000))
+            print(
+                f"  [report] dWER mean CI [{ms[100]:+.4f}, {ms[3899]:+.4f}]; "
+                f"worse {sum(x > 1e-9 for x in dv)}, better {sum(x < -1e-9 for x in dv)}"
+            )
         print(
             f"  P4 dWER STOP-NOPARTIAL: median {dw:+.4f} [{dlo:+.4f}, {dhi:+.4f}] mean "
             f"{mean_dw:+.4f} n={dn} -> {p4}"
@@ -324,6 +346,8 @@ def main() -> None:
         pooled = statistics.median([m["ratio"] for r in stop_runs for m in r["items"].values()])
         rm = statistics.median(rat)
         p6 = "HOLDS" if rm <= 1.3 else ("FALSIFIED" if rm > 1.6 else "DOES NOT HOLD")
+        if name == "dev" and sum(r["hyps_total"] for r in stop_runs) == 0:
+            p6 += " BY INERTNESS (0 hypotheses issued)"
         print(
             f"  P6 STOP final / solo model: item-median {rm:.2f}x [{rlo:.2f}, {rhi:.2f}] "
             f"n={len(rat)} -> {p6}; turn-pooled {pooled:.2f}x"
@@ -345,7 +369,18 @@ def main() -> None:
                 else "  SENSITIVITY: nothing survives"
             )
 
+        for jk in ("j_raw", "j_net"):
+            ej, elo, ehi, en, _ = paired(med, jk, -1)
+            print(
+                f"  [report] paired energy per turn STOP - NOPARTIAL {jk}: "
+                f"{ej:+.2f} J [{elo:+.2f}, {ehi:+.2f}] n={en}"
+            )
         if name == "multi_step":
+            print(
+                "  [report] the energy window ends at first audio out, which STOP moves"
+                " earlier; raw credits STOP with board-floor energy both arms burn, net"
+                " removes it: net is the like-for-like figure"
+            )
             for jk in ("j_raw", "j_net"):
                 r_, rlo_, rhi_, rn = ratio_of_medians(med, jk)
                 per = [
@@ -376,6 +411,30 @@ def main() -> None:
                     for x in meas
                     if x.get("frozen_turn_idle_mw", -1) >= 0
                 ]
+                netv = [
+                    x["energy_raw_j"] - x["frozen_turn_idle_mw"] / 1000 * x["window_ms"] / 1000
+                    for x in meas
+                    if x.get("frozen_turn_idle_mw", -1) >= 0
+                ]
+                tw = [w for r in stop_runs for w in r["turn_windows"]]
+
+                def overlaps(x: dict, tw: list = tw) -> bool:
+                    a, b = x["_ns"] - int(x["window_ms"] * 1e6), x["_ns"]
+                    return any(o < b and e > a and t != x.get("frozen_turn") for t, o, e in tw)
+
+                clean = [
+                    x["energy_raw_j"] - x["frozen_turn_idle_mw"] / 1000 * x["window_ms"] / 1000
+                    for x in meas
+                    if x.get("frozen_turn_idle_mw", -1) >= 0 and not overlaps(x)
+                ]
+                cm = statistics.median(clean) if clean else float("nan")
+                cmean = statistics.fmean(clean) if clean else float("nan")
+                print(
+                    f"  [report] stale net: mean {statistics.fmean(netv):.2f} J, total "
+                    f"{sum(netv):.1f} J; {len(netv) - len(clean)} windows overlap another "
+                    f"turn's [open, playback done]; excluding them: n={len(clean)}, median "
+                    f"{cm:.2f} J, mean {cmean:.2f} J, total {sum(clean):.1f} J"
+                )
                 print(
                     f"  STALE DECODE COST: {len(st)} discarded, {len(meas)} measured; per decode "
                     f"raw median "

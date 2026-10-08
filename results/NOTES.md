@@ -7242,3 +7242,49 @@ against NOPARTIAL. Pass 2k's +357 ms is against a NOPARTIAL re-run in the same
 session at the same gate pause. The two differ in the preemption, the gate,
 the gate pause and the build; the difference between them is context, not a
 measured effect of any one change.
+
+## 2026-10-08 — CORRECTION to "PASS 2k: P3 HOLDS" (reviewer, 7 findings)
+
+Appended, not edited. Every new figure below is printed by
+src/scripts/p2k_score.py, to which REPORTING LINES (marked [report]) were added
+after the run; the verdict code is unchanged and its output is identical.
+
+1. P7'S LIKE-FOR-LIKE FIGURE IS NET, NOT RAW. The energy window is [turn open,
+   first audio out], and the treatment moves first audio EARLIER, so raw
+   credits STOP with board-floor energy that both arms burn; net removes it.
+   That is why net exceeds raw. Both were registered; net is the one quoted:
+       joules per ms saved, net   +0.0499 J/ms [+0.0425, +0.0607]  n=70
+       per-turn energy, STOP - NOPARTIAL:  net +17.83 J [+17.12, +18.58];
+                                           raw +15.82 J [+14.32, +16.64]
+   "About 16 J per turn raw" is replaced by ~18 J per turn net.
+
+2. THE STALE-DECODE COST IS SKEWED; THE MEDIAN ALONE UNDERSTATES IT. Net per
+   decode: median 0.60 J, MEAN 1.74 J, TOTAL 101.1 J over 58 decodes in 3 STOP
+   runs. The reviewer read the largest windows as overlapping the next turn's
+   pipeline work. TESTED AND NOT SUPPORTED: each of the four windows over 1 s
+   starts 1-4 s after the previous turn's playback_done and ends 4-6 s before
+   the next turn opens, so none overlaps any other turn's [open, playback_done]
+   (0 of 58). They do draw far more than short windows (~15-17 W raw against a
+   ~6.9 W floor over 1.1-2.4 s), and nothing recorded identifies what else ran;
+   left unexplained, not attributed.
+
+3. "AT NO MEASURABLE ACCURACY COST" IS REPLACED: dWER within the +0.020 bar --
+   mean +0.0043 [-0.0039, +0.0135], median 0, n=70; 14 items worse, 8 better.
+   The data bound the cost below ~+0.014; they do not show there is none.
+
+4. "KEEPS THE MECHANISM FROM CHARGING SHORT UTTERANCES ANYTHING" IS REPLACED:
+   on dev, no detectable TTFA cost (+2 ms [-15, +15]) or energy cost (net
+   -0.36 J [-0.88, +0.04]), n=16. The resident worker's memory (~110-120 MB)
+   is a cost that remains.
+
+5. DEV P4 AND P6 HOLD BY INERTNESS. STOP issued 0 hypotheses on dev, so the
+   arm there is NOPARTIAL plus an idle worker; dWER 0/0 and P6 0.97x test
+   nothing about the mechanism. P4 and P6 hold ON MULTI_STEP; on dev they are
+   uninformative.
+
+6. "CUTS MEDIAN TIME-TO-FIRST-AUDIO BY 357 ms" IS REPLACED: a median PAIRED
+   PER-ITEM TTFA reduction of 357 ms [+294, +412]. The difference between the
+   arms' own median TTFA is ~330 ms.
+
+7. THE CAUSAL CLAUSE ON POWER IS DROPPED: the realised CI half-width is ~60 ms
+   against the ~270 ms assumed from pass 2. Nothing paired explains why.
