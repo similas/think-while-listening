@@ -7288,3 +7288,42 @@ after the run; the verdict code is unchanged and its output is identical.
 
 7. THE CAUSAL CLAUSE ON POWER IS DROPPED: the realised CI half-width is ~60 ms
    against the ~270 ms assumed from pass 2. Nothing paired explains why.
+
+## 2026-10-08 — DECISIONS on abb44e6 (user)
+
+1. P3 HOLDS AS SCORED. Wherever +357 ms appears, its CI's lower end (+294,
+   below the 300 ms bar) is reported beside it.
+2. 2026-10-09: passes 8 (REACTIVE dense window(f), 2 reps), 6 (ALLOCATOR),
+   7 (SPEC-CONTINUE, energy on), 9 (live mic, 30 turns, REACTIVE-NOPARTIAL and
+   STOP+gate), 1r (residency). MEASUREMENT FREEZES WHEN 1r LANDS.
+3. From 2026-10-10: writing (paper §1-§4, Figs 1-3 first). In parallel, the
+   Level-2 planner: DP over elapsed time with the duration hazard and the
+   measured cost model, on a SIMULATOR calibrated from the logs, no measured
+   runs. One pre-registered live pass of STOP+DP against STOP+gate on
+   multi_step by 2026-10-20 only if the simulator predicts a gain >= 100 ms;
+   otherwise the planner enters the thesis as the formalization that
+   reproduces the gate's decisions, with the simulator result.
+4. LIMITATIONS, one line, as decided: "Resumed-and-discarded stale decodes
+   occasionally drew 15-17 W raw (against a ~6.9 W floor) over 1-2.4 s windows
+   that overlap no other turn's pipeline span; the source is not identified."
+
+## 2026-10-08 — DECISION: tomorrow's passes run at gate_quiet_ms 3000
+
+ALTERNATIVES: (a) 3000 for every pass, matching pass 2k; (b) 1000, matching the
+pre-Phase-5 registrations; (c) per pass. CHOSEN (a). Passes 6, 7 and 8 will be
+read beside pass 2k, and a harness constant that differs between runs read side
+by side is a confound with no upside; pass 1r's prediction is paired WITHIN the
+pass (NOPARTIAL vs UNLOADED), so it is unaffected by the value as long as both
+arms share it. Recorded in every run_meta; the scorers check it.
+
+## 2026-10-08 — READINESS for 2026-10-09, before any build
+
+    pass 8  REACTIVE dense (reactive_mqa.yaml, 2.5 s cadence)   runnable
+    pass 7  SPEC-CONTINUE (--policy spec_continue)              runnable
+    pass 1r NOPARTIAL with tiny UNLOADED                        needs a config
+    pass 6  ALLOCATOR (v3 §2.3)                                 NOT runnable:
+            twl.policies.WindowAllocator exists and is tested, but no policy
+            kind or harness wiring exposes it. To be built tonight as a thin
+            composition and pre-registered before its run.
+    pass 9  live mic, own voice (v3 §5)                         needs the user
+            at the box to speak 30 turns.
