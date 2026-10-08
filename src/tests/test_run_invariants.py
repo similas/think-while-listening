@@ -237,3 +237,16 @@ def test_the_idle_baseline_is_called_with_its_quiet_bound_by_keyword() -> None:
 
     p = inspect.signature(TegrastatsSampler.idle_mw).parameters
     assert p["since_ns"].kind is inspect.Parameter.KEYWORD_ONLY
+
+
+def test_short_windows_get_an_interpolated_energy() -> None:
+    """A 50 ms window between two 100 ms samples is measurable, and exact for
+    constant power: 6 W x 0.05 s = 0.3 J (pass 2k stale-decode cost)."""
+    from twl.telemetry import TegrastatsSampler
+
+    s = TegrastatsSampler.__new__(TegrastatsSampler)
+    s._recent_power = [(i * 100_000_000, 6000.0) for i in range(10)]
+    assert s.energy_j(420_000_000, 470_000_000) == -1.0  # the old integrator cannot
+    assert abs(s.energy_j_interp(420_000_000, 470_000_000) - 0.3) < 1e-9
+    # past the newest sample, power is held
+    assert abs(s.energy_j_interp(950_000_000, 1_050_000_000) - 0.6) < 1e-9

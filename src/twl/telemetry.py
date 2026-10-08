@@ -190,6 +190,40 @@ class TegrastatsSampler:
             joules += (p0 + p1) / 2.0 * (t1 - t0) / 1e9 / 1000.0
         return joules
 
+    def energy_j_interp(self, start_ns: int, end_ns: int, max_gap_s: float = 1.0) -> float:
+        """Joules over [start, end] with power INTERPOLATED at both edges.
+
+        For windows shorter than the sampling interval, where energy_j has
+        fewer than two samples and returns -1.0. A resumed stale decode is
+        often nearly finished and runs for tens of milliseconds (pass 2k
+        smoke: 54.7 ms), so without this its cost would mostly go unmeasured.
+        Power at an edge is linear between the samples either side; past the
+        newest sample it is held. -1.0 if no sample lies within max_gap_s of
+        the window. Used for stale-decode windows only; turn energy keeps
+        energy_j, so earlier runs stay comparable.
+        """
+        rows = sorted(self._recent_power)
+        gap = int(max_gap_s * 1e9)
+        near = [(ns, mw) for ns, mw in rows if start_ns - gap <= ns <= end_ns + gap]
+        if not near or end_ns <= start_ns:
+            return -1.0
+
+        def p_at(t: int) -> float:
+            before = [r for r in near if r[0] <= t]
+            after = [r for r in near if r[0] >= t]
+            if before and after:
+                (t0, p0), (t1, p1) = before[-1], after[0]
+                return p0 if t1 == t0 else p0 + (p1 - p0) * (t - t0) / (t1 - t0)
+            return (before or after)[-1 if before else 0][1]
+
+        pts = [(start_ns, p_at(start_ns))]
+        pts += [(ns, mw) for ns, mw in near if start_ns < ns < end_ns]
+        pts.append((end_ns, p_at(end_ns)))
+        return sum(
+            (pa + pb) / 2.0 * (tb - ta) / 1e9 / 1000.0
+            for (ta, pa), (tb, pb) in itertools.pairwise(pts)
+        )
+
     def idle_mw(
         self, before_ns: int, window_s: float = 2.0, *, since_ns: int | None = None
     ) -> float:

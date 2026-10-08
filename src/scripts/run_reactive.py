@@ -563,6 +563,7 @@ async def run(args: argparse.Namespace) -> None:
             # knows which file is playing, so a turn no longer has to be mapped
             # to an item by its position in a sequence that splits.
             built.turns.set_file_index_source(lambda: source.files_started)
+        built.turns.set_stale_energy_fn(sampler.energy_j_interp)
 
         adversary = None
         if adv_cpus:

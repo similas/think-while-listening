@@ -164,6 +164,9 @@ class TurnManager:
         # Median temps over the turn, from the telemetry stream (see records).
         self._temps_fn = temps_fn
         self._energy_fn = energy_fn
+        # Edge-interpolating integrator for stale-decode windows, which are
+        # often shorter than the sampling interval (telemetry.energy_j_interp).
+        self._stale_energy_fn: Callable[[int, int], float] | None = None
         self._idle_fn = idle_fn
         self._warmup_turns = warmup_turns
         self._plan = plan
@@ -288,6 +291,9 @@ class TurnManager:
             return None
         return self._last_playback_done_ns + IDLE_SETTLE_NS
 
+    def set_stale_energy_fn(self, fn: Callable[[int, int], float]) -> None:
+        self._stale_energy_fn = fn
+
     def add_stage_listener(self, stage: str, fn: Callable[[], None]) -> None:
         """Call ``fn`` after every mark of ``stage`` (or "turn_closed")."""
         self._stage_listeners.setdefault(stage, []).append(fn)
@@ -345,9 +351,8 @@ class TurnManager:
             extra["frozen_turn_idle_mw"] = round(owner_idle, 1)
             if c0 is not None:
                 extra["window_ms"] = round((ns - c0) / 1e6, 1)
-                extra["energy_raw_j"] = (
-                    round(self._energy_fn(c0, ns), 4) if self._energy_fn is not None else -1.0
-                )
+                fn = self._stale_energy_fn or self._energy_fn
+                extra["energy_raw_j"] = round(fn(c0, ns), 4) if fn is not None else -1.0
         with self._worker_event_lock:
             write_jsonl(
                 self._fh,
