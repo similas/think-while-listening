@@ -58,6 +58,22 @@ def main() -> None:
     if not ok:
         print("PASS 1r: NOT TESTABLE")
         return
+    # THE MEMORY SIDE, MEASURED rather than quoted: the registration cites
+    # "+134 MB" for the second engine, and a smoke on 2026-10-08 showed ~6-24 MB
+    # of agent RSS between the configs. Median agent RSS at turn open, per arm.
+    import statistics as st
+
+    rss: dict[str, list[float]] = {"NOPARTIAL": [], "UNLOADED": []}
+    for d, r in zip(a.runs, runs, strict=True):
+        for t in (x for x in p2k.lines(d) if x["kind"] == "turn_record"):
+            if isinstance(t.get("rss_before_mb"), (int, float)) and t["rss_before_mb"] > 0:
+                rss[r["label"]].append(t["rss_before_mb"])
+    if rss["NOPARTIAL"] and rss["UNLOADED"]:
+        mn, mu = st.median(rss["NOPARTIAL"]), st.median(rss["UNLOADED"])
+        print(
+            f"AGENT RSS at turn open: NOPARTIAL {mn:.1f} MB, UNLOADED {mu:.1f} MB, "
+            f"delta {mn - mu:+.1f} MB"
+        )
     med = p2k.item_medians(runs)
     b, lo, hi, n, _ = p2k.paired(med, "ttfa", +1)
     print(f"\nPAIRED TTFA, NOPARTIAL - UNLOADED: {b:+.1f} ms [{lo:+.1f}, {hi:+.1f}] n={n}")
