@@ -40,7 +40,7 @@ from twl.llm import LlamaClient
 from twl.metrics import median
 from twl.pipeline import build_pipeline
 from twl.planning import Plan, add_gate_args, gate
-from twl.policies import PolicyKind, build_policy
+from twl.policies import AllocatorPolicy, PolicyKind, build_policy
 from twl.policy_runner import PolicyRunner
 from twl.provenance import build_run_meta, new_run_id
 from twl.records import read_jsonl
@@ -279,6 +279,17 @@ async def run(args: argparse.Namespace) -> None:
             stt=replace(cfg.stt, commit=replace(cfg.stt.commit, duration_prior_s=round(med, 3))),
         )
         prior_source = f"median wav duration of {args.wav_dir} (n={n_files})"
+    if args.assert_prior_from:
+        # A stated prior (live runs have no wav dir) is checked against the set
+        # it claims to describe, so a typo or a changed set cannot slip by.
+        med, n_files = median_wav_duration_s(Path(args.assert_prior_from))
+        stated = cfg.stt.commit.duration_prior_s
+        if abs(med - stated) > 0.01:
+            raise SystemExit(
+                f"duration prior {stated} s != median wav duration {med:.3f} s "
+                f"of {args.assert_prior_from} (n={n_files})"
+            )
+        prior_source = f"stated {stated} s, asserted against {args.assert_prior_from} (n={n_files})"
     if args.llm_backend is not None:
         cfg = replace(cfg, llm=replace(cfg.llm, backend=args.llm_backend))
     arms = [a for a in args.interleave_policies.split(",") if a.strip()]
@@ -479,6 +490,15 @@ async def run(args: argparse.Namespace) -> None:
             theta=args.theta,
             horizon_s=args.horizon_s,
         )
+        if isinstance(policy, AllocatorPolicy):
+            # The p_usable curve the allocator gates on was measured on
+            # multi_step; on any other set it would be a constant carried
+            # across corpora (CLAUDE.md §6). Asserted, not assumed.
+            if args.live or "multi_step" not in str(args.wav_dir):
+                raise SystemExit("--policy allocator: its p_usable curve is multi_step's")
+            if cfg.stt.commit.duration_prior_s <= 0:
+                raise SystemExit("--policy allocator needs the derived duration prior")
+            policy.allocator.expected_duration_s = cfg.stt.commit.duration_prior_s
         # A policy that can speculate needs a driver even when --spec-tokens is
         # 0, because the BUDGET now comes from the policy, not the flag.
         speculation = (
@@ -554,6 +574,15 @@ async def run(args: argparse.Namespace) -> None:
             )
         built_box.append(built.turns)
         built_box.append(built.observer)
+        if isinstance(policy, AllocatorPolicy):
+            turns_ = built.turns
+            policy.offset_fn = lambda: turns_.last_emitted_offset_s
+            policy.turn_fn = lambda: turns_.turn
+            policy.rate_fn = (
+                (lambda: speculation.observed_ms_per_token)
+                if speculation is not None
+                else (lambda: 34.0)
+            )
         if isinstance(source, FileFrameSource):
             # Ground truth for the endpoint check: the file source knows when
             # each utterance actually stopped, which the pipeline's VAD does
@@ -907,6 +936,13 @@ def main() -> None:
         "gate is awaited -- so it overlaps the final, the LLM and the TTS and is NOT "
         "a post-reply pause (that is --gate-quiet-ms). Files are isolated by the "
         "gate, not by this.",
+    )
+    p.add_argument(
+        "--assert-prior-from",
+        type=Path,
+        default=None,
+        help="assert at start that the config's stated duration_prior_s equals the "
+        "median wav duration of this directory (live runs, which have no wav dir)",
     )
     p.add_argument(
         "--gate-quiet-ms",

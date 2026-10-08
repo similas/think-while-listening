@@ -210,6 +210,7 @@ class TurnManager:
         self.hypotheses_written = 0
         self.spans_written = 0
         self._committed_words = 0
+        self._committed_text_words = -1
         self._committed_end_s = 0.0
         self._final_tail_s = -1.0
         self._total_words = 0
@@ -245,6 +246,12 @@ class TurnManager:
         self._worker_ready_at_open = -1
         self._worker_busy_at_open = -1
         self._worker_stopped_at_open = -1
+        self.last_emitted_offset_s = -1.0
+        # Audio position (s into the turn) of the latest partial that was
+        # EMITTED, set before its frame is pushed. The allocator's f_hat reads
+        # this, not wall clock: a partial is emitted only after its decode, so
+        # wall-clock elapsed would count the decode twice (pass 6 registration).
+        self.last_emitted_offset_s = -1.0
         # Callbacks keyed by stage name, fired after the mark is written. The
         # hot spare respawns on "audio_out_first", the first instant after
         # every interval TTFA measures.
@@ -503,11 +510,13 @@ class TurnManager:
         *,
         committed_words: int,
         committed_end_s: float,
+        committed_text_words: int = -1,
         final_tail_s: float,
         total_words: int,
     ) -> None:
         """What COMMIT-WL bought this turn, recorded at the final."""
         self._committed_words = committed_words
+        self._committed_text_words = committed_text_words
         self._committed_end_s = committed_end_s
         self._final_tail_s = final_tail_s
         self._total_words = total_words
@@ -655,6 +664,8 @@ class TurnManager:
                 rec.decode_ms = round(decode_ms, 1)
                 rec.done_ms = round((done_ns - self._clock.origin_ns) / 1e6, 1)
                 rec.emitted = emitted
+                if emitted:
+                    self.last_emitted_offset_s = offset_s
                 return
 
     def _turn_energy_j(self, clock: TurnClock) -> float:
@@ -1007,6 +1018,7 @@ class TurnManager:
             energy_j=round(self._turn_energy_j(clock), 4),
             idle_power_mw=round(self._idle_mw, 1),
             committed_words=self._committed_words,
+            committed_text_words=self._committed_text_words,
             total_words=self._total_words,
             committed_end_s=round(self._committed_end_s, 3),
             final_tail_s=round(self._final_tail_s, 3),

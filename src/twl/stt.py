@@ -1011,7 +1011,12 @@ class StreamingWhisperSTT(STTService):
             # only. The full utterance is recoverable from the saved segment.
             self._turns.set_stt_audio_seconds(len(audio) / self.sample_rate)
             self._turns.set_commit_stats(
+                # SEGMENTS under segment granularity, words under word
+                # granularity -- the committer's own unit. The WORD count of
+                # the committed text is recorded separately (P8 is a word
+                # fraction; the two were conflated until 2026-10-08).
                 committed_words=len(self._committer.committed),
+                committed_text_words=len(committed_text.split()),
                 committed_end_s=tail_from_s,
                 final_tail_s=len(audio) / self.sample_rate,
                 total_words=len(text.split()),

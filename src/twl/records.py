@@ -219,7 +219,11 @@ class TurnRecord:
     idle_power_mw: float = -1.0
     # COMMIT-WL: how much of the transcript was already committed when the
     # endpoint arrived, and how much audio the final was left to decode.
+    # The committer's UNIT: segments under segment granularity. Not words.
     committed_words: int = 0
+    # Words in the committed text -- what P8's word fraction needs. -1 before
+    # 2026-10-08, when only the committer's unit was recorded.
+    committed_text_words: int = -1
     total_words: int = 0
     committed_end_s: float = 0.0
     final_tail_s: float = -1.0

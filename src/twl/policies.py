@@ -30,8 +30,10 @@ from __future__ import annotations
 
 import itertools
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +59,9 @@ class PolicyKind(str, Enum):
     # on every commit.
     SPEC_CONTINUE = "spec_continue"
     SPEC_TRIGGER = "spec_trigger"
+    # v3 §2.3: listener (COMMIT-WL) + a thinker gated by measured usability
+    # and feasibility, every decision logged with its inputs.
+    ALLOCATOR = "allocator"
     BUDGET_R = "budget_r"
     # Prefill-while-listening: warm the slot with the partial transcript during
     # speech so the ANSWER inherits its prefix. Spends no tokens on a draft, so
@@ -79,9 +84,12 @@ class Decision:
     resend: bool = False
     # Warm the slot but decode nothing: value without spending a draft.
     prefill_only: bool = False
+    # Every input that decided it, for policies whose decision is a function
+    # of more than the partial (the allocator). Logged as given.
+    inputs: dict[str, Any] | None = None
 
-    def as_dict(self) -> dict[str, float | str | bool]:
-        return {
+    def as_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "speculate": self.speculate,
             "budget_tokens": self.budget_tokens,
             "reason": self.reason,
@@ -89,6 +97,9 @@ class Decision:
             "contended": self.contended,
             "resend": self.resend,
         }
+        if self.inputs is not None:
+            d["inputs"] = dict(self.inputs)
+        return d
 
 
 @dataclass
@@ -387,6 +398,8 @@ def build_policy(
         return PrefillAlways()
     if kind == PolicyKind.SPEC_TRIGGER:
         return SpecTrigger(budget_tokens=budget_tokens, theta=theta, horizon_s=horizon_s)
+    if kind == PolicyKind.ALLOCATOR:
+        return AllocatorPolicy()
     raise ValueError(f"unknown policy {kind!r}; known: {[k.value for k in PolicyKind]}")
 
 
@@ -492,3 +505,98 @@ class WindowAllocator:
             "remaining_ms": round(remaining_ms, 1),
             "ms_per_token": round(ms_per_token, 2),
         }
+
+
+# Greedy p_usable by fraction heard, MULTI_STEP ONLY: the offline prefix probe,
+# run B (T=0), NOTES 2026-09-22c. A measurement of one set; the harness asserts
+# the allocator runs on that set (pass 6 registration, 71d1612).
+MULTI_STEP_GREEDY_P_USABLE: tuple[tuple[float, float], ...] = (
+    (0.25, 0.013),
+    (0.50, 0.025),
+    (0.75, 0.062),
+    (0.90, 0.188),
+)
+
+
+def window_model_ms(f: float, d_s: float) -> float:
+    """The registered window(f) (2026-09-22d): speech left after the partial at
+    audio position f*D has been decoded. decode = 1410 + 15.2 x audio_s."""
+    from twl.pacing import modelled_decode_ms
+
+    return d_s * 1000.0 * (1.0 - f) - modelled_decode_ms(f * d_s)
+
+
+@dataclass
+class AllocatorPolicy(SpecContinue):
+    """v3 §2.3: the thinker branch of the window allocator, as a Policy.
+
+    The LISTENER branch is the STT service (COMMIT-WL-STOP + gate); this is
+    only the thinker half. At each emitted partial it asks WindowAllocator for
+    a budget, from the partial's AUDIO POSITION (not wall clock), the derived
+    duration prior, the registered window model and the speculation driver's
+    live rate -- and logs every input. At most one draft per turn, which is
+    SpecContinue's own semantics; a later spend decision in the same turn is
+    logged as not acted on.
+
+    On multi_step at the starting 34 ms/token this returns B=0 for every
+    possible f_hat by arithmetic (pass 6 registration): it tests the wiring
+    and the decision log, which is what v3 §2.3 expects to see.
+    """
+
+    kind: PolicyKind = PolicyKind.ALLOCATOR
+    # THE PLAIN PROMPT, not SpecContinue's PredGen one. The policy's prompt is
+    # also the ANSWER's prompt (services.answer_system_prompt), so inheriting
+    # PREDGEN_SYSTEM would change every reply relative to the STOP+gate arm the
+    # allocator is read beside -- on a pass where the thinker is expected to
+    # spend nothing at all. A draft, if one is ever spent, shares this prompt,
+    # so the slot's prefix still matches the answer's.
+    system_prompt: str = PLAIN_SYSTEM
+    allocator: WindowAllocator = field(
+        default_factory=lambda: WindowAllocator(p_usable_curve=MULTI_STEP_GREEDY_P_USABLE)
+    )
+    # Set by the harness once the pipeline exists.
+    offset_fn: Callable[[], float] | None = None
+    rate_fn: Callable[[], float] | None = None
+    turn_fn: Callable[[], int] | None = None
+    _spent_turn: int = field(default=-1, init=False, repr=False)
+
+    def decide(self, partial: str, p_done: float, contended: bool) -> Decision:
+        d_hat = self.allocator.expected_duration_s
+        x = self.offset_fn() if self.offset_fn is not None else -1.0
+        rate = self.rate_fn() if self.rate_fn is not None else SPEC_DECODE_MS_PER_TOKEN
+        turn = self.turn_fn() if self.turn_fn is not None else -1
+        if x < 0 or d_hat <= 0:
+            return Decision(
+                False,
+                0,
+                "allocator: no audio position",
+                p_done,
+                contended,
+                inputs={"offset_s": x, "d_hat_s": d_hat},
+            )
+        f_hat = x / d_hat
+        window = window_model_ms(f_hat, d_hat)
+        out = self.allocator.decide(elapsed_s=x, remaining_ms=window, ms_per_token=rate)
+        inputs: dict[str, Any] = {**out, "offset_s": round(x, 3), "d_hat_s": d_hat, "turn": turn}
+        budget = int(out["budget_tokens"])
+        if budget > 0 and turn == self._spent_turn:
+            inputs["not_acted"] = "one draft per turn"
+            return Decision(
+                False,
+                0,
+                f"allocator: {out['reason']} (turn already spent)",
+                p_done,
+                contended,
+                inputs=inputs,
+            )
+        if budget > 0:
+            self._spent_turn = turn
+        return Decision(
+            budget > 0,
+            budget,
+            f"allocator: {out['reason']}",
+            p_done,
+            contended,
+            resend=False,
+            inputs=inputs,
+        )
