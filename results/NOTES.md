@@ -7005,3 +7005,33 @@ arrive in bursts, and 7 of 72 STOP turns (1 of 51 scored) opened on a frozen
 worker and listened without hypotheses.
 
 Per the decision of 2026-10-07, this was the final preemption attempt.
+
+## 2026-10-08 — CORRECTION to "P9c HOLDS" (reviewer, 5 findings on the entry)
+
+1. "PASSES EVERY VALIDITY CHECK" IS REPLACED. P9c passes every ENFORCED check
+   (1 as amended, 3, 4, 5). Check 2, which voids under 3894a8c as registered,
+   was made report-only by amendment 4184a7d BEFORE the run: 7 of 72 STOP
+   turns opened unready, 1 of 51 scored. Under the original registration this
+   attempt would be NOT TESTABLE. That is stated wherever the result is.
+
+2. THE HEADLINE CARRIES ITS CI: +462 ms [+57, +737], n=16. The verdict rule is
+   on the point estimate and holds, but the CI's lower end is below the 150 ms
+   bar: the data do not exclude a gain smaller than the bar.
+
+3. "AN ORPHAN COSTS THE FINAL ~420 ms" IS REPLACED. +421 ms [+39, +597], n=17
+   is the paired item-median difference between the arms, not the cost of one
+   orphan: only 53-61 % of turns have a decode in flight. The per-orphan
+   measure in this run is the within-item RACE contrast, in-flight minus not,
+   +0.22x [+0.04, +0.53] on n=8 items -- twice P9's corrected +0.11x [+0.03,
+   +0.50] on n=7. Both small-n, CIs overlapping.
+
+4. "REMOVING IT NEEDS THE DECODE IN A SEPARATE PROCESS" IS REPLACED: every
+   removal tested here put the decode in a separate process. An interruptible
+   decode within one process was never tried.
+
+5. THE RESULT IS CONDITIONAL ON THE 3 s POST-REPLY QUIET PERIOD. Expecting zero
+   check-1 hits rested on the gate waiting for a resumed stale decode to finish
+   (~4 s wall, frozen time included). Nothing here shows the policy safe with a
+   shorter pause or in live use. And each of the 34 resumed stale decodes ran
+   to completion only to be discarded: their CPU and energy are spent for
+   nothing, which any energy accounting of this design must carry.
