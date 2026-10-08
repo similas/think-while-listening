@@ -7164,3 +7164,81 @@ multi_step ~31-34 min per run x 6, dev ~3 min x 6: ~3.5-3.8 h. Each
 multi_step run exceeds 30 min; the user approved ~4 h for the pass.
 
 Reviewed before commit (10 findings, resolved into the text above).
+
+## 2026-10-08 — PASS 2k: P3 HOLDS. +357 ms on multi_step, inside the predicted bracket; the gate abstains on dev
+
+COMMIT-WL-STOP + feasibility gate vs REACTIVE-NOPARTIAL, registered 3228b69,
+build a30db4a clean, both arms --gate-quiet-ms 3000, the registered 12-run
+interleaved sequence, 2026-10-08 10:32-14:05. Scored ONCE by
+src/scripts/p2k_score.py (committed before the run); output saved beside the
+driver log. Runs: multi_step STOP abd218, d2b5ad, f94b44; NOPARTIAL 1f7989,
+9ae173, 54285c; dev STOP 585574, 9aab0d, eda306; NOPARTIAL 6c121f, 58fcc2,
+12b836 (results/raw/reactive/reactive-20261008-*).
+
+### Validity: all clean, no run void
+
+    check 1  resumed stale decodes in a scored endpoint-to-final window: 0;
+             in any other window: 0 (all 12 runs)
+    check 3  multi_step stops STOP 58, NOPARTIAL 0
+    check 4  continues = discarded in every STOP run (22/22, 17/17, 19/19)
+    check 5  one clean build; gate_quiet_ms 3000 in all 12 run_meta
+    every run wrote run_complete; none marked RUN INVALID
+    check 2 (report-only): STOP opened unready 5 turns per multi_step run,
+             0 of them scored; dev 0. The bias it could carry is absent from
+             the scored data.
+    prior (derived at run start): multi_step 15.399 s, dev 1.591 s
+
+### Verdicts
+
+    P3 multi_step  TTFA reduction NOPARTIAL - STOP  +357 ms [+294, +412]  n=70
+                   -> HOLDS (>= 300, CI excluding 0); INSIDE the 350-450 ms
+                   bracket registered 2026-10-04; secondary >= 1000: no
+    DEV            gate check: STOP issued 0 hypotheses, 0 stops in 3 runs ->
+                   THE GATE ABSTAINED
+                   TTFA NOPARTIAL - STOP  +2 ms [-15, +15]  n=16 -> within +/-100
+    P4             dWER STOP - NOPARTIAL: multi_step median -0.0000, mean
+                   +0.0043 (n=70); dev median -0.0000, mean +0.0000 (n=16)
+                   -> HOLDS on both (<= +0.020)
+    P6             STOP final / solo model: multi_step 0.95x [0.94, 0.96]
+                   (turn-pooled 0.94x); dev 0.97x [0.96, 0.98] (0.97x)
+                   -> HOLDS on both (<= 1.3x)
+    P7 multi_step  joules per ms saved, ratio of paired medians, n=70:
+                   raw +0.0443 J/ms [+0.0353, +0.0557]
+                   net +0.0499 J/ms [+0.0425, +0.0607]
+                   per-item median (secondary, 4 items with no saving out):
+                   raw +0.0410, net +0.0479 (n=66)
+    STALE DECODE COST, reported separately: 58 resumed-and-discarded stale
+                   decodes, all 58 measured; per decode raw median 3.10 J,
+                   net median 0.60 J; total raw 302.1 J over 3 STOP runs.
+
+### Reading it
+
+THE CLAIM v3 MADE HOLDS: on a long-utterance corpus, giving the listening
+window to the recognizer -- committing a stable prefix while the user is still
+speaking, with the hypothesis decode frozen rather than orphaned at the
+endpoint -- cuts median time-to-first-audio by 357 ms [+294, +412], at no
+measurable accuracy cost, and the gate keeps the mechanism from charging short
+utterances anything (dev +2 ms [-15, +15]).
+
+THE CI'S LOWER END (+294) IS JUST BELOW THE 300 ms BAR. The verdict rule is on
+the point estimate and the CI excluding 0, and both are met; the data do not
+exclude an effect slightly below the bar. The point estimate sits inside the
+350-450 ms bracket my own arithmetic predicted on 2026-10-04.
+
+THE POWER STATEMENT WAS PESSIMISTIC. It took pass 2's multi_step dispersion
+(CI half-width ~270 ms) and predicted ~385 ms detectable; the realised
+half-width is ~60 ms. Pass 2's arm was a regressing, high-variance arm; the
+STOP arm is not. Recorded, not used to reinterpret anything.
+
+THE PRICE IS ENERGY. 357 ms of TTFA costs ~0.044 J per millisecond saved, about
+16 J per multi_step turn raw. The stale decodes that the design resumes only to
+discard account for a median 0.60 J net each. That trade -- latency for joules
+-- is the Discussion's battery-aware-policy question, as restated for P7 on
+2026-10-06.
+
+NOT A PAIRED COMPARISON WITH PASS 2. Pass 2 (2026-10-05, build 65550d5-era,
+gate pause 1000 ms, NOPARTIAL from pass 1n) measured COMMIT-WL at -155 ms
+against NOPARTIAL. Pass 2k's +357 ms is against a NOPARTIAL re-run in the same
+session at the same gate pause. The two differ in the preemption, the gate,
+the gate pause and the build; the difference between them is context, not a
+measured effect of any one change.
