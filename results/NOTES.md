@@ -6930,3 +6930,78 @@ ORDER: this amendment is committed first; then the build that implements it
 scorer changes, drivers with --gate-quiet-ms 3000) with make check passing;
 then one smoke; then the run. Reviewed before commit (6 findings, resolved
 into the text above).
+
+## 2026-10-08 — P9c HOLDS. Freezing the orphan at the endpoint saves 462 ms of TTFA, all of it in the final
+
+The final preemption attempt: registration 3894a8c, amended 4184a7d before the
+run, build 95fcbdf clean, interleaved STOP,RACE x 3 on single_step_set,
+2026-10-07 19:02-19:37, --gate-quiet-ms 3000 in all six (verified in
+run_meta). Scored ONCE by src/scripts/p9c_score.py; mechanism detail from
+src/scripts/p9_score.py. Runs: reactive-20261007-190211-8058b3,
+-191402-ee2912, -192552-827254 (STOP); -190807-fdf53c, -191955-5cd9f4,
+-193147-91df38 (RACE).
+
+### Validity: every check passes
+
+    check 1  continued stale decodes inside an endpoint-to-final window:
+             0 on scored items, 0 on any other window, all six runs
+    check 3  stops STOP 37, RACE 0
+    check 4  continues = discarded by sequence number in every run (one stop
+             per STOP run still frozen at teardown, as expected)
+    check 5  one clean build, gate_quiet_ms 3000 in all six run_meta
+    stop latency after the STT endpoint: median 0.1 ms, max 0.1, n=37
+    check 2 (reported, not enforced): STOP turns opened unready 7 of 72, of
+             which 1 of 51 scored turns (0.02); RACE 0
+
+### Verdicts
+
+    P9b-a  STOP final / solo model  0.93x [0.92, 0.98]  n=17 items  -> HOLDS
+           (expected 0.91x; bar <= 1.1x)
+    P9b-b  paired TTFA RACE - STOP  +462 ms [+57, +737] n=16        -> HOLDS
+           (expected ~200 ms; bar >= 150 ms with CI lower > 0)
+    SENSITIVITY, items ever unready dropped (not the verdict):
+           0.93x [0.92, 0.98];  +459 ms [+57, +540] n=15
+           -- one item dropped; the unready bias is negligible here.
+
+    P9c HOLDS.
+
+### Where it comes from
+
+                         STOP                  RACE
+    final_ms             1834 [1768, 1933]     2205 [1972, 2487]
+    TTFA                 3276 [3055, 3330]     3588 [3505, 3883]
+    committed audio      3.44 s                3.44 s   (paired +0.00)
+
+    paired RACE - STOP  final_ms               +421 [+39, +597]  n=17
+                        TTFA                   +462 [+57, +737]  n=16
+                        TTFA - final residual    +8 [-13, +81]   n=16
+                        LLM TTFT                 +1 [+1, +3]     n=16
+                        TTS first chunk          +1 [-7, +13]    n=16
+
+The residual is consistent with zero: the TTFA gain is the final-decode gain,
+and the reply side does not move. Committed audio is identical between arms,
+so the gain is the same tail decoded on cores the orphan no longer holds.
+
+THE OVERHANG COLUMN MUST NOT BE READ AS CPU. p9_score reports STOP's overhang
+as 4045 ms when a decode is in flight -- that is the wall time until the frozen
+decode completes after SIGCONT, frozen time included. The decode stops using
+CPU 0.1 ms after the endpoint; check 1 confirms it never ran inside any final's
+window.
+
+The gain is about twice the registered expectation (~200 ms). The expectation
+came from P9's within-item contrast on n=7 items, which the 2026-10-06 notes
+already identified as the weak estimator; the CI here [+57, +737] contains it.
+
+### What P9, P9b and P9c establish together
+
+A hypothesis decode left running at the endpoint costs the final ~420 ms on
+this set, because cancelling the task does not stop the thread. Removing it
+needs the decode in a separate process. Killing it and respawning failed twice
+on harness timing -- a respawn landed on a split's pending final in both
+attempts, voiding them by their own rule. Freezing it (SIGSTOP) and resuming
+only when the recognizer is idle needs no respawn, holds both predictions, and
+passes every validity check. Its one cost: on this corpus endpoints sometimes
+arrive in bursts, and 7 of 72 STOP turns (1 of 51 scored) opened on a frozen
+worker and listened without hypotheses.
+
+Per the decision of 2026-10-07, this was the final preemption attempt.
