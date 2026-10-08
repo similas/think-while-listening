@@ -7327,3 +7327,132 @@ arms share it. Recorded in every run_meta; the scorers check it.
             composition and pre-registered before its run.
     pass 9  live mic, own voice (v3 §5)                         needs the user
             at the box to speak 30 turns.
+
+## 2026-10-08 — PRE-REGISTRATION for 2026-10-09: passes 8, 6, 7, 9, 1r. Committed before the allocator build
+
+Every pass: one clean build (whichever commit follows this entry and the
+allocator build, with make check green), --gate-quiet-ms 3000 (DECISION
+above), --clocks, watchdog, recorded utterance index, no repo activity during a
+run. A run voided by an invariant is reported with its cause and not re-run.
+MEASUREMENT FREEZES WHEN 1r LANDS. Order: 8, 6, 7, then 9 and 1r -- ORDER OF
+9 AND 1r PENDING THE USER: running 1r before 9 would freeze measurement before
+pass 9, so either 9 runs first (at a time the user is at the box) or the user
+approves 9 after the freeze. Recorded as an amendment before either runs.
+
+### Pass 8 -- REACTIVE dense, window(f). multi_step, 2 reps
+
+Config src/configs/reactive_mqa.yaml (partials every 2.5 s, the dense cadence
+the window(f) registration of 2026-09-22d called for).
+PREDICTION, registered 2026-09-22d and unchanged: f*, the fraction at which a
+10-token draft (340 ms + 250 ms margin = 590 ms of window) stops being
+feasible, is 0.858 on the median utterance (Q1 0.833, Q3 0.884). FALSIFIED if
+the measured f* on the median utterance is >= 0.90.
+ESTIMATOR, fixed now (score_live_window.py cannot produce it; a new script,
+src/scripts/fstar_score.py, is committed before the run):
+  per partial: f = audio offset at issue / D, window = D - (partial's decode
+    done, on the turn clock) -- the time between the partial landing and the
+    end of speech; D = speech_end_est (the VAD's speech length; the 0.858
+    prediction used the WAV median, a difference stated, not corrected);
+  per turn: f* by linear interpolation where window crosses 590 ms between
+    consecutive partials; a turn whose partials never cross (all above, or
+    already below at the first) is CENSORED, counted and excluded;
+  valid, non-split turns only; the 2 reps combine as the per-item median f*;
+  THE NUMBER SCORED: the median per-item f* over items whose D lies in the
+    set's measured IQR, with a bootstrap CI over items; the all-items median
+    reported beside it. At a 2.5 s cadence every f* is an interpolation
+    across ~2.5 s of audio, which is stated with it.
+P8, descriptive, AMENDED: the registration (2026-09-23g) said "on the same
+items"; the halves come from different sources and are labelled so. LISTENER:
+committed_words / total_words per item over pass 2k's STOP multi_step common
+set (n = 70), computed by fstar_score.py --p8 from those records. THINKER: the
+probe's greedy p_usable curve value at the measured f* -- a curve value, not
+an item measure.
+
+### Pass 6 -- ALLOCATOR (v3 §2.3). multi_step, 1 rep
+
+LISTENER BRANCH: COMMIT-WL-STOP + feasibility gate, exactly pass 2k's treatment
+(commit_wl_stop_gate.yaml). THINKER BRANCH: at every emitted partial,
+twl.policies.WindowAllocator decides a budget, AT MOST ONE DRAFT PER TURN
+(SpecContinue semantics; later spend decisions in the same turn are logged and
+not acted on):
+    f_hat      = x / D_hat, where x is the AUDIO POSITION of the emitted
+                 partial at its issue (buffer end, the gate's own clock) and
+                 D_hat the derived prior (multi_step 15.399 s). Not wall clock:
+                 a partial is emitted only after its decode, so wall-clock
+                 elapsed would count the decode twice.
+    p_hat      = greedy p_usable(f_hat) on the measured curve (0.25, 0.013)
+                 (0.50, 0.025) (0.75, 0.062) (0.90, 0.188) (2026-09-22c run B),
+                 clamped outside it; ASSERTED at run start that the wav dir is
+                 multi_step, the set it was measured on
+    window     = D_hat(1 - f_hat) - decode(f_hat D_hat), decode = 1410 + 15.2 x
+                 audio_s (the registered 2026-09-22d model, whose f is the
+                 audio position at issue)
+    rate       = the speculation driver's live ms/token: 34 until a draft is
+                 spent, an EWMA of completed drafts after; LOGGED on every
+                 decision
+    B          = 0 if p_hat < p* = 0.14121; else BudgetR.feasible_budget(window,
+                 rate, margin 250 ms, arms 0/16/32/48/64/96)
+WHAT THIS PASS CAN AND CANNOT SHOW, stated now. p_hat reaches p* at f_hat =
+0.8443; at 34 ms/token B=16 needs 794 ms of window, which lasts only to f_hat =
+0.8440. AT THE STARTING RATE B = 0 FOR EVERY POSSIBLE f_hat, BY ARITHMETIC. The
+band opens only if the rate falls below 33.75 ms/token, and the rate moves only
+when a draft is spent. So pass 6 tests the WIRING and the DECISION LOG -- the
+v3 §2.3 expectation that "the thinker branch emits B=0 on every turn by
+measurement, and the log shows why" -- not a judgement the allocator could get
+wrong. CHECKS, within the run: spend decisions = 0; drafts issued = 0; every
+decision record carries reason below_break_even (f_hat < 0.8443) or
+infeasible (f_hat >= 0.8443) with all inputs. Any spend is reported as a bug
+or a rate change, with its inputs. The side-by-side with pass 2k's STOP+gate
+(TTFA, WER, energy) is DESCRIPTIVE: across run, across build, temperature 0.5.
+
+### Pass 7 -- SPEC-CONTINUE, energy on. multi_step, 1 rep
+
+The thinker-side consumer for the head-to-head table (v3 §5). COMPARATOR
+PENDING THE USER: SPEC-CONTINUE runs on canonical REACTIVE partials
+(reactive.yaml), and canonical REACTIVE runs in no arm tomorrow. Proposed:
+interleave REACTIVE and SPEC-CONTINUE per turn within one run
+(--interleave-policies reactive,spec_continue), paired per item, ~66 min.
+Alternative: SPEC-CONTINUE alone, ~33 min, within-arm quantities only (draft
+usability, overlap rate, J/turn), no TTFA contrast read. Either way it is
+DESCRIPTIVE -- no falsifiable prediction -- and any comparison with pass 2k is
+across run and build and labelled so.
+
+### Pass 1r -- residency. dev, 3 reps per arm, interleaved
+
+As registered 2026-10-02c, with the comparator re-run in this session:
+REACTIVE-NOPARTIAL (both engines resident) against REACTIVE-NOPARTIAL-UNLOADED
+(partial_model empty, tiny never built), sequence U,N / N,U / U,N. Scored by
+src/scripts/p1r_score.py, committed before the run: pairs the arms by the
+recorded utterance index with the standing split and endpoint_after_final
+exclusions, checks one build and gate_quiet_ms 3000 in all six runs.
+PREDICTION: paired TTFA, NOPARTIAL minus UNLOADED, per item, three branches:
+  >= 100 ms, CI excluding 0 -> residency cost measured; enters T-EPA as
+      "+134 MB, +X ms".
+  0 < point < 100 ms, CI excluding 0 -> residency cost measured as +X ms,
+      SMALLER than the ~185 ms 2026-09-15 remainder, which is then partly drift.
+  CI including 0 -> no residency cost detected; it EXCLUDES costs above the
+      CI's upper bound; the remainder is recorded as harness drift.
+The ~185 ms remainder is a CROSS-DATE quantity and is cited as context only.
+
+### Pass 9 -- live mic, own voice. PROTOCOL PENDING THE USER
+
+REACTIVE-NOPARTIAL and COMMIT-WL-STOP + gate, MicFrameSource, the user
+speaking. DESCRIPTIVE realism check (v3 §5): do the stage shares and the
+mechanism hold on a person. PROPOSED, to be confirmed or amended before the
+pass:
+  - 16 multi_step items, read aloud, four runs of 8 turns in the order
+    N, S, S, N; items 1-8 in runs 1 and 2, items 9-16 in runs 3 and 4, so each
+    item is read once per arm and each arm reads first equally often;
+  - live STOP config with duration_prior_s 15.399 as a CONSTANT, asserted at
+    start against the multi_step wav median (a live run has no wav dir of its
+    own; run_reactive refuses a derived prior with --live);
+  - --live-seconds with headroom (~8 turns x ~25 s), turns != 8 per run
+    reported as splits or merges; replies played on the room speaker so the
+    speaker knows when to start the next item;
+  - WER scored against the item text; misreadings logged per turn and the WER
+    reported as an upper bound;
+  - TTFA, stage shares, committed fraction, gate decisions, unready turns per
+    arm. The N-vs-S contrast is reported as descriptive (n = 16 items, one
+    reading each, a person's variation in it).
+
+Reviewed before commit (11 findings: 8 resolved in the text above; 3 left to the user and marked PENDING -- the order of 9 and 1r, pass 7 comparator, pass 9 protocol).
