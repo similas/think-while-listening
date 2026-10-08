@@ -249,8 +249,36 @@ def summarize_run(turns_path: Path) -> str:
     return "\n".join(lines)
 
 
+def median_wav_duration_s(wav_dir: Path) -> tuple[float, int]:
+    """Median duration of the wavs in a set, and how many there were."""
+    import statistics
+    import wave
+
+    durs = []
+    for f in sorted(Path(wav_dir).glob("*.wav")):
+        with wave.open(str(f), "rb") as w:
+            durs.append(w.getnframes() / w.getframerate())
+    if not durs:
+        raise SystemExit(f"no wavs in {wav_dir} to derive a duration prior from")
+    return statistics.median(durs), len(durs)
+
+
 async def run(args: argparse.Namespace) -> None:
     cfg = load_config(args.config)
+    # THE FEASIBILITY GATE'S PRIOR IS DERIVED, NOT TYPED (pass 2k, 3228b69). A
+    # negative duration_prior_s in the config means "the median duration of
+    # the wavs this run plays"; a constant carried from one corpus to another
+    # is the failure CLAUDE.md §6 names. Recorded in run_meta.harness.
+    prior_source = "config"
+    if cfg.stt.commit.duration_prior_s < 0:
+        if args.live or not args.wav_dir:
+            raise SystemExit("duration_prior_s < 0 derives the prior from --wav-dir; none given")
+        med, n_files = median_wav_duration_s(Path(args.wav_dir))
+        cfg = replace(
+            cfg,
+            stt=replace(cfg.stt, commit=replace(cfg.stt.commit, duration_prior_s=round(med, 3))),
+        )
+        prior_source = f"median wav duration of {args.wav_dir} (n={n_files})"
     if args.llm_backend is not None:
         cfg = replace(cfg, llm=replace(cfg.llm, backend=args.llm_backend))
     arms = [a for a in args.interleave_policies.split(",") if a.strip()]
@@ -328,6 +356,8 @@ async def run(args: argparse.Namespace) -> None:
                 "drain_ms": DRAIN_MS,
                 "gap_ms": args.gap_ms,
                 "gate_timeout_s": GATE_TIMEOUT_S,
+                "duration_prior_s": cfg.stt.commit.duration_prior_s,
+                "duration_prior_source": prior_source,
             },
             notes=(
                 f"REACTIVE {'live-mic' if args.live else 'file-playback'} run; "

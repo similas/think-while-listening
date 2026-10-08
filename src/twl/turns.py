@@ -247,6 +247,8 @@ class TurnManager:
         # every interval TTFA measures.
         self._stage_listeners: dict[str, list[Callable[[], None]]] = {}
         self._worker_event_lock = threading.Lock()
+        self._stale_owner: dict[tuple[str, Any], tuple[int, float]] = {}
+        self._cont_ns: dict[str, int] = {}
         self._closed = False
         self._idle_mw = -1.0
         # How the last turn ended. The playback gate refuses to release on an
@@ -324,6 +326,28 @@ class TurnManager:
         """
         clock = self._clock
         t_ms = (ns - clock.origin_ns) / 1e6 if clock is not None else -1.0
+        extra = dict(extra or {})
+        worker = extra.get("worker", "?")
+        # THE COST OF A DISCARDED STALE DECODE (pass 2k, P7). It runs after
+        # playback_done, outside every turn's [open, first audio] energy
+        # window, so it is integrated here, live, over [SIGCONT, result
+        # received], and charged to the turn whose endpoint froze it. Raw is
+        # whole-board VDD_IN; the frozen turn's quiescent idle baseline is
+        # recorded beside it so the net figure can be taken in analysis.
+        if event == "stop":
+            self._stale_owner[(worker, extra.get("seq"))] = (self._turn, self._idle_mw)
+        elif event == "cont":
+            self._cont_ns[worker] = ns
+        elif event == "stale_discarded":
+            owner_turn, owner_idle = self._stale_owner.pop((worker, extra.get("seq")), (-1, -1.0))
+            c0 = self._cont_ns.pop(worker, None)
+            extra["frozen_turn"] = owner_turn
+            extra["frozen_turn_idle_mw"] = round(owner_idle, 1)
+            if c0 is not None:
+                extra["window_ms"] = round((ns - c0) / 1e6, 1)
+                extra["energy_raw_j"] = (
+                    round(self._energy_fn(c0, ns), 4) if self._energy_fn is not None else -1.0
+                )
         with self._worker_event_lock:
             write_jsonl(
                 self._fh,
@@ -334,7 +358,7 @@ class TurnManager:
                     ns=ns,
                     t_ms=round(t_ms, 1),
                     pid=pid,
-                    extra=dict(extra or {}),
+                    extra=extra,
                 ),
             )
 

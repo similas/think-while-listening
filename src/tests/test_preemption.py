@@ -386,3 +386,43 @@ def test_the_gate_pause_is_recorded_in_run_meta() -> None:
         harness={"gate_quiet_ms": 3000.0},
     )
     assert m.harness["gate_quiet_ms"] == 3000.0
+
+
+def test_the_stale_decode_is_charged_its_energy_at_discard(tmp_path: Path) -> None:
+    """Pass 2k P7: a resumed stale decode runs outside every turn's energy
+    window, so its energy is integrated at discard and charged to the turn
+    whose endpoint froze it."""
+    m = TurnManager(
+        "t", tmp_path / "turns.jsonl", META, {}, energy_fn=lambda a, b: (b - a) / 1e9 * 5.0
+    )
+    m.turn_started(now_ns())
+    m.note_worker_event("stop", ns=now_ns(), extra={"worker": "a", "seq": 3})
+    c = now_ns()
+    m.note_worker_event("cont", ns=c, extra={"worker": "a"})
+    m.note_worker_event("stale_discarded", ns=c + 2_000_000_000, extra={"worker": "a", "seq": 3})
+    m.finish_turn()
+    ev = [json.loads(x) for x in (tmp_path / "turns.jsonl").read_text().splitlines()]
+    d = next(x for x in ev if x["kind"] == "worker_event" and x["event"] == "stale_discarded")
+    assert d["extra"]["frozen_turn"] == 1
+    assert d["extra"]["window_ms"] == 2000.0
+    assert abs(d["extra"]["energy_raw_j"] - 10.0) < 1e-6
+
+
+def test_the_duration_prior_is_the_median_wav_length(tmp_path: Path) -> None:
+    import importlib.util
+    import wave
+
+    for i, secs in enumerate((1.0, 2.0, 4.0)):
+        with wave.open(str(tmp_path / f"{i}.wav"), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes(b"\x00\x00" * int(16000 * secs))
+    spec = importlib.util.spec_from_file_location(
+        "run_reactive", Path(__file__).parents[1] / "scripts" / "run_reactive.py"
+    )
+    assert spec and spec.loader
+    rr = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rr)
+    med, n = rr.median_wav_duration_s(tmp_path)
+    assert (med, n) == (2.0, 3)
