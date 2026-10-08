@@ -7456,3 +7456,29 @@ pass:
     reading each, a person's variation in it).
 
 Reviewed before commit (11 findings: 8 resolved in the text above; 3 left to the user and marked PENDING -- the order of 9 and 1r, pass 7 comparator, pass 9 protocol).
+
+## 2026-10-08 — AMENDMENTS before the 2026-10-09 runs (found while building)
+
+1. P8's LISTENER HALF CANNOT COME FROM PASS 2k AS REGISTERED. The turn field
+   committed_words counts the COMMITTER'S UNIT -- segments under segment
+   granularity -- and was being divided by a word count (that gives 0.033, a
+   unit error, not a result). The committed text's word count was never
+   recorded. FIXED: a new field, committed_text_words, from 2026-10-08.
+   AMENDED SOURCE: the word fraction is measured in PASS 6, whose listener is
+   pass 2k's treatment unchanged (STOP + gate; the allocator adds only logged
+   B=0 decisions), on multi_step, by fstar_score.py --p8. Pass 2k's AUDIO
+   fraction, 0.405 [0.354, 0.466] n=70, is reported beside it and labelled as
+   the substitute the registration said not to use.
+
+2. PASS 1r MEASURES ITS MEMORY SIDE rather than quoting "+134 MB". A smoke on
+   2026-10-08 showed agent RSS ~6 MB (in turn) to ~24 MB (at turn open) lower
+   with the tiny engine unloaded -- far from 134 MB. p1r_score.py reports the
+   per-arm median agent RSS at turn open; T-EPA takes that figure.
+
+3. THE ALLOCATOR'S ANSWER PROMPT is pinned to the plain prompt the STOP+gate
+   arm uses. SpecContinue's PredGen prompt ("the instruction may be
+   truncated") would otherwise have changed every reply in pass 6.
+
+Drivers snapshotted in results/raw/script_snapshots/day9_*.sh (pass 7 in both
+variants; pass 9 one live run per call). Pass 9 reading sheet:
+results/pass9_reading_sheet.txt (16 multi_step items, seed 20261009).

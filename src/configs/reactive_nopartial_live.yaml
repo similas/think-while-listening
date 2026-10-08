@@ -1,6 +1,6 @@
-# PASS 9 (live mic) treatment: COMMIT-WL-STOP + gate, identical to
-# commit_wl_stop_gate.yaml except that the gate's prior is a constant -- the
-# multi_step median the speaker's items come from -- asserted at run start.
+# PASS 9 (live mic) comparator: REACTIVE-NOPARTIAL, identical to
+# reactive_nopartial.yaml except that replies play on the room speaker, so the
+# speaker hears when to read the next item.
 audio:
   sample_rate: 16000
   channels: 1
@@ -37,25 +37,8 @@ stt:
   # 2040 [2008, 2115] — better on every axis, and never adopted until now.
   # Phases 2-4 were run at [1.0, 2.0, 3.0] and their numbers stand at that
   # setting; they are not re-run for this change.
-  partial_offsets_s: [0.5, 1.5, 2.5]
+  partial_offsets_s: []
   partial_model: "tiny"
-  commit:
-    enabled: true
-    agreement_n: 2
-    tail_guard_s: 0.3
-    min_uncommitted_s: 1.0
-    word_timestamps: false
-    use_initial_prompt: true
-    issue_rule: controlled
-    duty_max: 0.6
-    at_endpoint: stop
-    hypothesis_process: true
-    hypothesis_workers: 1
-    cont_at_turn_open: false
-    # A live run has no wav dir to derive from; the multi_step median is
-    # stated here and ASSERTED at start against that set's files
-    # (--assert-prior-from), so it cannot drift silently.
-    duration_prior_s: 15.399
   partial_cpu_threads: 3
 
 llm:
