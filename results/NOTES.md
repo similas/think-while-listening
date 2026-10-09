@@ -7482,3 +7482,63 @@ Reviewed before commit (11 findings: 8 resolved in the text above; 3 left to the
 Drivers snapshotted in results/raw/script_snapshots/day9_*.sh (pass 7 in both
 variants; pass 9 one live run per call). Pass 9 reading sheet:
 results/pass9_reading_sheet.txt (16 multi_step items, seed 20261009).
+
+## 2026-10-09 — PASS 8 (f*), PASS 6 (ALLOCATOR), P8. Scored once, as registered in 71d1612 + amendments
+
+Build 34a7b43 clean, gate_quiet_ms 3000. Runs: pass 8 reactive-20261009-105401-6ac01d,
+-112837-d4ef5e (reactive_mqa.yaml, 2.5 s partials); pass 6 -120309-a4f48d
+(commit_wl_stop_gate.yaml --policy allocator). No run void. Splits 12, 12, 11
+of 80.
+
+### Pass 8 -- f* NOT FALSIFIED, but its CI reaches the bar and it misses the prediction
+
+    src/scripts/fstar_score.py: 140 of 140 scored turns measured, 0 censored
+    D (VAD speech length) over items: Q1 11.48 s, median 13.97 s, Q3 17.54 s
+    f* on the median-utterance band (D in IQR):  0.895 [0.891, 0.901]  n=36 items
+    f* over all items:                            0.895               n=70
+    PREDICTION 0.858 (Q1 0.833, Q3 0.884); FALSIFIED if >= 0.90 -> NOT FALSIFIED
+
+The verdict rule is on the point estimate and it holds by 0.005; THE CI
+REACHES 0.90, so the data do not exclude the falsifying value. And the point
+is above the prediction's own Q3: the registered window model (decode = 1410 +
+15.2 x audio_s) under-states how much speech is left after a partial lands, by
+about 0.04 of the utterance -- roughly 0.55 s at the median D. The prediction
+also used the WAV median (15.4 s); the VAD's speech length is 13.97 s. Which of
+these accounts for the gap is not separated here.
+
+### Pass 6 -- ALLOCATOR: every registered check passes
+
+    decision records 576; reasons: below_break_even 537, infeasible 39
+    spend decisions 0; drafts issued 0 (outcome "not issued" on all 576)
+    every record carries its inputs; every reason matches them
+    rate 34.0 ms/token on every decision (no draft spent, so it never moved)
+    derived prior 15.399 s; f_hat range 0.083-0.935
+
+As registered, this tests the wiring and the decision log, and both are as v3
+§2.3 expects: the thinker branch emits B=0 on every turn and the log shows why.
+
+WHAT PASS 8 ADDS TO IT. The 39 "infeasible" decisions sit at f_hat >= 0.8443
+and are infeasible UNDER THE REGISTERED WINDOW MODEL -- the model pass 8 has
+just measured as pessimistic. p_usable reaches the break-even at f_hat 0.8443,
+and pass 8 measures a 10-token draft still fitting until f ~0.895. Whether
+the MEASURED window would have admitted the smallest arm (B=16, 794 ms) at any
+of those 39 decisions is NOT established here: f* is the 590 ms crossing, not
+the 794 ms one. That is the first question for the Level-2 simulator, which is
+calibrated from these logs.
+
+### P8 -- descriptive; both halves land on the other side of their expectations
+
+    LISTENER: WORD fraction committed before the endpoint, STOP + gate (pass 6,
+      the pass 2k listener unchanged), per item over the items scored in both
+      pass 6 and pass 2k's NOPARTIAL runs:   0.409 [0.340, 0.454]  n=70
+      (expectation >= 0.60). Audio fraction beside it: 0.401 [0.345, 0.454].
+    THINKER: greedy p_usable at the measured f* (a CURVE value from the
+      offline probe, not an item measure):    0.184   (expectation <= 0.10)
+
+The registered picture was "the listener commits most of the words while the
+thinker's draft is almost never usable". Measured: the listener commits about
+40 % of the words, and at the last fraction where a draft still fits, the
+probe's curve puts usability near 18 % -- above the 0.1412 break-even. The
+thinker's half is a curve value at one fraction, from a probe with n ~80 per
+point, and is not a measurement of drafts in this pipeline; it says the
+question is open at the top of the utterance, not that speculation pays there.
