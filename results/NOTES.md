@@ -7588,3 +7588,26 @@ P8, CORRECTED: the listener commits 0.409 [0.340, 0.454] of the words before
 the endpoint (expectation >= 0.60); the probe's curve at the last fraction
 where a draft fits gives usability ~0.15 (expectation <= 0.10), within its own
 sampling error of the break-even.
+
+## 2026-10-09 — AMENDMENTS before passes 7, 9, 1r (user decisions; no data from these passes yet)
+
+PASS 7: variant (a). REACTIVE and SPEC-CONTINUE interleaved per utterance
+within one run (reactive.yaml, --interleave-policies reactive,spec_continue),
+paired per item, ~66 min. Descriptive, no falsifiable prediction.
+
+PASS 9: the proposed protocol of 71d1612 is APPROVED AS WRITTEN, plus:
+  - NATURAL PACE: the speaker reads at a natural pace, not a measured one;
+  - NO RESTART ON A SPLIT: a VAD split is left to stand -- the speaker carries
+    on with the next item -- and is reported, never redone;
+  - NOISE FLOOR LOGGED ONCE before the first live run, nobody speaking, on the
+    pipeline's own capture channel (src/scripts/noise_floor.py, 10 s, RMS and
+    peak dBFS, results/raw/noise_floor/). A 2 s test of the logger
+    (noise_floor-20261009-141128.json, -46.0 dBFS RMS) is labelled TEST and
+    is not the pass 9 floor;
+  - REPLY PLAY-OUT RECORDED AS PART OF THE TURN: each turn's record carries
+    audio_out_first and playback_done, and the turn closes at the end of the
+    reply's play-out, so the time the speaker spends listening is inside the
+    turn rather than between turns.
+The speaker will be at the box when pass 7 finishes; pass 9 runs then.
+
+ORDER: 7, 9, then 1r LAST. MEASUREMENT FREEZES WHEN 1r LANDS.
