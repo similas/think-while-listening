@@ -59,8 +59,22 @@ def scored_turns(L: list[dict]) -> dict[int, dict]:
     }
 
 
-def fstar_of_run(d: Path) -> tuple[dict[int, tuple[float, float]], Counter]:
-    """{item: (f*, D_s)} for one run, and the censoring ledger."""
+def fstar_of_run(
+    d: Path, clock: str = "registered", emitted_only: bool = False
+) -> tuple[dict[int, tuple[float, float]], Counter]:
+    """{item: (f*, D_s)} for one run, and the censoring ledger.
+
+    clock="registered": f = offset_s / D, AS REGISTERED -- which mixes clocks:
+      offset_s is the audio-buffer position, D and the window are on the turn
+      clock, and the buffer leads the turn clock by the pre-roll (~592 ms on
+      2026-10-09), inflating f by ~0.59/D (CORRECTION, 2026-10-09).
+    clock="turn":   f = issued_ms / D, everything on the turn clock.
+    clock="buffer": f = offset_s / (D + lead), lead = the turn's median
+      offset - issued_ms; everything on the buffer clock, which is the clock
+      the 2026-09-22d model's f (audio position at issue) is on.
+    emitted_only: count only partials that were EMITTED (landed while the user
+      was still speaking), as the registration defines the window.
+    """
     L = lines(d)
     turns = scored_turns(L)
     parts: dict[int, list[dict]] = defaultdict(list)
@@ -74,11 +88,22 @@ def fstar_of_run(d: Path) -> tuple[dict[int, tuple[float, float]], Counter]:
         if not d_ms:
             ledger["no speech_end_est"] += 1
             continue
-        pts = sorted(
-            (p["offset_s"] * 1000.0 / d_ms, d_ms - p["decode_done_ms"])
+        ps = [
+            p
             for p in parts[turn]
-            if p.get("decode_done_ms", -1) >= 0
-        )
+            if p.get("decode_done_ms", -1) >= 0 and (p.get("emitted") or not emitted_only)
+        ]
+        leads = [p["offset_s"] * 1000.0 - p["issued_ms"] for p in ps if p.get("issued_ms", -1) >= 0]
+        lead = statistics.median(leads) if leads else 0.0
+
+        def f_of(p: dict, d_ms: float = d_ms, lead: float = lead) -> float:
+            if clock == "turn":
+                return p["issued_ms"] / d_ms
+            if clock == "buffer":
+                return p["offset_s"] * 1000.0 / (d_ms + lead)
+            return p["offset_s"] * 1000.0 / d_ms
+
+        pts = sorted((f_of(p), d_ms - p["decode_done_ms"]) for p in ps)
         if not pts:
             ledger["no timed partial"] += 1
             continue
@@ -191,6 +216,34 @@ def main() -> None:
     print(
         f"PREDICTION 0.858; FALSIFIED if >= 0.90 -> {'FALSIFIED' if m >= 0.90 else 'NOT FALSIFIED'}"
     )
+    alloc = WindowAllocator(p_usable_curve=MULTI_STEP_GREEDY_P_USABLE)
+    for clock in ("turn", "buffer"):
+        for emitted_only in (False, True):
+            per2: dict[int, list[tuple[float, float]]] = defaultdict(list)
+            led: Counter = Counter()
+            for d in a.runs:
+                res2, lg = fstar_of_run(d, clock, emitted_only)
+                led += lg
+                for u, v in res2.items():
+                    per2[u].append(v)
+            it2 = {
+                u: (statistics.median(x[0] for x in v), statistics.median(x[1] for x in v))
+                for u, v in per2.items()
+            }
+            b2 = [f for f, dd in it2.values() if q1 <= dd <= q3]
+            if len(b2) < 2:
+                print(
+                    f"  [report] clock={clock} emitted_only={emitted_only}: "
+                    f"too few items ({dict(led)})"
+                )
+                continue
+            l2, h2 = boot(b2)
+            m2 = statistics.median(b2)
+            print(
+                f"  [report] clock={clock:6s} emitted_only={emitted_only!s:5s}: f* {m2:.3f} "
+                f"[{l2:.3f}, {h2:.3f}] n={len(b2)}; p_usable there {alloc.p_usable_hat(m2):.3f}; "
+                f"turns {dict(led)}"
+            )
     p_at = WindowAllocator(p_usable_curve=MULTI_STEP_GREEDY_P_USABLE).p_usable_hat(m)
     print(
         "P8 THINKER (curve value, not an item measure): "

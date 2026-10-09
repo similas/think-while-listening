@@ -7542,3 +7542,49 @@ probe's curve puts usability near 18 % -- above the 0.1412 break-even. The
 thinker's half is a curve value at one fraction, from a probe with n ~80 per
 point, and is not a measurement of drafts in this pipeline; it says the
 question is open at the top of the utterance, not that speculation pays there.
+
+## 2026-10-09 — CORRECTION to "PASS 8 (f*), PASS 6, P8": pass 8's f* was on mixed clocks. Corrected, it lands on the prediction
+
+Appended, not edited. The reviewer found it; I verified it.
+
+1. THE REGISTERED f MIXED TWO CLOCKS. f = offset_s / D took offset_s from the
+   AUDIO BUFFER and D (and the window) from the TURN CLOCK, whose zero is VAD
+   onset. The buffer leads the turn clock by the pre-roll: offset - issued_ms
+   has a median of 592 ms in run 6ac01d and 591 ms in d4ef5e (n=486 each). So
+   every f was inflated by ~0.59/D, about 0.04 at the median D. The defect is
+   in the estimator I wrote into the registration (71d1612), so the run was
+   scored "as registered" and the number is not interpretable.
+   CLOCK-CONSISTENT f*, from fstar_score.py's [report] lines:
+       turn clock   (f = issued_ms / D)              0.854 [0.846, 0.859] n=36
+       buffer clock (f = offset / (D + lead))        0.861 [0.853, 0.865] n=36
+   The 2026-09-22d model's f is audio position at issue -- the buffer clock --
+   so 0.861 is the comparable figure. PREDICTION 0.858: IT LANDS ON IT. The
+   verdict "not falsified" stands; "misses the prediction" is withdrawn.
+
+2. "THE WINDOW MODEL UNDER-STATES THE WINDOW BY ~0.04 (~0.55 s)" IS WITHDRAWN,
+   with "the model pass 8 has just measured as pessimistic" and that reading of
+   pass 6's 39 infeasible decisions. The 0.04 was the pre-roll. With clocks
+   aligned the model and the measurement agree to within ~0.004, and pass 6's
+   B=0 decisions rest on a model this run supports.
+
+3. "0 CENSORED" DEPENDS ON COUNTING PARTIALS THAT NEVER LANDED. The scorer
+   counts every partial with a decode end, including those issued after the
+   endpoint, whose decodes also contend with the final. Counting only EMITTED
+   partials -- the registration's "after it lands" -- 84 of 140 turns are
+   censored (never below 590 ms), and f* over the 11 surviving band items is
+   0.859 (turn) / 0.865 (buffer). Same answer, much thinner support; reported
+   beside the main figure.
+
+4. P8's THINKER HALF IS ~0.15, NOT 0.184: greedy p_usable at the corrected f*
+   is 0.150 (turn) to 0.155 (buffer) -- 0.009-0.014 above the 0.1412
+   break-even, from a curve with n ~80 per point and no CI carried. "Above
+   break-even" is not shown, and "the question is open at the top of the
+   utterance" is withdrawn.
+
+5. THE AUDIO FRACTION QUOTED WAS PASS 6's (0.401 [0.345, 0.454]); amendment 1
+   named pass 2k's, 0.405 [0.354, 0.466] n=70. Both are now labelled.
+
+P8, CORRECTED: the listener commits 0.409 [0.340, 0.454] of the words before
+the endpoint (expectation >= 0.60); the probe's curve at the last fraction
+where a draft fits gives usability ~0.15 (expectation <= 0.10), within its own
+sampling error of the break-even.
