@@ -137,7 +137,12 @@ class SpeculationDriver:
         return self._client
 
     def budget_for(self, turn: int) -> int:
-        """This turn's budget: the schedule's if there is one, else the fixed."""
+        """This turn's budget: the schedule's if there is one, else the fixed.
+
+        ``turn`` is the PLAN SLOT (TurnManager.plan_slot) -- the playlist
+        position -- not the turn number; callers pass it so a split cannot
+        shift the schedule (2026-10-13).
+        """
         if self.schedule is None:
             return self.budget_tokens
         i = turn - 1

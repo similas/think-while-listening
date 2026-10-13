@@ -38,7 +38,8 @@ class PolicyRunner:
     policy: Policy
     turns: TurnManager
     # Per-turn policy interleaving. When set, the arm for a turn is
-    # policies[schedule[turn - 1]] and ``policy`` is only the fallback.
+    # policies[schedule[slot - 1]], slot being the turn's playlist position
+    # (TurnManager.plan_slot), and ``policy`` is only the fallback.
     policies: list[Policy] | None = None
     schedule: list[int] | None = None
     speculation: SpeculationDriver | None = None
@@ -74,7 +75,8 @@ class PolicyRunner:
             else TriggerReading(text, 0.0, 0.0, 0.0)
         )
         contended = self.detector.current().contended if self.detector is not None else False
-        policy = self.policy_for(self.turns.turn)
+        # By PLAYLIST POSITION, not turn number (see TurnManager.plan_slot).
+        policy = self.policy_for(self.turns.plan_slot)
         decision = policy.decide(text, reading.p_done, contended)
 
         # GATED ON THE DECISION. The prefill was originally unconditional, on

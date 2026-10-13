@@ -15,8 +15,10 @@ from twl.trigger import TriggerReading
 class FakeTurns:
     decisions: list[dict[str, Any]] = field(default_factory=list)
     orphan_marks: int = 0
-    # The runner reads this to choose the arm when policies are interleaved.
     turn: int = 1
+    # The runner reads THIS to choose the arm when policies are interleaved:
+    # the playlist position, not the turn number (2026-10-13).
+    plan_slot: int = 1
 
     def note_decision(self, **kw: Any) -> None:
         self.decisions.append(kw)

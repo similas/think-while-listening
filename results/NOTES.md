@@ -7740,3 +7740,21 @@ The reviewer's independent re-score under the same two fixes (its fragment
 rule differed) gave n = 23, +56 ms [-58, +93], J +36.6: same reading. On this
 corpus SPEC-CONTINUE spends ~36 J per turn, none of its draft is used, and no
 TTFA difference is detectable; effects below ~90 ms are not excluded.
+
+## 2026-10-13 — DECISIONS on fe19ac4 (user), and the interleave fix
+
+1. PASS 7 STANDS AS DESCRIPTIVE, n = 22, scorer disclosed as written after
+   the run. No re-run. TABLE 1's thinker row is composed from three sources,
+   each named: energy from pass 7 (+36.2 J/turn raw [+35.1, +36.7], +35.3
+   net); TTFA cost from the 2026-09-21 blocked result; draft survival 0/96
+   tokens (pass 7, n = 38 items).
+2. THE INTERLEAVE PLAN NOW MAPS BY FILE POSITION, NOT TURN NUMBER. One value,
+   TurnManager.plan_slot -- the playlist position of the file playing when the
+   turn opened, which both halves of a split share -- now indexes every plan
+   lookup: the recorded item and role (turns), the arm (policy_runner), and the
+   speculation budget (observer -> speculation.budget_for). Tested in
+   src/tests/test_plan_alignment.py by driving a split mid-run: item, role and
+   arm stay on the file. MUTATION CHECK: with plan_slot patched back to the turn
+   number, 2 of the 3 tests fail (the third checks budget_for's contract
+   directly). REQUIRED for any future interleaved run; nothing is re-run.
+3. WAITING for "at the box now, room quiet" -> pass 9 -> 1r -> freeze.

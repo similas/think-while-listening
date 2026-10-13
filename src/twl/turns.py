@@ -240,6 +240,7 @@ class TurnManager:
         # design. The source knows which file is playing, so it is asked.
         self._file_index_fn: Callable[[], int] | None = None
         self._utterance = -1
+        self._plan_position = -1
         self._last_playback_done_ns = 0
         self._hyp_killed = False
         self._hyp_stopped = False
@@ -401,6 +402,11 @@ class TurnManager:
         # Read at OPEN: both halves of a split read the same file, which is
         # what makes a split visible in the records instead of inferable.
         self._utterance = self._file_index_fn() if self._file_index_fn is not None else -1
+        # The PLAYLIST POSITION this turn opened in. A plan is indexed by it,
+        # never by turn number: a VAD split gives one file two turns, so from
+        # the first split on, plan[turn - 1] names a later file than the one
+        # playing (pass 7, 2026-10-13). Both halves of a split share it.
+        self._plan_position = self._utterance
         self._hyp_killed = False
         self._hyp_stopped = False
         self._worker_ready_at_open = -1
@@ -726,11 +732,20 @@ class TurnManager:
             )
         self._partials = []
 
+    @property
+    def plan_slot(self) -> int:
+        """1-based plan index of the open turn: its playlist position.
+
+        Falls back to the turn number only when no file source reports a
+        position (unit tests, live runs -- which refuse a plan anyway).
+        """
+        return self._plan_position if self._plan_position > 0 else self._turn
+
     def _planned(self, role: str) -> bool:
         """Was this turn planned as ``role``? Falls back to the warm-up count."""
         if self._plan is None:
             return role == "warmup" and self._turn <= self._warmup_turns
-        i = self._turn - 1
+        i = self.plan_slot - 1
         return 0 <= i < len(self._plan) and self._plan[i].role == role
 
     def _planned_utterance(self) -> int:
@@ -738,7 +753,7 @@ class TurnManager:
             # No plan means a straight file run, where the item is whichever
             # file the source is playing.
             return self._utterance
-        i = self._turn - 1
+        i = self.plan_slot - 1
         return self._plan[i].utterance if 0 <= i < len(self._plan) else -1
 
     def _ctxt_delta(self) -> dict[str, int]:

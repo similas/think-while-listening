@@ -172,7 +172,7 @@ class StageObserver(BaseObserver):
                 if self._speculation is not None:
                     # Per-turn stats belong to every arm, including the ones
                     # that do not decode at onset.
-                    self._speculation.reset_turn(turn=self._turns.turn)
+                    self._speculation.reset_turn(turn=self._turns.plan_slot)
                 if (
                     self._speculation is not None
                     and self._runner is None
@@ -196,7 +196,7 @@ class StageObserver(BaseObserver):
                     # 2026-09-17: 19 of 20 decisions were no-ops this way, while
                     # the tokens came from the placeholder text.
                     self._turns.sample_contention("pre_decode")
-                    self._speculation.start_turn(turn=self._turns.turn)
+                    self._speculation.start_turn(turn=self._turns.plan_slot)
             return
 
         if isinstance(frame, _STOPPED):
@@ -229,7 +229,7 @@ class StageObserver(BaseObserver):
             ):
                 self._spec_started_turn = self._turns.turn
                 self._turns.sample_contention("pre_decode")
-                self._speculation.start_turn(turn=self._turns.turn)
+                self._speculation.start_turn(turn=self._turns.plan_slot)
             if self._runner is not None and self._first_time(frame):
                 task = asyncio.create_task(self._runner.on_partial(frame.text))
                 self._decision_tasks.add(task)
