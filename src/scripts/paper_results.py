@@ -65,8 +65,8 @@ CI = r"([+-]?[0-9.]+ (?:ms|J|J/ms|ms/s)? ?\[[^\]]+\])"
 
 
 # ------------------------------------------------------------------ Table 1 --
-def table1() -> str:
-    rows = [
+def table1_rows() -> list[tuple[str, str, str]]:
+    return [
         (
             "Survival: how much of the speculation is kept",
             "words committed before the endpoint: "
@@ -135,6 +135,10 @@ def table1() -> str:
             "fixed context); not measured separately",
         ),
     ]
+
+
+def table1() -> str:
+    rows = table1_rows()
     out = [
         "# Table 1. Where to speculate: the listener against the thinker",
         "",
@@ -418,7 +422,79 @@ NUMBERS: tuple[tuple[str, str, str], ...] = (
     ("PsixRatio", "p6", r"item-median ([0-9.]+x \[[^\]]+\])"),
     ("SevenJms", "p7_jms", r"medians (\+[0-9.]+ J/ms \[[^\]]+\])"),
     ("ResidencyMem", "residency_memory", r"medians\): \+([0-9.]+) MB"),
+    ("PfourCI", "p4_ci", r"CI (\[[^\]]+\])"),
+    ("PfourWorse", "p4_ci", r"worse (\d+)"),
+    ("PfourBetter", "p4_ci", r"better (\d+)"),
+    ("FstarUsable", "fstar", r"p_usable there ([0-9.]+)"),
+    ("FstarN", "fstar", r"n=(\d+)"),
+    ("WordsN", "p8_listener", r"n=(\d+)"),
+    ("StaleTotal", "stale_net", r"total ([0-9.]+) J"),
+    ("AloneSTT", "fig2_alone", r"STT final (\d+ ms \[[^\]]+\])"),
+    ("AloneFallback", "fig2_alone", r"thp_fault_fallback (\d+)/decode"),
+    ("AloneHuge", "fig2_alone", r"AnonHugePages (\d+) MB"),
+    ("BallastFallback", "fig2_ballast", r"thp_fault_fallback (\d+)/decode"),
+    ("BallastHuge", "fig2_ballast", r"AnonHugePages (\d+) MB"),
+    ("TaxFullB", "tax_full_74e10a", r"(\+\d+ ms \[[^\]]+\])"),
+    ("PnineRatio", "p9c", r"P9b-a STOP ratio ([0-9.]+x \[[^\]]+\])"),
+    ("PnineN", "p9c", r"n=(\d+)"),
+    ("PartialsDevN", "listener_intervention", r"n=(\d+)"),
+    ("ThinkerFinished", "thinker_finished", r"endpoint: (\+[0-9.]+ ms \[[^\]]+\])"),
+    ("ThinkerFinishedN", "thinker_finished", r"n=(\d+)"),
+    ("SpecN", "spec_ttfa", r"n=(\d+)"),
+    ("SpecItems", "spec_survival", r"n=(\d+) items"),
+    ("SpecAccepted", "spec_survival", r"accepted/produced median ([0-9.]+)"),
+    ("PtwoN", "pass2", r"n=(\d+)"),
+    ("ResidencyMemRange", "residency_memory", r"range over run pairs (\+[0-9.]+ to \+[0-9.]+) MB"),
 )
+
+
+# Numbers that need rounding: the groups are floats, formatted as given.
+FORMATTED: tuple[tuple[str, str, str, str], ...] = (
+    (
+        "PtwoCI",
+        "pass2",
+        r"paired\s+(-?[0-9.]+)\s+CI \[(-?[0-9.]+), \+?(-?[0-9.]+)\]",
+        "{0:+.0f} ms [{1:+.0f}, {2:+.0f}]",
+    ),
+    (
+        "SpecTTFAr",
+        "spec_ttfa",
+        r"\(ms\): (\S+) \[(\S+), (\S+)\]",
+        "{0:+.0f} ms [{1:+.0f}, {2:+.0f}]",
+    ),
+    (
+        "SpecEnergyr",
+        "spec_energy",
+        r"REACTIVE: (\S+) \[(\S+), (\S+)\]",
+        "{0:+.1f} J [{1:+.1f}, {2:+.1f}]",
+    ),
+    (
+        "EnergyListenerr",
+        "energy_listener",
+        r"j_net: (\S+) J \[(\S+), (\S+)\]",
+        "{0:+.1f} J [{1:+.1f}, {2:+.1f}]",
+    ),
+)
+
+
+def pass6_numbers() -> dict[str, str]:
+    (run,) = ps.PASS6
+    recs = [
+        json.loads(x)
+        for x in (REPO / run / "turns.jsonl").read_text().splitlines()
+        if '"decision_record"' in x
+    ]
+    reasons = Counter(r["decision"]["inputs"]["reason"] for r in recs)
+    be = {r["decision"]["inputs"]["break_even"] for r in recs}
+    if len(be) != 1:
+        raise ValueError(f"break-even not constant: {be}")
+    return {
+        "AllocDecisions": str(len(recs)),
+        "AllocBelow": str(reasons["below_break_even"]),
+        "AllocInfeasible": str(reasons["infeasible"]),
+        "AllocSpends": str(sum(1 for r in recs if r["decision"]["budget_tokens"] > 0)),
+        "BreakEven": f"{be.pop():.4f}",
+    }
 
 
 def numbers_tex() -> str:
@@ -426,6 +502,95 @@ def numbers_tex() -> str:
     for macro, key, pat in NUMBERS:
         val = grab(key, pat).replace("%", r"\%")
         out.append(f"\\newcommand{{\\{macro}}}{{{val}}}  % {key}")
+    for macro, key, pat, fmt in FORMATTED:
+        m = re.search(pat, claim(key).quote())
+        if not m:
+            raise LookupError(f"{key}: {pat!r}")
+        val = fmt.format(*(float(g) for g in m.groups())).replace("+-", "-")
+        out.append(f"\\newcommand{{\\{macro}}}{{{val}}}  % {key}")
+    for macro, val in pass6_numbers().items():
+        out.append(f"\\newcommand{{\\{macro}}}{{{val}}}  % pass 6 decision records")
+    return "\n".join(out) + "\n"
+
+
+# ------------------------------------------------------------ LaTeX tables --
+def tex(x: str) -> str:
+    for a_, b_ in (
+        ("\\", r"\textbackslash{}"),
+        ("&", r"\&"),
+        ("%", r"\%"),
+        ("_", r"\_"),
+        ("#", r"\#"),
+        (">=", r"$\ge$"),
+        ("<=", r"$\le$"),
+        ("->", r"$\to$"),
+        ("--", "--"),
+    ):
+        x = x.replace(a_, b_)
+    return x
+
+
+def table1_tex() -> str:
+    out = [
+        "% Generated by src/scripts/paper_results.py. Do not edit.",
+        r"\begin{table*}[t]",
+        r"\centering\footnotesize",
+        r"\caption{Where to speculate: the listener against the thinker on this device. "
+        r"Every cell is a scorer's output; sources in RESULTS.md.}",
+        r"\label{tab:where}",
+        r"\begin{tabular}{p{0.15\textwidth}p{0.42\textwidth}p{0.36\textwidth}}",
+        r"\toprule",
+        r" & Listener (COMMIT-WL-STOP + gate) & Thinker (SPEC-CONTINUE) \\",
+        r"\midrule",
+    ]
+    out += [f"{tex(a_)} & {tex(b_)} & {tex(c_)} \\\\" for a_, b_, c_ in table1_rows()]
+    out += [r"\bottomrule", r"\end{tabular}", r"\end{table*}"]
+    return "\n".join(out) + "\n"
+
+
+def table2_tex() -> str:
+    md = [ln for ln in table2().splitlines() if ln.startswith("| ") and "---" not in ln]
+    head, body = md[0], md[1:]
+    cols = [c.strip() for c in head.strip("|").split("|")]
+    out = [
+        "% Generated by src/scripts/paper_results.py. Do not edit.",
+        r"\begin{table}[t]",
+        r"\centering\scriptsize\setlength{\tabcolsep}{2pt}",
+        r"\caption{The allocator's decisions in one multi-step run, by reason: median "
+        r"(min--max) of the inputs each decision logged.}",
+        r"\label{tab:allocator}",
+        r"\begin{tabular}{l" + "r" * (len(cols) - 1) + "}",
+        r"\toprule",
+        " & ".join(tex(c) for c in cols) + r" \\",
+        r"\midrule",
+    ]
+    for ln in body:
+        out.append(" & ".join(tex(c.strip()) for c in ln.strip("|").split("|")) + r" \\")
+    out += [r"\bottomrule", r"\end{tabular}", r"\end{table}"]
+    return "\n".join(out) + "\n"
+
+
+def table3_tex() -> str:
+    ledger = json.loads(LEDGER.read_text())
+    out = [
+        "% Generated by src/scripts/paper_results.py. Do not edit.",
+        r"\begin{table*}[t]",
+        r"\centering\scriptsize",
+        r"\caption{Every pre-registered prediction: the commit that registered it, the "
+        r"commit that scored it, and its verdict as it stands after all corrections. The "
+        r"full ledger, with bars, figures and notes, is in the supplementary material.}",
+        r"\label{tab:ledger}",
+        r"\begin{tabular}{lllp{0.52\textwidth}}",
+        r"\toprule",
+        r"prediction & registered & scored & verdict as it stands \\",
+        r"\midrule",
+    ]
+    for e in ledger:
+        reg = commit_of(e["registered"]).split()[0]
+        sc = commit_of(e["scored"]).split()[0] if e.get("scored") else "--"
+        head = e["verdict"].split(":")[0].strip()
+        out.append(f"{tex(e['id'])} & \\texttt{{{reg}}} & \\texttt{{{sc}}} & {tex(head)} \\\\")
+    out += [r"\bottomrule", r"\end{tabular}", r"\end{table*}"]
     return "\n".join(out) + "\n"
 
 
@@ -443,6 +608,12 @@ def main() -> None:
     gen = REPO / "paper/generated"
     gen.mkdir(parents=True, exist_ok=True)
     (gen / "numbers.tex").write_text(numbers_tex())
+    for name, fn in (
+        ("table1.tex", table1_tex),
+        ("table2.tex", table2_tex),
+        ("table3.tex", table3_tex),
+    ):
+        (gen / name).write_text(fn())
     print("  wrote paper/generated/numbers.tex")
 
 

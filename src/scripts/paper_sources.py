@@ -166,6 +166,7 @@ H_P1N = (
 )
 H_ATTR = "2026-10-13 — THE OCCUPANCY TAX, PAIRED: intervals for the 2026-09-16 medians"
 H_THP = H_ATTR
+H_THP0 = "2026-09-16 — The sub-mechanism: THP fallback, not reclaim"
 H_PLANNER = 'CORRECTION to "LEVEL-2 PLANNER, SIMULATED" (reviewer, 6 findings)'
 H_REVIEW = "2026-10-13 — PAPER TABLES REVIEWED: corrections to the tables and the tax entry"
 TAX_BALLAST = (
@@ -178,6 +179,27 @@ TAX_FULL = (
 )
 
 CLAIMS: tuple[Claim, ...] = (
+    Claim(
+        "p4_ci",
+        "dWER mean, multi_step, pass 2k: interval and worse/better counts",
+        "p2k",
+        r"\[report\] dWER mean CI \[-",
+        '2026-10-08 — CORRECTION to "PASS 2k: P3 HOLDS" (reviewer, 7 findings)',
+    ),
+    Claim(
+        "fig2_alone",
+        "Recognizer alone: final decode, THP fallback and huge pages (run 5d30c2, condition B)",
+        "figs",
+        r"Fig2 B: recognizer alone",
+        H_THP0,
+    ),
+    Claim(
+        "fig2_ballast",
+        "Inert ballast co-resident: final decode, THP fallback and huge pages (run 5d30c2)",
+        "figs",
+        r"Fig2 C': inert ballast",
+        H_THP0,
+    ),
     Claim(
         "planner_validation",
         "Planner simulator, validation: simulated STOP+gate vs NOPARTIAL (measured +351 on "

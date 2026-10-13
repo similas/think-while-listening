@@ -261,6 +261,8 @@ three splits of Spoken-MQA \cite{wei2025towards}:
   items drawn with a fixed seed and, as a fifth length, the 20 longest of
   them.
 \end{itemize}
+The preemption test (Sec.~\ref{sec:penalties}) used Spoken-MQA's single-step
+split.
 Lengths are in Fig.~\ref{fig:stages}.
 
 \textbf{Protocol.}
@@ -292,7 +294,153 @@ registration commit and its verdict. Where a prediction was stated informally,
 a bar moved before its data, or a scorer was written after the data, the table
 says so.
 
-% Results (Figs 2-5, Tables 1-3) follow from RESULTS.md and precede this section.
+
+\section{Results}
+\label{sec:results}
+
+\subsection{Where the silence goes}
+The final decode is the largest stage on every set (Fig.~\ref{fig:stages}).
+It takes \SttShareDev\%, \SttShareShort\%, \SttShareLong\% and \SttShareMulti\%
+of the stage sum on the development, short-digit, long-digit and multi-step
+sets. The language model's first token takes \LlmShareMulti\% on multi-step
+problems. We had predicted that the final's share would rise with utterance
+length and stay above half. It does neither, so that prediction is falsified
+(Table~\ref{tab:ledger}). What stands is that the final decode is the largest
+single stage at every length.
+
+\subsection{The occupancy tax}
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=0.9\textwidth]{paper_fig2_occupancy_tax.pdf}
+  \caption{Residency alone taxes the recognizer. Final decode, huge pages kept
+  and huge-page fault fallbacks per decode, for the recognizer alone and under
+  five co-resident conditions (one instrumented run, 32 turns per
+  condition).}
+  \label{fig:tax}
+\end{figure*}
+With the recognizer alone, a final decode takes \AloneSTT{} and suffers
+\AloneFallback{} huge-page fault fallbacks; the process keeps \AloneHuge\,MB of
+huge pages (Fig.~\ref{fig:tax}). A co-resident process of the language model's
+size, doing nothing but holding pages, brings \BallastFallback{} fallbacks per
+decode and leaves \BallastHuge\,MB. Paired per turn on the same audio, the
+inert process adds \TaxBallastA{} and \TaxBallastB{} to the final in two runs,
+and the full pipeline adds \TaxFullA{} and \TaxFullB. Each condition is one
+run, made after its baseline. The two runs disagree on the size and on the
+order of conditions, and only the second was instrumented for huge pages.
+Every interval excludes zero.
+
+\subsection{Two overlap penalties}
+\label{sec:penalties}
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{paper_fig3_overlap_penalties.pdf}
+  \caption{Both consumers' overlap penalties on one axis. The listener bar is
+  the fitted cost per second of overlap times the median overlap.}
+  \label{fig:penalties}
+\end{figure}
+\textbf{Thinker.} A reply draft still decoding at the endpoint delays the
+first audio by \ThinkerOverlap{} ($n=\ThinkerOverlapN$ turns), against the same
+item's reactive turns in the same run. A draft that finished first shows no
+detectable penalty in these runs (\ThinkerFinished, $n=\ThinkerFinishedN$).
+An earlier onset test found one contended condition where it did.
+
+\textbf{Listener.} Across arms, a hypothesis still decoding at the endpoint
+adds \ListenerC\,ms of final decode per second of overlap, \ListenerCCI{} with
+the interval taken over runs (Fig.~\ref{fig:penalties}). That is below the
+band we registered, and not falsified. Its scorer was written after the data,
+and a coding of the arms chosen afterwards gives a higher value. Removing
+partial decodes from the reactive pipeline cuts TTFA on the development set by
+\PartialsDev{} ($n=\PartialsDevN$ items).
+
+\textbf{Freezing the orphan.} Freezing a hypothesis still running at the
+endpoint, against racing it, cuts paired TTFA by \PnineTTFA{} ($n=\PnineN$
+items). The final runs at \PnineRatio{} of the solo model of its tail. The
+interval's lower end lies below the registered 150\,ms bar. The result holds
+under an amendment made before the run; under the original validity rule it
+would not be testable. It also depends on a 3\,s quiet period after each
+reply.
+
+\subsection{When a draft still fits}
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\columnwidth]{paper_fig4_usable_vs_window.pdf}
+  \caption{Draft usability rises with the fraction heard; the window to
+  finish a draft falls. The last fraction at which a 10-token draft fits, as
+  predicted and as measured.}
+  \label{fig:window}
+\end{figure}
+The last fraction of the utterance at which a 10-token draft still fits
+before the endpoint is \Fstar{} ($n=\FstarN$ items of median length). We had
+predicted 0.858 (Fig.~\ref{fig:window}). There, a greedy draft is usable with
+probability \FstarUsable, within sampling error of the break-even
+\BreakEven. Where a draft fits, it is rarely worth issuing, and where it would
+be worth issuing, it no longer fits. The listener, meanwhile, commits a median
+\WordsCommitted{} of the words before the endpoint ($n=\WordsN$ items). That
+is short of the 0.60 we expected.
+
+\subsection{The allocator's decisions}
+\input{generated/table2.tex}
+In one logged multi-step run, the allocator made \AllocDecisions{} decisions
+(Table~\ref{tab:allocator}). \AllocBelow{} were below break-even and
+\AllocInfeasible{} infeasible, and it spent the window on the drafter
+\AllocSpends{} times. Every record carries the inputs its reason rests on.
+
+\subsection{The gated listener}
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=0.9\textwidth]{paper_fig5_pass2k.pdf}
+  \caption{The gated, freezing listener (pass 2k) and the same mechanism
+  ungated and unfrozen (pass 2), each against the reactive pipeline without
+  partial decodes: TTFA reduction, word-error-rate difference and raw energy
+  per turn.}
+  \label{fig:listener}
+\end{figure*}
+Against the reactive pipeline without partial decodes, the gated, freezing
+listener cuts the median paired TTFA on multi-step problems by \PthreeRed{}
+($n=\PthreeN$ items, Fig.~\ref{fig:listener}). This meets the prediction we
+registered, although the interval's lower end lies below the registered
+300\,ms bar. On the development set the gate issues no hypothesis, at no
+detectable TTFA cost (\DevTTFA). On multi-step problems:
+\begin{itemize}
+\item \textbf{Accuracy.} The word-error-rate cost is bounded but not shown to
+  be absent: mean \PfourMean{} \PfourCI, with \PfourWorse{} items worse and
+  \PfourBetter{} better.
+\item \textbf{The final decode} runs at \PsixRatio{} of the solo model of its
+  tail.
+\item \textbf{Energy.} The listener spends \EnergyListenerr{} more per turn,
+  net of the idle floor; that is \SevenJms{} per millisecond saved. Frozen
+  decodes resumed and discarded after the reply account for \StaleTotal\,J
+  over \StaleN{} decodes.
+\end{itemize}
+The same mechanism without the gate and the freeze changed TTFA by \PtwoCI{}
+($n=\PtwoN$, as a reduction): slower, with an interval that includes zero.
+
+\subsection{Where to speculate}
+\input{generated/table1.tex}
+Table~\ref{tab:where} puts the two consumers side by side. Interleaved with
+the reactive pipeline on multi-step problems, continuing a reply draft changed
+TTFA by \SpecTTFAr{} ($n=\SpecN$ items; positive is slower) and cost
+\SpecEnergyr{} per turn. The per-item median share of draft tokens accepted
+was \SpecAccepted{} ($n=\SpecItems$ items). This comparison is descriptive:
+its interleaved design broke at the first voice-activity split, and its scorer
+was written after the run. Keeping the second recognizer resident costs no
+detectable TTFA (\ResidencyTTFA); the decoding hypothesis worker holds
+\WorkerPSS\,MB.
+
+\subsection{Is the gate enough?}
+A finite-horizon dynamic program over elapsed time was calibrated from the
+logs: decode times, commit boundaries, the final's cost and the endpoint
+hazard. In simulation, at the gate's duty bound, it improves on the gate's
+median TTFA by \PlannerDP. Without the bound it improves by
+\PlannerNoDuty{}, a gain that comes from decoding back to back, not from
+planning. Under the measured costs the simple rule is near-optimal at the
+median. The planner's remaining gain sits in items longer than the gate's
+prior.
+
+\subsection{The record}
+\input{generated/table3.tex}
+Table~\ref{tab:ledger} lists every registered prediction with its
+registration and scoring commits and its verdict as it stands.
 
 \section{Limitations}
 \label{sec:limitations}
@@ -350,13 +498,19 @@ baseline.
 \section{Generative-AI use}
 \label{sec:genai}
 
-% Venue and university rules may require the tool to be named. The repository's
-% rules forbid naming it here: the author adds the name at submission if required.
-A generative-AI coding assistant was used, under the author's direction, to
-write and review software, analysis scripts and draft text. The author
-designed, pre-registered and approved every experiment and verified all text.
-Every measured or simulated value in this paper is produced by a script from
-the logs; registered bars and set sizes are stated as designed.
+Claude Code, Anthropic's agentic coding tool, running Claude Opus models
+(Claude Opus~5.5 at the time of writing), was used throughout this work under
+the author's direction. It:
+\begin{itemize}
+\item wrote most of the software and analysis scripts;
+\item executed the measurement runs the author approved;
+\item drafted the lab-notebook entries and the text of this paper;
+\item reviewed its own work through separate reviewer instances.
+\end{itemize}
+The author designed the study, set every pre-registered prediction and every
+decision, approved each run, and verified the text. Every measured or
+simulated value in this paper is produced by a script from the logs;
+registered bars and set sizes are stated as designed.
 
 \bibliographystyle{IEEEtran}
 \bibliography{refs}
