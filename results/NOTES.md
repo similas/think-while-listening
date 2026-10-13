@@ -7852,3 +7852,38 @@ in src/ over a log in results/raw/; two did not.
 
 The constants in twl/contention.py stay as they are -- they parameterise the
 cost model as it was fitted -- but no figure, table or claim reads them.
+
+## 2026-10-13 — P2a AND P2b SCORED (registered 2026-09-23g, never scored until now)
+
+Found while building the ledger: P2a and P2b were pre-registered before Phase 5
+and never scored. Scored now by src/scripts/p2_score.py from existing logs --
+analysis, not measurement; the freeze is not touched.
+
+ONE INTERPRETATION, stated because the registration could not foresee it: it
+predates the KILL and STOP arms, where a decode "in flight" at the endpoint is
+killed or frozen and decode_done_ms is not the end of its claim on the cores.
+Those arms are excluded, as are arms with no partials. Included: REACTIVE
+(canonical, dense), COMMIT-WL in a thread (pass 2, P5 arms), RACE in a child
+(P9, P9b, P9c controls); smoke runs and dirty builds excluded. ARM enters as a
+covariate at FAMILY level (REACTIVE / COMMIT-WL thread / RACE child): two
+configs are single runs, and a run-resampling bootstrap that must contain every
+arm kept only 904 of 2000 draws when they were separate -- a conditioned
+interval. With families, 2000 of 2000.
+
+P2a  final_ms = a + b*audio_s + c*overlap_s + arm family, over every turn with
+     a partial in flight, overlap MEASURED (decode_done - endpoint), no
+     modelled rows:
+         c = 572 ms per s of overlap [516, 620]   n = 503 turns, 36 runs
+         (a 1063 ms, b 76.6 ms/s; per family REACTIVE 166, COMMIT-WL 212,
+          RACE child 125)
+     REGISTERED: c in [500, 1500] ms/s; falsified if the CI lies entirely below
+     300.  -> P2a HOLDS.
+     The 2026-09-22 existing-log fit (747 ms/s [571, 1029], 393 of 465 rows
+     modelled) was prior evidence only; this is the measured figure, lower and
+     much tighter.
+
+P2b  final-decode ratio, overlapped / clean, per multi_step item, REACTIVE
+     runs only (same audio to the final in both states):
+         1.41x [1.23, 1.54]   n = 50 items
+     REGISTERED: >= 1.5; falsified if the CI includes 1.2.
+     -> P2b NOT MET (1.41 < 1.5) AND NOT FALSIFIED (the CI excludes 1.2).
