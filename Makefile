@@ -28,6 +28,7 @@ results:
 	PYTHONPATH=src $(BIN)/python src/scripts/stage_decomposition.py
 	PYTHONPATH=src $(BIN)/python src/scripts/energy_per_turn.py
 	PYTHONPATH=src $(BIN)/python src/scripts/wer_by_arm.py
+	PYTHONPATH=src $(BIN)/python src/scripts/paper_results.py
 
 figures:
 	PYTHONPATH=src $(BIN)/python src/scripts/make_figures.py

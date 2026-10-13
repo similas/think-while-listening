@@ -1,0 +1,427 @@
+[
+ {
+  "id": "SPEC-ALWAYS-PG.1",
+  "prediction": "PG arm waiting fraction (cancel wait / speculation window) > 0.5; falsified if < 0.5",
+  "registered": "PRE-REGISTERED PREDICTION for the SPEC-ALWAYS-PG arm (2026-09-18, before the run)",
+  "scored": "SPEC-ALWAYS-PG vs SPEC-CONTINUE: the prediction scored (2026-09-18)",
+  "verdict": "FALSIFIED: waiting fraction 0.01 (393 ms wait vs 43840 ms decode), n=16 turns, 21 commits",
+  "corrections": [],
+  "notes": "Heading is duplicated verbatim at NOTES lines 1769 and 1812 (same registration pasted twice)."
+ },
+ {
+  "id": "SPEC-ALWAYS-PG.2",
+  "prediction": "PG TTFA no better than REACTIVE (falsified if PG TTFA <= REACTIVE)",
+  "registered": "PRE-REGISTERED PREDICTION for the SPEC-ALWAYS-PG arm (2026-09-18, before the run)",
+  "scored": "SPEC-ALWAYS-PG vs SPEC-CONTINUE: the prediction scored (2026-09-18)",
+  "verdict": "CONFIRMED: paired +116 ms [+59, +192], n=16 (worse, CI excl. 0)",
+  "corrections": [],
+  "notes": "Later blocked design re-measured +114 [+61, +161] n=48 ('Blocked design: arms re-measured...')."
+ },
+ {
+  "id": "SPEC-ALWAYS-PG.3",
+  "prediction": "Penalty is via expensive cancellation: cancel_to_slot_free per commit ~725-908 ms (falsified if materially below)",
+  "registered": "PRE-REGISTERED PREDICTION for the SPEC-ALWAYS-PG arm (2026-09-18, before the run)",
+  "scored": "SPEC-ALWAYS-PG vs SPEC-CONTINUE: the prediction scored (2026-09-18)",
+  "verdict": "FALSIFIED AS TO MECHANISM: cancel 67 ms per commit [51, 79]; cost is slot occupancy (2.7 s/turn); the 725-908 ms input was a measurement bug",
+  "corrections": []
+ },
+ {
+  "id": "BUDGET-R",
+  "prediction": "BUDGET-R does not beat REACTIVE on TTFA (falsified if it beats it, CI excl. 0); B=0 on >80% of turns; occupancy <20% of SPEC-ALWAYS-PG; beats spec arms by ~+98-104 ms",
+  "registered": "PRE-REGISTERED PREDICTION for BUDGET-R (2026-09-18, before the controller exists)",
+  "scored": "The pre-registered prediction: CONFIRMED ON DIFFERENT GROUND",
+  "verdict": "CONFIRMED ON DIFFERENT GROUND (HOLDS, BUT via cost side not p_usable): no budget shows a resolvable net benefit; B=1 -5.9 ms [-63.6, +42.3] n=48, B=32 -16.0 ms [-45.9, +12.9] n=96; controller chooses B=0. Never run live against REACTIVE; points 3-4 never scored",
+  "corrections": [
+   "TTFA cost model: contention does NOT scale the per-token cost (2026-09-18)",
+   "The negative fee does not replicate. BUDGET-R degenerates to B=0 (2026-09-20)",
+   "RETRACTION: contention moves the SLOPE, not the fee. And the uncontended cost is unresolved"
+  ],
+  "notes": "Not CORRECTION-titled: 'TTFA cost model...' declared points 1-2 FALSIFIED (fitted -76.9 ms fee); 'The negative fee does not replicate...' restored it; 'RETRACTION...' qualified the uncontended B=0 as undetermined."
+ },
+ {
+  "id": "onset-overlap",
+  "prediction": "Grid at first-partial onset reproduces ~+100 ms penalty where decode overlaps the endpoint, ~0 where it finishes before",
+  "registered": "THE COST MODEL'S VARIABLE IS ENDPOINT OVERLAP, NOT B (2026-09-21)",
+  "scored": "Onset prediction test: PARTIALLY confirmed. Overlap is a factor, not the only one",
+  "verdict": "PARTIALLY confirmed: overlap penalty +131.1 ms [+82.0, +244.9] (B=64 uncont.), +205.1 [+88.9, +295.5] (B=96 cont.); 'finished implies ~0' NOT CONFIRMED (+128.8 [+57.6, +155.7] at B=64 cont.); n=32 per cell",
+  "corrections": [],
+  "notes": "Informal: stated in body text ('a prediction this model makes'), not under a PRE-REGISTRATION heading."
+ },
+ {
+  "id": "feasibility-BUDGET-R",
+  "prediction": "BUDGET-R matches REACTIVE (CI incl. 0), beats fixed spec arms by ~100 ms, B=0 on most turns; falsified if worse than REACTIVE (CI excl. 0) or no better than fixed arms",
+  "registered": "PRE-REGISTERED PREDICTION for feasibility-BUDGET-R (2026-09-21, before the rewrite)",
+  "scored": "The trigger carries no usable information about REMAINING speech (2026-09-21)",
+  "verdict": "NOT TESTABLE ON THIS PIPELINE: no skillful remaining-speech estimator (T-SEM AUC 0.568, n=700), controller outputs B=0 every turn by construction",
+  "corrections": [],
+  "notes": "Re-confirmed untestable in 'Widening the window WORKED...' (constant B=16) and arm set {0,16,20,24} rejected in 'Contention: weak as a feasibility signal...'."
+ },
+ {
+  "id": "prefix-probe.1",
+  "prediction": "p_usable near zero at f=0.25 and 0.50, rises at 0.90",
+  "registered": "AMENDMENT 2026-09-22 to the prefix-probe pre-registration. Committed before any generation",
+  "registered_original": "PRE-REGISTRATION 2026-09-21 — offline prefix probe for p_usable on Spoken-MQA",
+  "scored": "2026-09-22 — Prefix probe result: p_usable is 0.00 where the pipeline decides, and 0.30 is the ceiling",
+  "verdict": "CONFIRMED: 0.000, 0.013, 0.150 (n=80, first-80 block, T=0.5)",
+  "corrections": [
+   "CORRECTION (2026-09-22b) to the prefix-probe result. Three rewordings and one confirmation"
+  ]
+ },
+ {
+  "id": "prefix-probe.2",
+  "prediction": "p_usable falls with B (B in {16,32,96})",
+  "registered": "AMENDMENT 2026-09-22 to the prefix-probe pre-registration. Committed before any generation",
+  "registered_original": "PRE-REGISTRATION 2026-09-21 — offline prefix probe for p_usable on Spoken-MQA",
+  "scored": "2026-09-22 — Prefix probe result: p_usable is 0.00 where the pipeline decides, and 0.30 is the ceiling",
+  "verdict": "NOT TESTABLE: budgets never cut the first chunk (n=80); later qualified — B=16 cuts ~10% and truncation can only help the prefix test, so the metric cannot address flat-in-B",
+  "corrections": [
+   "2026-09-22 — Replication and greedy on the seeded 80. The pre-registered test FALSIFIES"
+  ],
+  "notes": "The qualifying correction is a 'CORRECTION TO THE 2026-09-22 ENTRY' paragraph inside the replication/greedy entry, not a separate heading."
+ },
+ {
+  "id": "prefix-probe.3",
+  "prediction": "T=0.5 sampling control (two full-transcript generations) matches on well under half of items",
+  "registered": "AMENDMENT 2026-09-22 to the prefix-probe pre-registration. Committed before any generation",
+  "registered_original": "PRE-REGISTRATION 2026-09-21 — offline prefix probe for p_usable on Spoken-MQA",
+  "scored": "2026-09-22 — Prefix probe result: p_usable is 0.00 where the pipeline decides, and 0.30 is the ceiling",
+  "verdict": "CONFIRMED: 24/80 = 0.300 [0.211, 0.408]",
+  "corrections": [
+   "CORRECTION (2026-09-22b) to the prefix-probe result. Three rewordings and one confirmation"
+  ]
+ },
+ {
+  "id": "prefix-probe gate",
+  "prediction": "Gold accuracy at f=1.00 >= 30% (gate)",
+  "registered": "AMENDMENT 2026-09-22 to the prefix-probe pre-registration. Committed before any generation",
+  "scored": "2026-09-22 — Prefix probe result: p_usable is 0.00 where the pipeline decides, and 0.30 is the ceiling",
+  "verdict": "PASSES ON THE POINT ESTIMATE ONLY: 0.300 [0.211, 0.408], n=80",
+  "corrections": []
+ },
+ {
+  "id": "SCALES",
+  "prediction": "Live REACTIVE on Spoken-MQA 'scales' iff anticipation window >= 3000 ms AND prefill span >= 50% AND feasible budget >= 48 tokens with >= 3 distinct arms",
+  "registered": "AMENDMENT 2026-09-22 to the prefix-probe pre-registration. Committed before any generation",
+  "scored": null,
+  "verdict": "NEVER SCORED: the live Spoken-MQA runs failed/voided (2026-09-22) and the question was superseded by window(f)/f*",
+  "corrections": [],
+  "notes": "Registered as item (d) of the prefix-probe amendment."
+ },
+ {
+  "id": "greedy-test (replication.1)",
+  "prediction": "Greedy p_usable(0.75) < break-even p*=0.1412 -> value side CLOSED (Shape B)",
+  "registered": "PRE-REGISTRATION 2026-09-22c — replication and the greedy arm. Committed before code",
+  "scored": "2026-09-22 — Replication and greedy on the seeded 80. The pre-registered test FALSIFIES",
+  "verdict": "FALSIFIES (prediction CONFIRMED): greedy p_usable(0.75) = 0.0625 < 0.1412, n=80 seeded; p_usable(0.90) = 0.188 clears break-even (exploratory)",
+  "corrections": []
+ },
+ {
+  "id": "replication.2",
+  "prediction": "Gate (gold accuracy @1.00) rises under greedy vs sampled (direction only)",
+  "registered": "PRE-REGISTRATION 2026-09-22c — replication and the greedy arm. Committed before code",
+  "scored": "2026-09-22 — Replication and greedy on the seeded 80. The pre-registered test FALSIFIES",
+  "verdict": "CONFIRMED: 0.275 [0.189, 0.381] -> 0.362 [0.266, 0.472], n=80",
+  "corrections": []
+ },
+ {
+  "id": "replication.3",
+  "prediction": "Run A (T=0.5, seeded 80) reproduces the shape at a lower level; p_usable ~0 at 0.25 and 0.50",
+  "registered": "PRE-REGISTRATION 2026-09-22c — replication and the greedy arm. Committed before code",
+  "scored": "2026-09-22 — Replication and greedy on the seeded 80. The pre-registered test FALSIFIES",
+  "verdict": "CONFIRMED: 0.013, 0.025, 0.037, 0.087; gate 0.275 (n=80)",
+  "corrections": []
+ },
+ {
+  "id": "f*",
+  "prediction": "f* (10-token draft, 590 ms window, stops being feasible) = 0.858 on the median utterance (Q1 0.833, Q3 0.884); FALSIFIED if measured f* >= 0.90",
+  "registered": "PRE-REGISTRATION 2026-09-22d — window(f), feasible budget(f), f*. Committed before run 3",
+  "amendments": [
+   "2026-10-08 — PRE-REGISTRATION for 2026-10-09: passes 8, 6, 7, 9, 1r. Committed before the allocator build"
+  ],
+  "scored": "2026-10-09 — PASS 8 (f*), PASS 6 (ALLOCATOR), P8. Scored once, as registered in 71d1612 + amendments",
+  "verdict": "NOT FALSIFIED, lands on the prediction: clock-consistent f* 0.861 [0.853, 0.865] (buffer clock; turn clock 0.854 [0.846, 0.859]), n=36 band items; as-registered estimator gave 0.895 [0.891, 0.901] (mixed clocks)",
+  "corrections": [
+   "2026-10-09 — CORRECTION to \"PASS 8 (f*), PASS 6, P8\": pass 8's f* was on mixed clocks. Corrected, it lands on the prediction"
+  ],
+  "notes": "First attempt (run 3) VOID: '2026-09-22 — POST-MORTEM of reactive-20260922-130314-6a8b26 (run 3, VOID)'. Estimator fixed in the 2026-10-08 pre-registration."
+ },
+ {
+  "id": "P1",
+  "prediction": "REACTIVE stt_final share of TTFA >= 50% at every length, rising monotonically with duration; FALSIFIED if any set < 40% or order breaks",
+  "registered": "PRE-REGISTRATION 2026-09-23g — P3 to P8, before any Phase 5 run",
+  "scored": "2026-10-01 — PASS 1 COMPLETE. P1 IS FALSIFIED",
+  "verdict": "FALSIFIED: 56.0, 47.9, 46.2, 61.5 % (dev/short/long/multi, n=48/60/54/213) — non-monotone, two sets < 50%; re-scored on NOPARTIAL same verdict (52.9, 47.0, 46.1, 61.5)",
+  "corrections": [],
+  "notes": "Originally v3 §5.4 (not in NOTES); declared not testable on existing logs in '2026-09-23 — §4 analyses wired...'. NOPARTIAL re-score in PASS 1n entry."
+ },
+ {
+  "id": "P2a",
+  "prediction": "Listener overlap c (final-decode cost per s of endpoint overlap) in [0.5, 1.5] s/s; FALSIFIED if CI entirely below 0.3 s/s; measured overlap, all Phase 5 turns, arm as covariate, canonical REACTIVE only at overlap=0",
+  "registered": "AMENDMENT 2026-09-23 to P2a's scoring population. Before any Phase 5 data",
+  "registered_original": "AMENDMENT 2026-09-22g to P2 (v3 §5.4). After the existing-log fit, BEFORE any Phase 5 data",
+  "amendments": [
+   "PRE-REGISTRATION 2026-09-23g — P3 to P8, before any Phase 5 run"
+  ],
+  "scored": "2026-10-13 — P2a AND P2b SCORED (registered 2026-09-23g, never scored until now)",
+  "verdict": "BELOW THE REGISTERED BAND, NOT FALSIFIED: c = 492 ms/s [439, 574], n=960 turns over 43 runs (run bootstrap)",
+  "corrections": [
+   "2026-10-13 — CORRECTION to \"P2a AND P2b SCORED\""
+  ],
+  "notes": "Withdrawn first scoring said HOLDS, c=572 [516, 620] n=503. Bar set in 2026-09-22g; population amended 2026-09-23; restated in 2026-09-23g."
+ },
+ {
+  "id": "P2b",
+  "prediction": "Paired final-decode ratio, overlap vs no overlap on same multi_step items, >= 1.5; FALSIFIED if CI includes 1.2; not scored on dev",
+  "registered": "AMENDMENT 2026-09-22g to P2 (v3 §5.4). After the existing-log fit, BEFORE any Phase 5 data",
+  "amendments": [
+   "PRE-REGISTRATION 2026-09-23g — P3 to P8, before any Phase 5 run"
+  ],
+  "scored": "2026-10-13 — P2a AND P2b SCORED (registered 2026-09-23g, never scored until now)",
+  "verdict": "NOT TESTABLE: n=0 structural (each item played once per run); withdrawn 1.41x [1.23, 1.54] n=50 is descriptive only",
+  "corrections": [
+   "2026-10-13 — CORRECTION to \"P2a AND P2b SCORED\""
+  ]
+ },
+ {
+  "id": "P3",
+  "prediction": "COMMIT-WL median TTFA reduction vs REACTIVE-NOPARTIAL >= 300 ms on multi_step, CI excl. 0 (bracket 350-450 ms); secondary >= 1000 ms; dev >= 200 ms; monotone in duration",
+  "registered": "CORRECTION (2026-10-01b) to the P3 amendment. The primary threshold was set wrong",
+  "registered_original": "PRE-REGISTRATION 2026-09-23g — P3 to P8, before any Phase 5 run",
+  "amendments": [
+   "AMENDMENT 2026-10-01 to P3. Before any Phase 5 run"
+  ],
+  "scored": "2026-10-06 — PASS 2 SCORED. P3 FAILS, P7 FALSIFIED, P4 PASSES, P6 NOT MET ON TWO SETS",
+  "verdict": "FAILS: -155.1 ms [-486.6, +59.1] n=62 (regression); dev -394.5 ms [-526.8, -253.2] n=16; secondary no; not monotone",
+  "corrections": [],
+  "notes": "Original bar >= 1000 ms (2026-09-23g), amended to >= 500 (2026-10-01), then >= 300 ms CI excl. 0 (2026-10-01b). PASS 2 text says 'amended 2026-10-04'; git dates the 2026-10-01b entry to 2026-10-01."
+ },
+ {
+  "id": "P3 (pass 2k)",
+  "prediction": "COMMIT-WL-STOP + feasibility gate vs NOPARTIAL (re-run): median TTFA reduction >= 300 ms on multi_step, CI excl. 0; point vs 350-450 bracket; secondary >= 1000 ms",
+  "registered": "2026-10-08 — PASS 2k: pre-registered amendment, committed before any of its code and before the run",
+  "registered_original": "2026-10-06 — PRE-REGISTRATION: preemptible hypotheses (P9) and the listener feasibility gate",
+  "amendments": [
+   "2026-10-06 — PRE-REGISTRATION: P9b, the hot spare. Committed before any P9b code"
+  ],
+  "scored": "2026-10-08 — PASS 2k: P3 HOLDS. +357 ms on multi_step, inside the predicted bracket; the gate abstains on dev",
+  "verdict": "HOLDS: +357 ms [+294, +412], n=70 (inside bracket; CI lower end below the 300 bar); secondary no",
+  "corrections": [
+   "2026-10-08 — CORRECTION to \"PASS 2k: P3 HOLDS\" (reviewer, 7 findings)",
+   "2026-10-08 — DECISIONS on abb44e6 (user)"
+  ]
+ },
+ {
+  "id": "feasibility gate / dev (pass 2k)",
+  "prediction": "Gate abstains on dev: paired TTFA NOPARTIAL - STOP within +/-100 ms (point); regression beyond -100 ms = gate failing only if hypotheses issued",
+  "registered": "2026-10-08 — PASS 2k: pre-registered amendment, committed before any of its code and before the run",
+  "registered_original": "2026-10-06 — PRE-REGISTRATION: preemptible hypotheses (P9) and the listener feasibility gate",
+  "scored": "2026-10-08 — PASS 2k: P3 HOLDS. +357 ms on multi_step, inside the predicted bracket; the gate abstains on dev",
+  "verdict": "GATE ABSTAINED (0 hypotheses, 0 stops, 3 runs); TTFA +2 ms [-15, +15], n=16 -> within +/-100",
+  "corrections": [
+   "2026-10-08 — CORRECTION to \"PASS 2k: P3 HOLDS\" (reviewer, 7 findings)"
+  ]
+ },
+ {
+  "id": "P4",
+  "prediction": "COMMIT-WL dWER <= +2.0 points on every split; FALSIFIED if > +5 on any",
+  "registered": "PRE-REGISTRATION 2026-09-23g — P3 to P8, before any Phase 5 run",
+  "scored": "2026-10-06 — PASS 2 SCORED. P3 FAILS, P7 FALSIFIED, P4 PASSES, P6 NOT MET ON TWO SETS",
+  "verdict": "PASSES: worst multi_step mean +0.0082 (median 0), n=62; other sets 0",
+  "corrections": [],
+  "notes": "DECISION 2026-10-02 / 2026-10-05 entries said 'P4 IS REPORTED FAILED' (selection set, +0.028 vs +0.020 bar); the live pass 2 scoring says PASSES. See ambiguities."
+ },
+ {
+  "id": "P4 (pass 2k)",
+  "prediction": "dWER STOP - NOPARTIAL, mean and median per item, <= +0.020 on each set; falsified if > +0.050",
+  "registered": "2026-10-08 — PASS 2k: pre-registered amendment, committed before any of its code and before the run",
+  "scored": "2026-10-08 — PASS 2k: P3 HOLDS. +357 ms on multi_step, inside the predicted bracket; the gate abstains on dev",
+  "verdict": "HOLDS on multi_step: mean +0.0043 [-0.0039, +0.0135], median 0, n=70; dev holds by inertness (uninformative), n=16",
+  "corrections": [
+   "2026-10-08 — CORRECTION to \"PASS 2k: P3 HOLDS\" (reviewer, 7 findings)"
+  ]
+ },
+ {
+  "id": "P5",
+  "prediction": "Issue rule: NAIVE-1.0 starves on >= 20% of turns (split OR endpoint delay > 2x REACTIVE) and both CONTROLLED-0.6/0.8 < 20%; FAILS otherwise; controller-varies check",
+  "registered": "2026-10-06 — P5 RERUN, pre-registered before the runs",
+  "registered_original": "AMENDMENT 2026-09-23e to P5 (v3 §5.4). Before any Phase 5 data",
+  "amendments": [
+   "PRE-REGISTRATION 2026-09-23g — P3 to P8, before any Phase 5 run"
+  ],
+  "scored": "2026-10-06 — P5 SCORED AND FAILED. The issue rule does not starve the VAD on this set",
+  "verdict": "FAILS (criterion cannot separate arms): split turns 15/29 = 0.52 [0.34, 0.69] in all four arms incl. NOPARTIAL; disjunct (b) unscoreable; duty manipulation 0.61/0.79/0.95 worked; per-item difference > ~16 points excluded",
+  "corrections": [
+   "2026-10-06 — CORRECTION to the P5 entry above. Four errors, appended not edited",
+   "2026-10-06 — DECISIONS taken on 873339b (user)"
+  ],
+  "notes": "First P5 run voided: '2026-10-06 — P5 RUN VOIDED BY MY OWN COMPUTE ON THE BOX. Cause, scope, and the fence'. DECISIONS on 873339b: P5 STANDS FAILED."
+ },
+ {
+  "id": "P6",
+  "prediction": "Under COMMIT-WL the final decode <= 1.3x the offline model of its own tail; FALSIFIED if > 1.6x",
+  "registered": "PRE-REGISTRATION 2026-09-23g — P3 to P8, before any Phase 5 run",
+  "scored": "2026-10-06 — PASS 2 SCORED. P3 FAILS, P7 FALSIFIED, P4 PASSES, P6 NOT MET ON TWO SETS",
+  "verdict": "NOT MET ON TWO SETS, FALSIFIED ON NONE: sixteen 1.33x [1.29, 1.41] n=48; multi_step 1.31x [1.16, 1.46] n=211; short 1.11x, long 1.28x",
+  "corrections": []
+ },
+ {
+  "id": "P6 (pass 2k)",
+  "prediction": "STOP final <= 1.3x solo model of own tail, falsified > 1.6x, item-median estimator, multi_step and dev separately",
+  "registered": "2026-10-08 — PASS 2k: pre-registered amendment, committed before any of its code and before the run",
+  "scored": "2026-10-08 — PASS 2k: P3 HOLDS. +357 ms on multi_step, inside the predicted bracket; the gate abstains on dev",
+  "verdict": "HOLDS on multi_step 0.95x [0.94, 0.96] (n=70 items); dev 0.97x [0.96, 0.98] holds by inertness (uninformative)",
+  "corrections": [
+   "2026-10-08 — CORRECTION to \"PASS 2k: P3 HOLDS\" (reviewer, 7 findings)"
+  ]
+ },
+ {
+  "id": "P7",
+  "prediction": "COMMIT-WL J/turn <= REACTIVE on multi_step, net of idle; FALSIFIED if higher with CI excl. 0",
+  "registered": "PRE-REGISTRATION 2026-09-23g — P3 to P8, before any Phase 5 run",
+  "scored": "2026-10-06 — PASS 2 SCORED. P3 FAILS, P7 FALSIFIED, P4 PASSES, P6 NOT MET ON TWO SETS",
+  "verdict": "FALSIFIED: raw +24.2 J/turn [+21.5, +25.8] on multi_step (higher on every set); net-of-idle form unusable",
+  "corrections": [],
+  "notes": "Restated (not re-scored) as J per ms saved in the P9 pre-registration."
+ },
+ {
+  "id": "P7 (pass 2k)",
+  "prediction": "Joules per millisecond saved on multi_step (ratio of paired medians), raw and net; no pass/fail bar",
+  "registered": "2026-10-08 — PASS 2k: pre-registered amendment, committed before any of its code and before the run",
+  "registered_original": "2026-10-06 — PRE-REGISTRATION: preemptible hypotheses (P9) and the listener feasibility gate",
+  "scored": "2026-10-08 — PASS 2k: P3 HOLDS. +357 ms on multi_step, inside the predicted bracket; the gate abstains on dev",
+  "verdict": "DESCRIPTIVE (no bar): net +0.0499 J/ms [+0.0425, +0.0607] n=70 (the quoted like-for-like figure); raw +0.0443 [+0.0353, +0.0557]; ~18 J/turn net",
+  "corrections": [
+   "2026-10-08 — CORRECTION to \"PASS 2k: P3 HOLDS\" (reviewer, 7 findings)"
+  ]
+ },
+ {
+  "id": "P8",
+  "prediction": "Descriptive: listener commits >= 60% of words before endpoint while thinker draft usable <= 10%",
+  "registered": "2026-10-08 — AMENDMENTS before the 2026-10-09 runs (found while building)",
+  "registered_original": "PRE-REGISTRATION 2026-09-23g — P3 to P8, before any Phase 5 run",
+  "amendments": [
+   "2026-10-08 — PRE-REGISTRATION for 2026-10-09: passes 8, 6, 7, 9, 1r. Committed before the allocator build"
+  ],
+  "scored": "2026-10-09 — PASS 8 (f*), PASS 6 (ALLOCATOR), P8. Scored once, as registered in 71d1612 + amendments",
+  "verdict": "DESCRIPTIVE: listener word fraction 0.409 [0.340, 0.454] n=70 (expectation >= 0.60); thinker greedy p_usable at corrected f* ~0.15 (0.150-0.155; expectation <= 0.10), within sampling error of break-even",
+  "corrections": [
+   "2026-10-09 — CORRECTION to \"PASS 8 (f*), PASS 6, P8\": pass 8's f* was on mixed clocks. Corrected, it lands on the prediction"
+  ]
+ },
+ {
+  "id": "word density",
+  "prediction": "single_step_reasoning stt_final share falls in [56.0, 61.5]%; FALSIFIED if outside [50, 65]%",
+  "registered": "PRE-REGISTRATION 2026-10-01d — word density, not duration. Before the run",
+  "scored": "2026-10-01 — Word density scored. The prediction hit; the hypothesis does not hold",
+  "verdict": "PREDICTION HIT (survives): 58.2% [57.0, 59.2], 51 valid turns; but hypothesis (monotone in word density) DOES NOT HOLD",
+  "corrections": []
+ },
+ {
+  "id": "pass 1n",
+  "prediction": "Dev paired TTFA canonical - NOPARTIAL = 400-600 ms; FALSIFIED if CI includes 0",
+  "registered": "PRE-REGISTRATION 2026-10-01e — pass 1n, REACTIVE-NOPARTIAL. Before the run",
+  "scored": "2026-10-02 — PASS 1n COMPLETE. The partial-decode cost is real, smaller than predicted, and scales with in-flight rate",
+  "verdict": "SURVIVES falsification but MISSES the predicted band: +315 ms [+188, +453] n=16; reproducible figure cited by paper +305.7 ms [+188.0, +452.6] n=15",
+  "corrections": [
+   "2026-10-13 — PROVENANCE GAP closed: two claim-bearing numbers had no script"
+  ],
+  "notes": "Qualifying entry is 'PROVENANCE GAP closed...' (not CORRECTION-titled)."
+ },
+ {
+  "id": "two-tier v2",
+  "prediction": "dWER <= +0.015 AND final sees <= 65% AND saving >= 250 ms (all three); then selection rule dWER <= +0.020",
+  "registered": "AMENDMENT 2026-10-05 — v2 at batch_s 3.0, so the lookback is actually exercised",
+  "registered_original": "PRE-REGISTRATION 2026-10-02b — two-tier v2: batch and context. Before the reps",
+  "scored": "DECISION 2026-10-05 — two-tier v2 FAILS at both batch sizes. The standing decision holds",
+  "verdict": "FAILS at both batch sizes: median dWER +0.028 (batch 4.0 and 3.0) vs +0.020 bar; final sees 53%/58%, saving 289/292 ms; 3 reps x 16 items; lookback never engaged",
+  "corrections": []
+ },
+ {
+  "id": "P9",
+  "prediction": "COMMIT-WL-K (kill) final decode <= 1.1x solo model of its own tail; FALSIFIED if >= 1.3x",
+  "registered": "2026-10-06 — PRE-REGISTRATION: preemptible hypotheses (P9) and the listener feasibility gate",
+  "scored": "2026-10-06 — P9 FALSIFIED AS RUN. The run tested my respawn bug, not the kill",
+  "verdict": "FALSIFIED (as run): 2.06x [2.01, 2.07], n=16 items; attributed to respawn at every endpoint (by elimination)",
+  "corrections": [
+   "2026-10-06 — CORRECTION to the P9 entry above (appended, not edited)"
+  ]
+ },
+ {
+  "id": "P9b",
+  "prediction": "Hot spare: P9b-a KILL final <= 1.1x solo model (falsified >= 1.3x); P9b-b paired TTFA RACE - KILL >= 150 ms with CI lower > 0; both required",
+  "registered": "2026-10-06 — PRE-REGISTRATION: P9b, the hot spare. Committed before any P9b code",
+  "scored": "2026-10-06 — P9b HOLDS. Preempting the orphan, with the respawn out of the scored window, wins 435 ms",
+  "verdict": "NOT TESTABLE: validity check 1 failed in all three KILL runs (spawn on a split's pending final) -> all KILL runs void; 'P9b HOLDS' (0.94x; +435 ms [+161, +652] n=16) WITHDRAWN as a verdict",
+  "corrections": [
+   "2026-10-06 — CORRECTION to \"P9b HOLDS\": validity check 1 FAILED in every KILL run"
+  ]
+ },
+ {
+  "id": "P9b re-run",
+  "prediction": "Same bars as P9b; turn-close respawn fallback removed; check 1 pairs endpoints to finals across turn records",
+  "registered": "2026-10-06 — P9b RE-RUN declared (user decision (A)), before launch",
+  "registered_original": "2026-10-06 — PRE-REGISTRATION: P9b, the hot spare. Committed before any P9b code",
+  "scored": "2026-10-06 — P9b RE-RUN: check 1 voids 2 of 3 KILL runs again. Design not met; decision to the user",
+  "verdict": "DESIGN NOT MET (2 of 3 KILL runs void by check 1); scorer's 1-vs-3 'holds' (+250 ms [+8, +650] n=16) not reported as a pass; decision referred to user",
+  "corrections": [
+   "2026-10-06 — CORRECTION to the re-run entry above (reviewer, 4 findings)"
+  ]
+ },
+ {
+  "id": "P9c",
+  "prediction": "SIGSTOP/SIGCONT: P9b-a STOP final <= 1.1x solo model (falsified >= 1.3x); P9b-b paired TTFA RACE - STOP >= 150 ms with CI lower > 0; both + checks 1 (amended), 3, 4, 5",
+  "registered": "2026-10-07 — P9c: AMENDMENTS to the final attempt (3894a8c), committed before the run",
+  "registered_original": "2026-10-07 — PRE-REGISTRATION: P9b FINAL ATTEMPT, SIGSTOP/SIGCONT. Committed before any of its code",
+  "scored": "2026-10-08 — P9c HOLDS. Freezing the orphan at the endpoint saves 462 ms of TTFA, all of it in the final",
+  "verdict": "HOLDS: P9b-a 0.93x [0.92, 0.98] n=17; P9b-b +462 ms [+57, +737] n=16 (CI lower end below 150 bar); under the original 3894a8c check 2 it would be NOT TESTABLE",
+  "corrections": [
+   "2026-10-08 — CORRECTION to \"P9c HOLDS\" (reviewer, 5 findings on the entry)"
+  ]
+ },
+ {
+  "id": "pass 6 (ALLOCATOR)",
+  "prediction": "Registered checks: spend decisions = 0, drafts issued = 0, every decision record reason below_break_even or infeasible with inputs",
+  "registered": "2026-10-08 — PRE-REGISTRATION for 2026-10-09: passes 8, 6, 7, 9, 1r. Committed before the allocator build",
+  "scored": "2026-10-09 — PASS 8 (f*), PASS 6 (ALLOCATOR), P8. Scored once, as registered in 71d1612 + amendments",
+  "verdict": "every registered check passes: 576 decisions (537 below_break_even, 39 infeasible), 0 spends, 0 drafts",
+  "corrections": [
+   "2026-10-09 — CORRECTION to \"PASS 8 (f*), PASS 6, P8\": pass 8's f* was on mixed clocks. Corrected, it lands on the prediction"
+  ]
+ },
+ {
+  "id": "pass 7",
+  "prediction": "SPEC-CONTINUE vs REACTIVE interleaved, descriptive, no falsifiable prediction",
+  "registered": "2026-10-09 — AMENDMENTS before passes 7, 9, 1r (user decisions; no data from these passes yet)",
+  "registered_original": "2026-10-08 — PRE-REGISTRATION for 2026-10-09: passes 8, 6, 7, 9, 1r. Committed before the allocator build",
+  "scored": "2026-10-13 — PASS 7 SCORED: the interleave design broke at the first VAD split; what survives is thin",
+  "verdict": "DESCRIPTIVE: TTFA +32 ms [-92, +92], n=22 paired items; +36.2 J/turn raw [+35.1, +36.7]; 0/96 draft tokens accepted (n=38)",
+  "corrections": [
+   "2026-10-13 — CORRECTION to \"PASS 7 SCORED\" (reviewer, 4 findings)",
+   "2026-10-13 — DECISIONS on fe19ac4 (user), and the interleave fix"
+  ]
+ },
+ {
+  "id": "pass 1r",
+  "prediction": "Paired dev TTFA NOPARTIAL - UNLOADED: >= 100 ms CI excl. 0 -> residency cost; 0<pt<100 CI excl. 0 -> smaller cost; CI incl. 0 -> no cost detected, remainder = drift",
+  "registered": "2026-10-08 — PRE-REGISTRATION for 2026-10-09: passes 8, 6, 7, 9, 1r. Committed before the allocator build",
+  "registered_original": "PRE-REGISTRATION 2026-10-02c — pass 1r, residency. AFTER pass 2, not before",
+  "amendments": [
+   "2026-10-08 — AMENDMENTS before the 2026-10-09 runs (found while building)"
+  ],
+  "scored": "2026-10-13 — PASS 1r SCORED: no residency cost detected. MEASUREMENT FROZEN",
+  "verdict": "NO RESIDENCY COST DETECTED: +1.8 ms [-30.3, +37.0] n=16 (fence-compliant headline, U1 dropped); full pass +12.1 [-31.1, +39.1]; >= ~146 ms of ~185 ms remainder unattributed",
+  "corrections": [
+   "2026-10-13 — CORRECTION to \"PASS 1r SCORED\" (reviewer, 4 findings)"
+  ]
+ },
+ {
+  "id": "pass 9",
+  "prediction": "Live mic, REACTIVE-NOPARTIAL vs COMMIT-WL-STOP + gate, 16 items; descriptive realism check, no prediction",
+  "registered": "2026-10-09 — AMENDMENTS before passes 7, 9, 1r (user decisions; no data from these passes yet)",
+  "registered_original": "2026-10-08 — PRE-REGISTRATION for 2026-10-09: passes 8, 6, 7, 9, 1r. Committed before the allocator build",
+  "scored": null,
+  "verdict": "PENDING (descriptive only)",
+  "corrections": [],
+  "notes": "One attempt voided and discarded: '2026-10-13 — PASS 9 ATTEMPT VOIDED AND DISCARDED; nobody was at the box'."
+ }
+]

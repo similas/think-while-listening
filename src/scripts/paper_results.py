@@ -1,0 +1,355 @@
+"""Tables 1-3 and results/RESULTS.md, from the claim registry, the ledger and the
+pass 6 decision log. `make results` runs it.
+
+Table 1  where to speculate: listener vs thinker, every cell a scorer line.
+Table 2  the allocator's decisions by reason (pass 6), from the decision records.
+Table 3  the pre-registration ledger: each prediction, its registration commit,
+         its scoring commit, its verdict as it stands, and correction commits.
+RESULTS  one page: every claim the paper makes, quoted from its scorer, with the
+         runs, the command and the NOTES entry. The paper is written from it.
+
+Commits are resolved from git (the first commit whose NOTES diff adds the
+heading), never typed. The ledger's verdict lines are curated from NOTES
+(src/scripts/paper_ledger.json); every one names the heading it summarises, so
+each can be checked against the entry.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import statistics
+import subprocess
+from collections import Counter, defaultdict
+from functools import cache
+from pathlib import Path
+
+import paper_sources as ps
+
+REPO = ps.REPO
+TABLES = REPO / "results/tables"
+LEDGER = Path(__file__).with_name("paper_ledger.json")
+NOTES = "results/NOTES.md"
+
+
+@cache
+def commit_of(heading: str) -> str:
+    out = subprocess.run(
+        ["git", "log", "-S", heading, "--reverse", "--format=%h %ad", "--date=short", "--", NOTES],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+    if not out:
+        raise LookupError(f"no commit adds the NOTES heading {heading!r}")
+    return out[0]
+
+
+def claim(key: str) -> ps.Claim:
+    hits = [c for c in ps.CLAIMS if c.key == key]
+    if len(hits) != 1:
+        raise LookupError(key)
+    return hits[0]
+
+
+def grab(key: str, pattern: str) -> str:
+    """Group 1 of pattern in claim key's quoted line."""
+    m = re.search(pattern, claim(key).quote())
+    if not m:
+        raise LookupError(f"{key}: {pattern!r} not in {claim(key).quote()!r}")
+    return m.group(1)
+
+
+CI = r"([+-]?[0-9.]+ (?:ms|J|J/ms|ms/s)? ?\[[^\]]+\])"
+
+
+# ------------------------------------------------------------------ Table 1 --
+def table1() -> str:
+    rows = [
+        (
+            "Survival: how much of the speculation is kept",
+            "words committed before the endpoint: "
+            + grab("p8_listener", r"median (\S+ \[[^\]]+\] n=\d+)")
+            + " items (pass 6, P8)",
+            grab("spec_survival", r"per turn median (\d+)")
+            + " draft tokens produced per turn, accepted / produced "
+            + grab("spec_survival", r"accepted/produced median (\S+ \(n=\d+ items\))")
+            + " (pass 7)",
+        ),
+        (
+            "Value: TTFA saved on multi_step",
+            grab("p3", r"(\+\d+ ms \[[^\]]+\] n=\d+)") + " (pass 2k, gated, vs NOPARTIAL)",
+            "SPEC - REACTIVE "
+            + grab("spec_ttfa", r"\(ms\): (\S+ \[[^\]]+\] n=\d+)")
+            + " ms: no saving detected (pass 7, descriptive)",
+        ),
+        (
+            "Overlap cost: what speculating in flight at the endpoint costs",
+            "c = "
+            + grab("listener_c", r"c (\d+ ms/s \[[^\]]+\])")
+            + " of final decode per s of overlap, n=960 turns (P2a); removing partials "
+            + grab("listener_intervention", r"(\+[0-9.]+ ms \[[^\]]+\] n=\d+)")
+            + " TTFA on dev (pass 1n)",
+            "TTFA "
+            + grab("thinker_overlap", r"endpoint: (\+[0-9.]+ ms \[[^\]]+\] n=\d+)")
+            + " when the draft is still decoding; "
+            + grab("thinker_finished", r"endpoint: (\+[0-9.]+ ms \[[^\]]+\] n=\d+)")
+            + " when it finished (blocked policy runs, 2026-09-18/20)",
+        ),
+        (
+            "Energy per turn, net of the board floor",
+            grab("energy_listener", r"j_net: (\+[0-9.]+ J \[[^\]]+\] n=\d+)")
+            + " (pass 2k); of it, discarded stale decodes "
+            + grab("stale", r"net median ([0-9.]+ J)")
+            + " each, n="
+            + grab("stale", r"(\d+) measured")
+            + "; "
+            + grab("p7_jms", r"medians (\+[0-9.]+ J/ms \[[^\]]+\])")
+            + " per ms saved",
+            grab("spec_energy", r"net SPEC - REACTIVE: (\+[0-9.]+ \[[^\]]+\] n=\d+)")
+            + " J (pass 7, descriptive)",
+        ),
+        (
+            "Memory",
+            "resident second recognizer (tiny, idle): "
+            + grab("residency_memory", r"medians\): (\+[0-9.]+ MB)")
+            + " agent RSS, run level, "
+            + grab("residency_memory", r"(n=\d+/\d+ runs)")
+            + "; costs no detectable TTFA, "
+            + grab("residency", r"(\+[0-9.]+ ms \[[^\]]+\] n=\d+)")
+            + " (pass 1r)",
+            "no second model: drafts run in the reply LLM's process; not measured separately",
+        ),
+    ]
+    out = [
+        "# Table 1. Where to speculate: the listener against the thinker",
+        "",
+        "Generated by src/scripts/paper_results.py. Each cell quotes a scorer line;",
+        "RESULTS.md names the scorer, its runs and its NOTES entry.",
+        "",
+        "| | Listener (COMMIT-WL-STOP + feasibility gate) | Thinker (SPEC-CONTINUE) |",
+        "|---|---|---|",
+    ]
+    out += [f"| {a} | {b} | {c} |" for a, b, c in rows]
+    out += [
+        "",
+        "Sources: survival P8 (fstar_score.py) and pass 7 (p7_score.py); value pass 2k",
+        "(p2k_score.py) and pass 7; overlap cost P2a (p2_score.py) and overlap_penalties.py;",
+        "energy pass 2k and pass 7; memory and residency pass 1r (p1r_score.py).",
+        "Pass 7 is descriptive, its scorer post hoc and its interleave design compromised",
+        "(NOTES 2026-10-13).",
+    ]
+    return "\n".join(out) + "\n"
+
+
+# ------------------------------------------------------------------ Table 2 --
+def table2() -> str:
+    (run,) = ps.PASS6
+    recs = [
+        json.loads(x)
+        for x in (REPO / run / "turns.jsonl").read_text().splitlines()
+        if '"decision_record"' in x
+    ]
+    by: dict[str, list[dict]] = defaultdict(list)
+    issued: Counter = Counter()
+    for r in recs:
+        reason = r["decision"]["inputs"]["reason"]
+        if r["decision"]["reason"] != f"allocator: {reason}":
+            raise ValueError(f"reason mismatch in turn {r['turn']}")
+        by[reason].append(r)
+        issued[(reason, r.get("outcome"))] += 1
+
+    def rng(v: list[float], fmt: str) -> str:
+        return f"{format(statistics.median(v), fmt)} ({format(min(v), fmt)}-{format(max(v), fmt)})"
+
+    out = [
+        "# Table 2. The allocator's decisions by reason (pass 6)",
+        "",
+        f"Run {Path(run).name}, multi_step, COMMIT-WL-STOP + gate, allocator policy.",
+        f"{len(recs)} decision records over {len({r['turn'] for r in recs})} turns. Cells: median",
+        "(min-max). Generated by src/scripts/paper_results.py from the decision records.",
+        "",
+        "| reason | decisions | turns | f_hat | p_usable_hat | feasible budget (tokens) "
+        "| remaining (ms) | budget spent | drafts issued |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    for reason in sorted(by, key=lambda k: -len(by[k])):
+        rs = by[reason]
+        inp = [r["decision"]["inputs"] for r in rs]
+        spent = sum(1 for r in rs if r["decision"]["budget_tokens"] > 0)
+        drafts = sum(n for (rr, o), n in issued.items() if rr == reason and o != "not issued")
+        out.append(
+            f"| {reason} | {len(rs)} | {len({r['turn'] for r in rs})} "
+            f"| {rng([i['f_hat'] for i in inp], '.3f')} "
+            f"| {rng([i['p_usable_hat'] for i in inp], '.3f')} "
+            f"| {rng([i['feasible_budget'] for i in inp], '.0f')} "
+            f"| {rng([i['remaining_ms'] for i in inp], '.0f')} | {spent} | {drafts} |"
+        )
+    be = {r["decision"]["inputs"]["break_even"] for r in recs}
+    rate = {r["decision"]["inputs"]["ms_per_token"] for r in recs}
+    out += [
+        "",
+        f"Break-even p_usable {sorted(be)}; decode rate {sorted(rate)} ms/token on every",
+        "decision. Every record carries its inputs and every reason matches them",
+        "(NOTES 2026-10-09, PASS 8 (f*), PASS 6 (ALLOCATOR), P8).",
+    ]
+    return "\n".join(out) + "\n"
+
+
+# ------------------------------------------------------------------ Table 3 --
+def table3() -> str:
+    ledger = json.loads(LEDGER.read_text())
+    out = [
+        "# Table 3. The pre-registration ledger",
+        "",
+        "Every registered prediction: the commit that registered its bar, the commit",
+        "that scored it, its verdict as it stands after every correction, and the",
+        "commits of the corrections. Commits are resolved from git by the NOTES",
+        "heading each entry carries. Generated by src/scripts/paper_results.py from",
+        "src/scripts/paper_ledger.json.",
+        "",
+        "| # | prediction | registered | scored | verdict as it stands | corrections |",
+        "|---|---|---|---|---|---|",
+    ]
+    for i, e in enumerate(ledger, 1):
+        reg = commit_of(e["registered"])
+        if e.get("registered_original"):
+            reg = f"{commit_of(e['registered_original'])}; as amended {reg}"
+        sc = commit_of(e["scored"]) if e.get("scored") else "not scored"
+        corr = ", ".join(commit_of(h).split()[0] for h in e.get("corrections", [])) or "none"
+        pred = e["prediction"].replace("|", "/")
+        verdict = e["verdict"].replace("|", "/")
+        out.append(f"| {i} | **{e['id']}**: {pred} | {reg} | {sc} | {verdict} | {corr} |")
+    return "\n".join(out) + "\n"
+
+
+# ------------------------------------------------------------------ RESULTS --
+SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "Where the silence goes (Fig 1)",
+        (
+            "stages_dev",
+            "stages_short_digit",
+            "stages_long_digit",
+            "stages_multi_step",
+            "stages_longest",
+        ),
+    ),
+    (
+        "The occupancy tax (Fig 2)",
+        ("tax_ballast_7dc19e", "tax_ballast_ace562", "tax_full_37443c", "tax_full_74e10a"),
+    ),
+    (
+        "Two overlap penalties (Fig 3)",
+        (
+            "thinker_overlap",
+            "thinker_finished",
+            "listener_c",
+            "p2a",
+            "p2b",
+            "listener_intervention",
+            "p9c",
+        ),
+    ),
+    ("When a draft still fits (Fig 4), and who survives", ("fstar", "p8_listener")),
+    (
+        "Listener speculation, gated (Fig 5)",
+        ("p3", "p3_dev", "p4", "p6", "energy_listener", "p7_jms", "stale", "pass2"),
+    ),
+    ("Thinker speculation (Table 1)", ("spec_ttfa", "spec_energy", "spec_survival")),
+    ("Residency", ("residency", "residency_memory")),
+)
+
+CAVEATS = {
+    "stages_dev": "P1 (share rises with duration) is FALSIFIED as registered (Table 3); "
+    "what stands is that the final decode is the largest stage on every set.",
+    "tax_ballast_7dc19e": "Paired per turn by occupancy_tax.py (2026-10-13, existing logs). "
+    "NOTES recorded differences of medians (+102 ms ballast, +247 ms full) without "
+    "intervals; the paired figures are the ones cited.",
+    "tax_ballast_ace562": "The replicate run; the two ballast figures do not agree in size "
+    "(+113 vs +249 ms), both exclude 0. The paper cites the range.",
+    "thinker_overlap": "Reproduces the 2026-09-21 figure (+100.3 [+78.0, +123.9] n=130), "
+    "which had no script; the paper cites this one.",
+    "listener_c": "Below the registered band [500, 1500] ms/s; separate-arm coding (added "
+    "post hoc, conditioned interval) gives 576 [518, 638]. Scorer written after the data.",
+    "listener_intervention": "Reproduces pass 1n's +315 [+188, +453] n=16 (no script); one "
+    "item dropped by the reference-match filter.",
+    "p9c": "The P9b-b CI's lower end (+57 ms) lies below its 150 ms bar.",
+    "fstar": "As registered (mixed clocks) the estimate was 0.895 [0.891, 0.901]; 0.861 is "
+    "the clock-consistent correction and the figure cited. Predicted 0.858.",
+    "p8_listener": "Expectation >= 0.60 not met. The thinker half is a curve value, greedy "
+    "p_usable ~0.15 at the corrected f* (expectation <= 0.10).",
+    "p3": "THE CI's LOWER END (+294 ms) LIES BELOW THE 300 ms BAR; reported beside the bar "
+    "every time the number appears (decision on abb44e6).",
+    "p4": "Mean dWER CI [-0.0039, +0.0135]; 14 items worse, 8 better.",
+    "energy_listener": "Net is the like-for-like figure: the energy window ends at first "
+    "audio, which STOP moves earlier.",
+    "stale": "Some stale decodes drew 15-17 W, unexplained; one line in Limitations.",
+    "pass2": "Unconditional ablation: speculating on every turn, without the gate or the "
+    "SIGSTOP preemption. paired = NOPARTIAL - COMMIT-WL, a reduction: -155 ms means "
+    "COMMIT-WL was slower; the CI includes 0. P3 FAILS on this pass (Table 3).",
+    "spec_ttfa": "Descriptive; scorer post hoc; interleave design broke at the first split "
+    "(NOTES 2026-10-13). Effects below ~90 ms are not excluded.",
+    "residency": "Fence-compliant headline (rep U1 dropped); full pass +12.1 [-31.1, +39.1].",
+    "residency_memory": "Idle, never-decoding tiny engine: isolates residency, not the "
+    "two-engine design's live memory (~+121 MB, not re-measured).",
+}
+
+
+def results_page() -> str:
+    out = [
+        "# RESULTS",
+        "",
+        "Every claim the paper makes, in paper order. Each is the scorer's own output",
+        "line, quoted; the command reproduces it from results/raw; the NOTES entry",
+        "records it, with the commit that added the entry. Generated by",
+        "src/scripts/paper_results.py (`make results`). The paper is written from this",
+        "page, not from the notebook. Verdicts of every registered prediction: Table 3",
+        "(results/tables/paper_table3_ledger.md). Medians with 95% bootstrap CIs and n",
+        "throughout, as the scorers print them.",
+        "",
+        "Measurement froze 2026-10-13 13:03 with pass 1r. Pass 9 (live microphone) is",
+        "the approved post-freeze exception: descriptive, no claim; PENDING.",
+        "",
+    ]
+    for title, keys in SECTIONS:
+        out += [f"## {title}", ""]
+        for k in keys:
+            c = claim(k)
+            src = ps.SOURCES[c.source]
+            runs = ", ".join(src.runs) or "see the scorer's run list"
+            out += [
+                f"### {c.statement}",
+                "",
+                "```",
+                c.quote(),
+                "```",
+                "",
+                f"- command: `{src.command()}`"
+                if len(src.command()) < 160
+                else f"- command: `src/scripts/{src.script}` with the {len(src.runs)} runs below",
+                f"- runs: {runs}",
+                f'- NOTES: "{c.notes}" ({commit_of(c.notes)})',
+            ]
+            if k in CAVEATS:
+                out.append(f"- caveat: {CAVEATS[k]}")
+            out.append("")
+    return "\n".join(out)
+
+
+def main() -> None:
+    TABLES.mkdir(parents=True, exist_ok=True)
+    for name, fn in (
+        ("paper_table1_where_to_speculate.md", table1),
+        ("paper_table2_allocator.md", table2),
+        ("paper_table3_ledger.md", table3),
+    ):
+        (TABLES / name).write_text(fn())
+        print(f"  wrote results/tables/{name}")
+    (REPO / "results/RESULTS.md").write_text(results_page())
+    print("  wrote results/RESULTS.md")
+
+
+if __name__ == "__main__":
+    main()

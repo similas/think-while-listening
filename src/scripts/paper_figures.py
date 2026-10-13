@@ -89,7 +89,13 @@ def mean_ci(v: list[float], reps: int = 4000, seed: int = 0) -> tuple[float, flo
     return statistics.fmean(v), ms[int(0.025 * reps)], ms[int(0.975 * reps) - 1], len(v)
 
 
+PRINT_ONLY = False  # --print-only: report the plotted values, write no file
+
+
 def save(fig: Any, out: Path, name: str) -> None:
+    if PRINT_ONLY:
+        plt.close(fig)
+        return
     fig.savefig(out / f"{name}.pdf")
     fig.savefig(out / f"{name}.png", dpi=150)
     plt.close(fig)
@@ -156,6 +162,12 @@ def fig1(out: Path) -> None:
             t["stages_ms"]["speech_end_est"] for t in ts if "speech_end_est" in t["stages_ms"]
         )
         rows.append((name, stage_meds, statistics.median(ttfa), len(ts), speech / 1000))
+        print(
+            f"  Fig1 {name}: TTFA median {statistics.median(ttfa):.0f} ms, STT final "
+            f"{stage_meds[1]:.0f} ms = {stage_meds[1] / sum(stage_meds) * 100:.0f}% of the stage "
+            f"sum, LLM first token {stage_meds[2]:.0f} ms = "
+            f"{stage_meds[2] / sum(stage_meds) * 100:.0f}%, n={len(ts)} turns, {len(runs)} runs"
+        )
     x = range(len(rows))
     bottoms = [0.0] * len(rows)
     for k, (lab, _a, _b) in enumerate(STAGES):
@@ -218,6 +230,11 @@ def fig2(out: Path) -> None:
                 statistics.median(huge),
                 len(stt),
             )
+        )
+        r = rows[-1]
+        print(
+            f"  Fig2 {label}: STT final {r[1]:.0f} ms [{r[2][0]:.0f}, {r[2][1]:.0f}] n={r[5]}; "
+            f"thp_fault_fallback {r[3]:.0f}/decode; AnonHugePages {r[4]:.0f} MB; run {run}"
         )
     fig, axes = plt.subplots(1, 3, figsize=(9.6, 3.4))
     x = list(range(len(rows)))
@@ -552,7 +569,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out-dir", type=Path, default=REPO / "results/figures")
     ap.add_argument("--only", default="", help="comma-separated figure numbers")
+    ap.add_argument("--print-only", action="store_true", help="report values, write no file")
     a = ap.parse_args()
+    global PRINT_ONLY
+    PRINT_ONLY = a.print_only
     a.out_dir.mkdir(parents=True, exist_ok=True)
     figs = {"1": fig1, "2": fig2, "3": fig3, "4": fig4, "5": fig5}
     for k in a.only.split(",") if a.only else figs:
