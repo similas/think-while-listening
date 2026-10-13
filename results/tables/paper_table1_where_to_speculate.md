@@ -5,11 +5,11 @@ RESULTS.md names the scorer, its runs and its NOTES entry.
 
 | | Listener (COMMIT-WL-STOP + feasibility gate) | Thinker (SPEC-CONTINUE) |
 |---|---|---|
-| Survival: how much of the speculation is kept | words committed before the endpoint: 0.409 [0.340, 0.454] n=70 items (pass 6, P8) | 96 draft tokens produced per turn, accepted / produced 0.000 (n=38 items) (pass 7) |
-| Value: TTFA saved on multi_step | +357 ms [+294, +412] n=70 (pass 2k, gated, vs NOPARTIAL) | SPEC - REACTIVE +32.375 [-91.583, +92.450] n=22 ms: no saving detected (pass 7, descriptive) |
-| Overlap cost: what speculating in flight at the endpoint costs | c = 492 ms/s [439, 574] of final decode per s of overlap, n=960 turns (P2a); removing partials +305.7 ms [+188.0, +452.6] n=15 TTFA on dev (pass 1n) | TTFA +96.5 ms [+79.4, +109.8] n=258 when the draft is still decoding; +17.5 ms [-24.4, +76.3] n=66 when it finished (blocked policy runs, 2026-09-18/20) |
-| Energy per turn, net of the board floor | +17.83 J [+17.12, +18.58] n=70 (pass 2k); of it, discarded stale decodes 0.600 J each, n=58; +0.0499 J/ms [+0.0425, +0.0607] per ms saved | +35.258 [+34.561, +35.659] n=22 J (pass 7, descriptive) |
-| Memory | resident second recognizer (tiny, idle): +19.1 MB agent RSS, run level, n=3/3 runs; costs no detectable TTFA, +1.8 ms [-30.3, +37.0] n=16 (pass 1r) | no second model: drafts run in the reply LLM's process; not measured separately |
+| Survival: how much of the speculation is kept | words committed before the endpoint: 0.409 [0.340, 0.454] n=70 items (STOP + gate, pass 6; P8) | 96 draft tokens per turn; per-item median of accepted / produced 0.000 (n=38 items) (pass 7) |
+| Value: TTFA, paired per item, multi_step | reduction vs REACTIVE-NOPARTIAL +357 ms [+294, +412] n=70 (pass 2k) | difference SPEC-CONTINUE - REACTIVE +32.375 [-91.583, +92.450] n=22 ms, positive = slower: no saving detected (pass 7, descriptive) |
+| Overlap cost: a decode in flight at the endpoint | final decode +492 ms/s [439, 574] per s of overlap; 960 turns, 43 runs, CI over runs; arms with partial decodes in flight (P2a, not the STOP arm, which freezes them). Partials in flight cost canonical REACTIVE +305.7 ms [+188.0, +452.6] n=15 of TTFA on dev against NOPARTIAL (pass 1n) | TTFA +96.5 ms [+79.4, +109.8] n=258 when the draft is still decoding; +17.5 ms [-24.4, +76.3] n=66 when it finished (blocked policy runs, 2026-09-18/20; the onset test found a finished-draft penalty at one contended cell) |
+| Energy per turn, net of the board floor | vs REACTIVE-NOPARTIAL +17.83 J [+17.12, +18.58] n=70 (pass 2k); +0.0499 J/ms [+0.0425, +0.0607] per ms saved; resumed-and-discarded stale decodes mean 1.74 J, total 101.1 J net over 58 decodes | vs REACTIVE +35.258 [+34.561, +35.659] n=22 J (pass 7, descriptive) |
+| Memory | the decoding worker process: PSS median 121.4 MB, MemAvailable 118.9 MB lower (pass 2k, at spawn). Keeping an idle second engine resident: +19.1 MB RSS, n=3/3 runs, no detectable TTFA cost +1.8 ms [-30.3, +37.0] n=16 (pass 1r) | no second model: drafts run in the reply LLM's single slot (--parallel 1, fixed context); not measured separately |
 
 Sources: survival P8 (fstar_score.py) and pass 7 (p7_score.py); value pass 2k
 (p2k_score.py) and pass 7; overlap cost P2a (p2_score.py) and overlap_penalties.py;
