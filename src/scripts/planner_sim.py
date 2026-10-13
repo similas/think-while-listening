@@ -312,6 +312,11 @@ def simulate(
         if busy_until < 0 and policy(t, cmt, x_prev, x_pp, t - last_end, n):
             d = (cal.alpha + cal.beta * (t - cmt) + rng.choice(cal.resid)) / 1000.0
             busy_until, x_issue, n = t + max(0.2, d), t, n + 1
+            # The harness feeds the issuer the MEASURED decode (stt.py note_decode);
+            # the simulator feeds it the simulated one.
+            note = getattr(policy, "note", None)
+            if note is not None:
+                note(max(0.2, d) * 1000.0)
         t += DT
     overlap = 0.0 if (stop or busy_until < 0) else busy_until - E
     return Outcome(cmt, overlap, n)
@@ -342,10 +347,9 @@ def gate_policy() -> object:
             elapsed_s=t,
             pending_agreement=min(1, n),
         )
-        if dec.issue:
-            iss.note_decode(dec.expected_decode_ms)
         return dec.issue
 
+    pol.note = iss.note_decode  # type: ignore[attr-defined]
     return pol
 
 
@@ -362,10 +366,9 @@ def uncond_policy(cal: Calib) -> object:
             buffer_s=t - cmt,
             elapsed_s=t,
         )
-        if dec.issue:
-            iss.note_decode(dec.expected_decode_ms)
         return dec.issue
 
+    pol.note = iss.note_decode  # type: ignore[attr-defined]
     return pol
 
 

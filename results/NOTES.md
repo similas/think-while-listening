@@ -8087,3 +8087,63 @@ What it means for the thesis: most of what a planner adds over the gate comes
 from not stopping on items longer than the prior. A gate that conditions its
 prior on the elapsed time (a hazard gate) would take most of that, and is the
 formalisation the planner reduces to.
+
+## 2026-10-13 — CORRECTION to "LEVEL-2 PLANNER, SIMULATED" (reviewer, 6 findings)
+
+Appended, not edited.
+
+1. THE SIMULATED GATE NEVER LEARNED ITS DECODE TIME. It fed the issuer
+   expected_decode_ms, which stays at the first modelled value (~1.43 s). The
+   harness feeds it the measured decode (~0.9 s). So the simulated gate rested
+   too long and judged too little feasible. That made it weaker than the real
+   gate and inflated the DP's gain over it. The simulator now feeds the
+   issuer the simulated decode. The gate issues a median 8 hypotheses per
+   turn, as it does in all three measured pass 2k runs (7 before the fix).
+   Rerun, 40 replicates per item, n=70 items:
+
+    fill p   gate   ungated   gate vs NOP   DP duty 0.6 vs gate       DP no duty bound
+    none     0.38    0.40     +373          +0  [+0, +0]  mean +71    +0  [+0, +7]   mean +103
+    0.1      0.40    0.44     +399          +12 [+0, +30] mean +92    +46 [+25, +71] mean +139
+    0.2      0.41    0.48     +420          +20 [+3, +63] mean +109   +78 [+44, +107] mean +172
+    0.3      0.43    0.50     +445          +23 [+0, +75] mean +124   +82 [+58, +150] mean +198
+    0.57     0.47    0.56     +468          +39 [+5, +95] mean +160   +142 [+101, +216] mean +266
+
+   (measured: gate 0.40–0.43 per run, ungated 0.42–0.46, gate vs NOPARTIAL
+   +351 on these items, pass 2k +357 [+294, +412])
+
+   p = 0.1 IS THE ONLY FILL THAT MATCHES BOTH MEASURED FRACTIONS. At p = 0.1
+   the DP at the gate's duty bound predicts +12 ms [+0, +30] at the median and
+   +92 ms on the mean. THE DP DOES NOT PREDICT >= 100 ms OVER THE GATE ON THE
+   MEDIAN OR ON THE MEAN at the calibrated setting. Dropping the duty bound
+   (which P5 found unnecessary) gives +46 [+25, +71] median and +139 mean.
+   That gain comes from decoding back to back, not from planning. The entry
+   above gave +29 to +69 at the median for p 0.1–0.3; those figures are
+   withdrawn.
+
+2. THE VALIDATION IS WEAKER THAN IT LOOKS. The final's slope (68.2 ms/s
+   within item) is fitted mostly from the NOPARTIAL-vs-STOP contrast, which
+   is what the validation then "predicts". What the check does test is the
+   committed fraction. The STOP-only within-item slope is 60.0; the
+   cross-item NOPARTIAL slope is 95.6. Every DP-vs-gate difference is linear
+   in the slope, so 95.6 scales each by 95.6/68.2. The calibrated DP's median
+   and its CI would both stay below 100 ms. No run at that slope was made.
+3. THE COMMIT RULE'S 0.797 REPLAY ACCURACY BARELY BEATS "NEVER COMMIT"
+   (0.788). It catches 307 of 386 commit events. It predicts a commit that
+   did not happen in 291 of 1438 hypotheses. The fit is flat in DELTA. It is a
+   weak check.
+4. THE CLAIRVOYANT POLICY IS NOT A STRICT CEILING under fill. It charges
+   decodes on the whole buffer and uses the mean decode, and the no-duty DP
+   exceeds it in some replicates. It is reported as "clairvoyant", not as a
+   bound.
+5. The DP's rest rule estimates the last decode from its model rather than
+   using the one that ran, and the 0.05 s tick is rounded onto a 0.2 s grid.
+   These are approximations against the DP, at most ~0.1 s per issue.
+6. "A hazard gate would take most of the gain" was NOT SIMULATED. It is a
+   hypothesis. What is shown is where the gain sits: items longer than the
+   15.4 s prior carry ~98% of the DP's total gain.
+
+DECISION INPUT, as it now stands: the simulator does not predict >= 100 ms
+for STOP+DP over STOP+gate on multi_step, at the median or on the mean, at
+the calibrated setting. By the 2026-10-08 rule the planner goes into the
+thesis as the formalisation, with this simulator result, and does not earn a
+live pass.
