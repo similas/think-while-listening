@@ -167,7 +167,7 @@
   "corrections": [
    "2026-10-13 — CORRECTION to \"P2a AND P2b SCORED\""
   ],
-  "notes": "Reported with the band. The separate-arm coding (576 [518, 638], 1717/2000 draws) was added after the first scorer's numbers and is labelled post hoc. Scorer written after the data."
+  "notes": "Withdrawn first scoring (677537d) said HOLDS, c=572 [516, 620] n=503, on a population that broke the amendment. Reported with the band. The separate-arm coding (576 [518, 638], 1717/2000 draws) was added after the first scorer's numbers and is labelled post hoc. Scorer written after the data."
  },
  {
   "id": "P2b",
@@ -230,7 +230,7 @@
   "corrections": [
    "2026-10-13 — DECISIONS on f5e1b8f (user): P4 reconciled, Spoken-MQA, planner, P2a"
   ],
-  "notes": "Selection-time estimate on the 16-item selection set (10.6 s): tiny a=2 median dWER +0.028 (+0.009..+0.042), reported as FAILED in the 2026-10-02/05 decisions; prior evidence that did not carry. The 'option 2' rule was Ali's instruction of 2026-10-01, not a NOTES registration."
+  "notes": "Selection-time estimate on the 16-item selection set (median 10.6 s): tiny a=2 median dWER +0.028 (+0.009..+0.042), reported as FAILED in the 2026-10-02/05 decisions; prior evidence that did not carry. The 'option 2' rule was Ali's instruction of 2026-10-01, not a NOTES registration."
  },
  {
   "id": "P4 (pass 2k)",

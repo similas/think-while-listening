@@ -25,20 +25,21 @@ speaking. The usual remedy, starting the language model on partial
 transcripts, assumes the reasoner is idle while the user speaks. On a
 unified-memory system-on-chip it is not: the recognizer, the reasoner and the
 synthesizer share one memory system and one set of cores. We measure what the
-silence is made of on such a device, a Jetson Orin Nano, and find that it
-belongs to the recognizer. Its final decode is \SttShareMulti\% of the stages
-after speech on spoken multi-step math problems; the language model's first
-token is \LlmShareMulti\%. We price both kinds of speculation on one axis.
-Reply drafts are rarely usable at any point where they can still finish, and
-a draft costs
-\ThinkerOverlap{} when a draft is still running there. A gated listener, which
+silence is made of on such a device, a Jetson Orin Nano. The recognizer's
+final decode is the largest stage on every set we test: \SttShareMulti\% of
+the stages after speech on spoken multi-step math problems, against
+\LlmShareMulti\% for the language model's first token. We price both kinds of speculation on one axis.
+Reply drafts become usable only near the end of the utterance, when little
+time is left to finish them, and a draft still decoding at the endpoint costs
+\ThinkerOverlap{}. A gated listener, which
 commits agreed hypotheses while the user speaks and freezes an orphaned one at
 the endpoint, cuts the median paired time to first audio by \PthreeRed{}
 ($n=\PthreeN$ items). That is our pre-registered prediction, although the
 interval's lower end lies below the registered bar. On short utterances the
 gate abstains at no detectable TTFA cost. A simulated finite-horizon planner,
-calibrated from the logs, improves on the gate by only \PlannerDP{}: the simple
-rule is near-optimal under the measured costs. Every prediction, including
+calibrated from the logs, improves on the gate's median by \PlannerDP{} at the
+gate's duty bound (\PlannerNoDuty{} without it, from decoding back to back).
+At the median, the simple rule is near-optimal under the measured costs. Every prediction, including
 those that failed, is reported with its registration.
 \end{abstract}
 
@@ -132,8 +133,8 @@ Low-latency agent designs, both cascaded and speech-to-speech, are described in
 
 \textbf{Speculating the transcript.} Streaming recognition with local
 agreement commits the prefix that consecutive hypotheses agree on
-\cite{machacek2023whisperstreaming}, on top of Whisper \cite{radford2023whisper};
-our listener uses this mechanism. Simul-Whisper streams Whisper with
+\cite{machacek2023whisperstreaming}, on top of Whisper \cite{radford2023whisper}.
+Simul-Whisper streams Whisper with
 attention-guided chunk decoding and truncation detection
 \cite{wang2024simulwhisper}, and other work decides when a streaming
 recognizer should emit \cite{x2streaming2026}. We use the mechanism; we do not claim it. What we add
@@ -301,8 +302,8 @@ CPU-bound recognition. A GPU recognizer would move the stage shares. The
 language model is one small 4-bit model, and synthesis is one Piper voice.
 
 \textbf{Audio.} The benchmark audio is synthesized speech, played in at real
-time through the capture path. Live speech is a single speaker, in one
-descriptive pass that supports no claim.
+time through the capture path. We have no live-speech data yet; one
+descriptive single-speaker pass is planned, and it will support no claim.
 
 \textbf{The gate's prior is the set's own median.} The feasibility gate uses a
 point prior, the median file duration of the set it runs on. A deployment
@@ -317,13 +318,13 @@ reduce TTFA, and our first test of this prediction failed. The listener's
 overlap cost per second (\ListenerC\,ms/s, \ListenerCCI) lies below the band
 we registered, and its scorer was written after the data. The share of TTFA
 taken by the final decode does not rise monotonically with utterance length,
-as we had predicted.
+although we predicted it would, and it is below half on two sets.
 
 \textbf{Costs of the freeze.} Frozen decodes are resumed after the reply and
-discarded. They cost a mean of \StaleMean\,J each over \StaleN{} decodes, and
+discarded. They cost a net mean of \StaleMean\,J each over \StaleN{} decodes, and
 some drew far more power than their length explains, for reasons we have not
 found. A turn that opens while the worker is frozen gets no hypotheses. The
-hypothesis worker holds \WorkerPSS\,MB.
+hypothesis worker holds \WorkerPSS\,MB at spawn, before any decode.
 
 \textbf{The occupancy tax.} The tax is measured in two runs with one run per
 condition, each after its baseline, so time order is confounded with
@@ -331,16 +332,16 @@ condition. The two runs disagree on its size, and the second added
 instrumentation.
 
 \textbf{The thinker side.} Draft usability comes from an offline probe of
-about 80 items per point. The live comparison of reply speculation is
+the 80 seeded items, with no interval carried on the curve. The live comparison of reply speculation is
 descriptive: its interleaved design broke at the first voice-activity split,
-and its scorer was written after the run. The allocator's
-\emph{infeasible} decisions use a window model that a later pass measured as
-pessimistic. Whether the measured window would have admitted a draft at those
-decisions is not established.
+and its scorer was written after the run.
 
 \textbf{The planner is simulated.} It is calibrated from logs and validated
-on the committed fraction. Commit boundaries no run reached are invisible to
-it, and we bracket that with a calibrated fill rather than measuring it.
+on the committed fraction. In the calibrated setting, its own interval for the
+gate's saving does not contain the value measured on the same items. Commit
+boundaries no run reached are invisible to it. We model them with a synthetic
+fill whose rate is calibrated on the measured commit fractions. Richer fills
+raise the planner's median gain, and so would a steeper final-decode slope.
 
 \textbf{Drift across dates.} Part of a cross-date difference in baseline TTFA
 remains unattributed. Every claim-bearing comparison therefore has a same-day
@@ -349,13 +350,13 @@ baseline.
 \section{Generative-AI use}
 \label{sec:genai}
 
-% Venue and Concordia rules may require the tool to be named. CLAUDE.md §1
-% forbids naming any assistant in this repository: Ali adds the name on the
-% LaTeX host at submission, if the venue requires it.
+% Venue and university rules may require the tool to be named. The repository's
+% rules forbid naming it here: the author adds the name at submission if required.
 A generative-AI coding assistant was used, under the author's direction, to
 write and review software, analysis scripts and draft text. The author
 designed, pre-registered and approved every experiment and verified all text.
-Every number in this paper is produced by a script from logged measurements.
+Every measured or simulated value in this paper is produced by a script from
+the logs; registered bars and set sizes are stated as designed.
 
 \bibliographystyle{IEEEtran}
 \bibliography{refs}

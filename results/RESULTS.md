@@ -398,7 +398,7 @@ simulated TTFA reduction, NOPARTIAL - STOP+gate: +399 ms [+362, +477] n=70
 - command: `src/scripts/planner_sim.py --reps 40 --fill --fill-p 0.1`
 - runs: see the scorer's run list
 - NOTES: "2026-10-13 — CORRECTION to "LEVEL-2 PLANNER, SIMULATED" (reviewer, 6 findings)" (8b6bbca 2026-10-13)
-- caveat: Simulation from logs, not a measurement. The final's slope is fitted largely from the contrast this line reproduces; the committed fraction is the real check (gate 0.40, ungated 0.44 simulated; measured 0.40-0.43 and 0.42-0.46).
+- caveat: Simulation from logs, not a measurement. Its interval excludes the measured +351 on these items (it overlaps pass 2k's [+294, +412]). The final's slope is fitted largely from the contrast this line reproduces; the committed fraction is the real check (gate 0.40, ungated 0.44 simulated; measured 0.40-0.43 and 0.42-0.46).
 
 ### Level-2 planner (DP, the gate's duty bound) over STOP+gate, simulated: the gate is within this of the DP's optimum
 
@@ -409,7 +409,7 @@ DP (duty 0.6)          +12 ms [+0, +30] n=70; [report] mean +92 ms, Q3 +94 ms, i
 - command: `src/scripts/planner_sim.py --reps 40 --fill --fill-p 0.1`
 - runs: see the scorer's run list
 - NOTES: "2026-10-13 — CORRECTION to "LEVEL-2 PLANNER, SIMULATED" (reviewer, 6 findings)" (8b6bbca 2026-10-13)
-- caveat: Decision on f5e1b8f: no live pass; the gate is near-optimal under the measured cost model. Fill p 0.1 is the calibrated setting; with no fill the DP gains +0 [+0, +0]. The adaptive-prior hypothesis is unsimulated.
+- caveat: Decision on f5e1b8f: no live pass; the gate is near-optimal under the measured cost model. Fill p 0.1 is the calibrated setting; with no fill the DP gains +0 [+0, +0]; richer fills raise it (+20, +23, +39 at p 0.2, 0.3, 0.57) and a steeper final slope (95.6 vs 68.2 ms/s) would scale it. Mean +92 ms, 15/70 items >= 100 ms. The adaptive-prior hypothesis is unsimulated.
 
 ### DP without the duty bound over STOP+gate, simulated (the gain of back-to-back decoding)
 
