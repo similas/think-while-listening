@@ -7825,3 +7825,30 @@ Appended, not edited.
    state, llama-server, ambient). The same-day-baseline consequence stands.
 
 4. The fence breach is recorded above; its handling is item 1.
+
+## 2026-10-13 — PROVENANCE GAP closed: two claim-bearing numbers had no script
+
+Found while building Fig 3. The rule is that every number comes from a script
+in src/ over a log in results/raw/; two did not.
+
+1. THE THINKER'S OVERLAP PENALTY, +100.3 ms [+78.0, +123.9] n=130 (2026-09-21),
+   was computed ad hoc and survives only as constants in twl/contention.py.
+   REPRODUCED by src/scripts/overlap_penalties.py with the method as written
+   (each speculating turn classified by spec.cancelled, paired against the same
+   dev item's REACTIVE turns within run; item identified by nearest dev
+   reference, WER <= 0.25, since those records carry no utterance index) over
+   the eleven blocked policy-arm runs of 2026-09-18 and 09-20:
+       decode still running at the endpoint   +96.5 ms [+79.4, +109.8]  n=258
+       decode finished before it              +17.5 ms [-24.4, +76.3]   n=66
+   09-18 runs alone: +99.1 [+83.3, +111.3] n=142, +21.2 [-61.0, +91.1] n=36 --
+   close to the original, which was evidently that session under slightly
+   different validity rules; its exact selection is not recoverable.
+   THE PAPER CITES THE REPRODUCIBLE FIGURE, +96.5 ms [+79.4, +109.8] n=258.
+
+2. THE LISTENER INTERVENTION, +315 ms [+188, +453] n=16 (pass 1n, 2026-10-02),
+   canonical REACTIVE minus REACTIVE-NOPARTIAL on dev. REPRODUCED by the same
+   script from passes 1 and 1n's dev runs: +305.7 ms [+188.0, +452.6] n=15
+   (one item dropped by the reference-match filter). THE PAPER CITES +305.7.
+
+The constants in twl/contention.py stay as they are -- they parameterise the
+cost model as it was fitted -- but no figure, table or claim reads them.
