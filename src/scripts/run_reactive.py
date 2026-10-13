@@ -368,6 +368,12 @@ async def run(args: argparse.Namespace) -> None:
                 "gap_ms": args.gap_ms,
                 "gate_timeout_s": GATE_TIMEOUT_S,
                 "duration_prior_s": cfg.stt.commit.duration_prior_s,
+                # The interleave plan as run. Pass 7's had to be regenerated
+                # from defaults because nothing recorded it (2026-10-13).
+                "interleave_policies": args.interleave_policies,
+                "interleave_seed": args.interleave_seed,
+                "block_size": args.block_size,
+                "warmup_turns": args.warmup_turns,
                 "duration_prior_source": prior_source,
             },
             notes=(

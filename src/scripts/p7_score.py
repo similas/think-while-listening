@@ -41,6 +41,9 @@ from twl.schedule import build_block_schedule
 from twl.wer import wer
 
 ARMS = ("reactive", "spec_continue")
+# Scored turns whose aligned WER exceeds this are fragments, not utterances.
+# The two found on 2026-10-13 read 0.80 and 0.82; the run's median is 0.043.
+FRAGMENT_WER = 0.5
 
 
 def boot(v: list[float], reps: int = 4000, seed: int = 0) -> tuple[float, float]:
@@ -112,7 +115,20 @@ def main() -> None:
         "decision arms disagree with the schedule"
     )
 
-    pos = align_positions(turns, refs)
+    # CORRECTION 2026-10-13 (reviewer): an EMPTY transcript is the first
+    # fragment of a split. It costs WER 1.0 everywhere, so the DP's tie rule put
+    # it on the PREVIOUS position, making that position look split and dropping
+    # a whole valid turn (14 positions). Empty turns are aligned AFTER, to the
+    # position of the next non-empty turn -- the file whose onset they are --
+    # and are never scored.
+    nonempty = [t for t in turns if (t.get("transcript") or "").strip()]
+    pos = align_positions(nonempty, refs)
+    nxt = None
+    for t in reversed(turns):
+        if t["turn"] in pos:
+            nxt = pos[t["turn"]]
+        elif nxt is not None:
+            pos[t["turn"]] = nxt
     per_pos = Counter(pos.values())
     align_w = statistics.median(
         wer(refs[pos[t["turn"]]], t.get("transcript") or "") for t in turns if t["turn"] in pos
@@ -133,13 +149,26 @@ def main() -> None:
             ledger["unaligned"] += 1
             continue
         st = t.get("stages_ms") or {}
-        if plan[j].role != "measured":
-            ledger[f"plan role {plan[j].role}"] += 1
-            continue
         if not t.get("valid") or per_pos[j] != 1 or endpoint_after_final(st):
             ledger["invalid / split / endpoint_after_final"] += 1
             continue
+        if not (t.get("transcript") or "").strip():
+            ledger["empty transcript"] += 1
+            continue
+        # A trailing fragment aligned onto a duplicate neighbour (every block's
+        # washout and first measured turn are the same file) reads as a whole
+        # turn; its WER against the full item gives it away.
+        if wer(refs[j], t.get("transcript") or "") > FRAGMENT_WER:
+            ledger[f"aligned WER > {FRAGMENT_WER}"] += 1
+            continue
         arm = applied[t["turn"]]
+        # CORRECTION 2026-10-13 (reviewer): carry-over follows the APPLIED arm
+        # of the preceding turn, because arms were applied by turn number. A
+        # turn is scored only if the turn before it ran the same arm; the
+        # plan's role at the file's position no longer marks the washouts.
+        if applied.get(t["turn"] - 1) != arm:
+            ledger["preceded by the other applied arm"] += 1
+            continue
         if arm != ARMS[plan[j].level]:
             reassigned += 1
         u = plan[j].utterance

@@ -7698,3 +7698,45 @@ interleave was meant to guarantee was lost after turn 6, and which items
 reached both arms was decided by where the splits fell, not by the plan.
 THE TTFA NULL EXCLUDES NOTHING SMALLER THAN ~150 ms, and the comparison with
 canonical REACTIVE is the only one this pass carries.
+
+## 2026-10-13 — CORRECTION to "PASS 7 SCORED" (reviewer, 4 findings)
+
+Appended, not edited. p7_score.py now carries both scoring fixes; its earlier
+figures (n = 18, +56 ms [-63, +153], the 80/45/58/57 ledger, "64 of 125")
+are WITHDRAWN.
+
+1. EMPTY FRAGMENTS WERE MIS-ALIGNED. An empty transcript is the first fragment
+   of a split; at WER 1.0 everywhere the DP's tie rule put it on the PREVIOUS
+   position, which then looked split, and a whole valid turn was dropped (14
+   positions); trailing fragments were scored as whole turns. FIX: empty turns
+   are aligned AFTER, to the next non-empty turn's position, and never scored;
+   a scored turn whose aligned WER exceeds 0.5 is treated as a fragment and
+   dropped (22 such; median aligned WER 0.054).
+
+2. THE WASHOUT RULE WAS WRONG for this run. Arms were applied by turn number,
+   so carry-over follows the APPLIED arm of the preceding turn, not the plan's
+   role at the file's position. FIX: a turn is scored only if the turn before
+   it ran the same applied arm (13 excluded on this rule).
+
+3. THE SCOPE AUDIT IS NOW A SCRIPT, src/scripts/audit_plan_splits.py, on
+   vad_split FLAGS rather than turn counts (a split can coexist with a merge):
+   of 70 plan-driven runs with a playback timeline, ONE has any split -- pass 7.
+   And the harness now logs the interleave plan (arms, seed, block size,
+   warmup) in run_meta.harness; pass 7's had to be regenerated from defaults.
+
+4. The energy figure was checked and stands: the spec decode (~3.1 s, ending
+   ~5 s into the turn) lies inside [open, first audio] (~23 s).
+
+PASS 7, CORRECTED (descriptive, n = 22 paired items):
+    TTFA, SPEC-CONTINUE - REACTIVE   +32 ms [-92, +92]   (mean +33)
+    dWER                             +0.000              (mean +0.002)
+    J/turn raw                       +36.2 J [+35.1, +36.7]
+    J/turn net                       +35.3 J [+34.6, +35.7]
+    SPEC-CONTINUE: 96 tokens per turn (the full budget), accepted / produced
+      0.000 (n = 38 items)
+    scored REACTIVE 82, SPEC-CONTINUE 58; 78 scored turns ran a different
+    arm from the one the plan intended for their file.
+The reviewer's independent re-score under the same two fixes (its fragment
+rule differed) gave n = 23, +56 ms [-58, +93], J +36.6: same reading. On this
+corpus SPEC-CONTINUE spends ~36 J per turn, none of its draft is used, and no
+TTFA difference is detectable; effects below ~90 ms are not excluded.
