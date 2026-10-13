@@ -9,6 +9,9 @@
 \usepackage{booktabs}
 \usepackage[hidelinks]{hyperref}
 \input{generated/numbers.tex}
+% Interspeech: \extendedfalse (six-row ledger). Extended arXiv version: \extendedtrue.
+\newif\ifextended
+\extendedfalse
 \graphicspath{{figures/}}
 
 \title{The Window Belongs to the Listener: Allocating Think-While-Listening
@@ -102,10 +105,10 @@ Contributions:
   draft would have fit, its measured usability was below break-even. Wherever
   usability passed break-even, the registered window model left no room for a
   draft.
-\item \textbf{The record.} Every prediction is listed with its registration
-  commit and its verdict, the failed and the untestable included, and with
-  the cases where a scorer or a registration was written late
-  (Table~\ref{tab:ledger}).
+\item \textbf{The record.} A ledger lists every prediction with its
+  registration commit and its verdict, the failed and the untestable included,
+  and with the cases where a scorer or a registration was written late
+  (Table~\ref{tab:ledger}\ifextended\else; in full in the extended version\fi).
 \end{enumerate}
 
 \begin{figure}[t]
@@ -290,10 +293,9 @@ net of the idle floor, and the fraction of words committed at the endpoint.
 
 \textbf{Pre-registration.} Predictions, bars and scoring rules were committed
 to the lab notebook before the runs that test them. Corrections are appended,
-never edited in. Table~\ref{tab:ledger} lists every prediction with its
-registration commit and its verdict. Where a prediction was stated informally,
-a bar moved before its data, or a scorer was written after the data, the table
-says so.
+never edited in. The full ledger lists every prediction with its registration
+commit and its verdict. Where a prediction was stated informally, a bar moved
+before its data, or a scorer was written after the data, the ledger says so.
 
 
 \section{Results}
@@ -442,9 +444,16 @@ planner's optimum at the median. Its remaining gain sits in items longer than
 the gate's prior. The planner was not run live.
 
 \subsection{The record}
+\ifextended
 \input{generated/table3.tex}
 Table~\ref{tab:ledger} lists every registered prediction with its
 registration and scoring commits and its verdict as it stands.
+\else
+\input{generated/table3_summary.tex}
+Table~\ref{tab:ledger} gives six predictions with their verdicts and one
+qualifier each. The full ledger, with every registration and scoring commit,
+is in the extended version.
+\fi
 
 \section{Limitations}
 \label{sec:limitations}
@@ -502,9 +511,11 @@ baseline.
 \section{Generative-AI use}
 \label{sec:genai}
 
-Claude Code, Anthropic's agentic coding tool, running Claude Opus models
-(Claude Opus~5.5 at the time of writing), was used throughout this work under
-the author's direction. It:
+% Model list verified from the session logs on the development device
+% (2026-10-13); Ali confirms it.
+Claude Code, Anthropic's agentic coding tool, was used throughout this work
+under the author's direction, running Claude Fable~5 (2026-09-15), Claude
+Opus~5 (2026-09-15 to 2026-10-06) and Claude Opus~5.5 (from 2026-10-06). It:
 \begin{itemize}
 \item wrote most of the software and analysis scripts;
 \item executed the measurement runs the author approved;

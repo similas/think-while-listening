@@ -19,9 +19,9 @@ than silently deviating.
   `includeCoAuthoredBy` is disabled in `.claude/settings.json`; do not override it.
 - Never mention the name of any AI assistant, model, or vendor anywhere in the
   repository. If you would write it, write nothing instead.
-  ONE EXCEPTION (Ali, 2026-10-13): the paper's generative-AI disclosure section
-  is the one place the assistant is named; required by venue and university
-  policy.
+  ONE EXCEPTION (Ali, 2026-10-13): the paper's and the thesis's generative-AI
+  disclosure sections are the one place the assistant is named; required by
+  venue and university policy.
 - Commit messages: imperative mood, one line, ≤ 60 characters, self-contained,
   no trailing period, no body unless a body is strictly necessary to explain a
   non-obvious decision (then ≤ 3 short lines). Examples:
