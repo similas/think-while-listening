@@ -7611,3 +7611,27 @@ PASS 9: the proposed protocol of 71d1612 is APPROVED AS WRITTEN, plus:
 The speaker will be at the box when pass 7 finishes; pass 9 runs then.
 
 ORDER: 7, 9, then 1r LAST. MEASUREMENT FREEZES WHEN 1r LANDS.
+
+## 2026-10-13 — PASS 9 ATTEMPT VOIDED AND DISCARDED; nobody was at the box
+
+On a message that said "at the box now, room quiet" I logged the noise floor
+(09:52) and started pass 9 run 1 (NOPARTIAL, 09:52-09:58). The user then
+corrected it: they were NOT at the box. The run recorded 0 turns -- no
+partials, no finals -- because nobody spoke.
+
+VOIDED AND DISCARDED at the user's instruction: run dir
+reactive-20261013-095220-10b59d, noise floor noise_floor-20261013-095204.json
+(-44.8 dBFS RMS; an empty room, not the session's floor) and the run log.
+Moved OUT of results/raw (not deleted) to the session scratchpad; none of it
+enters any analysis. The 2026-10-09 logger TEST file stays, labelled TEST.
+
+WITHDRAWN: my in-session diagnosis that VAD min_volume (0.6) was blocking
+live speech. The 10 s level capture that "showed no level above the noise
+floor" was an empty room. One fact from it survives as a fact about this
+room, not about any pass: background noise alone scores 0.64 on pipecat's
+volume scale, above the 0.6 threshold on 98.8 % of 20 ms frames, so
+min_volume does not gate this room's noise -- the Silero confidence (0.7)
+does. Whether a live voice clears it is untested.
+
+STATUS: pass 9 runs when the user says "at the box now, room quiet" -- noise
+floor first, then runs 1-4 -- followed by 1r and the freeze. 1r is NOT started.
