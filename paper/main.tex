@@ -25,57 +25,64 @@ Compute on a Device That Pays for It}
 \label{sec:intro}
 
 People take turns with gaps of a few hundred milliseconds~\cite{stivers2009universals}.
-A cascaded voice agent (recognizer, language model, synthesizer) running on an
-edge device answers much later. On our device, a reactive pipeline answering
-spoken multi-step math problems starts speaking a median of \TTFAMulti\,ms after
-the user stops (Fig.~\ref{fig:stages}).
+A cascaded voice agent (recognizer, language model, synthesizer) on an edge
+device answers much later. On our device, a reactive pipeline answering spoken
+multi-step math problems starts speaking a median of \TTFAMulti\,ms after the
+user stops (Fig.~\ref{fig:stages}).
 
-The field's answer is to \emph{think while listening}: start the language model
-on partial transcripts, so that part of the reply is ready by the endpoint
-\cite{predgen2025,ltsvoiceagent2026,epa2026,livemind2024,shanks2025,stitch2026,shih2025thinklisten}.
-That answer assumes the reasoner is idle while the user speaks, and that the
-recognizer runs somewhere else. On a unified-memory system-on-chip neither
-holds. The recognizer, the reasoner and the synthesizer share one memory system
-and one set of cores, and every speculative decode is paid for by whatever runs
-next to it.
+A prominent answer is to \emph{think while listening}: start the language
+model before the user has finished, so that part of the reply is ready at the
+endpoint \cite{predgen2025,ltsvoiceagent2026,epa2026,livemind2024}. Spoken
+language models pursue the same idea inside one model
+\cite{shanks2025,shih2025thinklisten}. These designs assume compute is idle
+while the user speaks. On a unified-memory system-on-chip, the recognizer, the
+reasoner and the synthesizer share one memory system and one set of cores. A
+speculative decode can be paid for by whatever runs next to it.
 
-This paper measures what the silence is made of on such a device, and asks
-which consumer the listening window should be spent on. The silence belongs to
-the recognizer. Its final decode is the largest stage on every length we test:
-\SttShareMulti\% of the stage sum on multi-step problems, against
-\LlmShareMulti\% for the language model's first token (Fig.~\ref{fig:stages}).
-Speculating the reply attacks the smallest stage. Speculating the
-\emph{transcript} attacks the largest. If the recognizer commits the words two
-consecutive hypotheses agree on while the user is still speaking, the final
-decode at the endpoint shrinks to the uncommitted tail.
+This paper measures what the silence is made of on such a device, and which
+speculation the listening window should be spent on. The recognizer's final
+decode is the largest stage on every length we test. On multi-step problems it
+is \SttShareMulti\% of the stage sum, against \LlmShareMulti\% for the language
+model's first token (Fig.~\ref{fig:stages}). Speculating the reply attacks a
+small stage; speculating the \emph{transcript} attacks the largest. If the
+recognizer commits the words that consecutive hypotheses agree on while the
+user is still speaking, the final decode at the endpoint shrinks to the
+uncommitted tail.
 
-Both kinds of speculation cost something on shared silicon, so a rule has to
-choose between them. Our contributions:
+Contributions:
 \begin{enumerate}
-\item \textbf{The costs, measured on one axis.}
+\item \textbf{The costs, measured.}
   \begin{itemize}
-  \item A co-resident process taxes the recognizer by its mere residency,
-    through transparent-huge-page fallback. A process that only holds pages
-    adds between \TaxBallastA{} and \TaxBallastB{} to each final decode, in two
-    runs.
-  \item A draft still decoding at the endpoint delays the first audio by
+  \item A co-resident process the size of the language model, doing nothing
+    but holding pages, slows the recognizer's final decode through
+    transparent-huge-page fallback, by a median paired \TaxBallastA{} and
+    \TaxBallastB{} in two runs.
+  \item A reply draft still decoding at the endpoint delays the first audio by
     \ThinkerOverlap{} ($n=\ThinkerOverlapN$).
-  \item A hypothesis still decoding at the endpoint costs the final
-    \ListenerC\,ms per second of overlap.
+  \item A hypothesis still decoding at the endpoint costs the final about
+    \ListenerC\,ms per second of overlap, \ListenerCCI. That is below the band
+    we registered.
   \end{itemize}
-\item \textbf{A per-turn allocation rule.} A hypothesis or a draft is issued
-  only if it can finish, and pay off, before the endpoint. The rule uses the
-  measured usability of drafts and the expected commit time of hypotheses. It
-  preempts an orphaned hypothesis at the endpoint by freezing it. On our task
-  the rule never spends the window on the reasoner, and it spends it on the
-  listener only where the utterance is long enough. Against a baseline that
-  never speculates, it cuts the median paired time to first audio by
-  \PthreeRed{} on multi-step problems ($n=\PthreeN$ items, pre-registered; the
-  CI's lower end lies below the 300\,ms bar we registered). On short utterances
-  it abstains, with no detectable cost (\DevTTFA).
-\item \textbf{The record.} Every prediction was registered before its data
-  existed, and every one is reported with its verdict, the falsified ones
-  included (Table~\ref{tab:ledger}).
+\item \textbf{A gated listener.} Hypotheses are issued only if their words can
+  be committed before the expected endpoint. An orphaned hypothesis is frozen
+  at the endpoint. Against a baseline that never decodes partials, this cuts
+  the median paired time to first audio on multi-step problems by \PthreeRed{}
+  ($n=\PthreeN$ items). That meets the prediction we registered, although the
+  CI's lower end lies below the registered 300\,ms bar. On short utterances the
+  gate abstains, with no detectable TTFA cost (\DevTTFA). The same mechanism
+  \emph{without} the gate and the freeze was slower than the baseline
+  (\PtwoTTFA\,ms, a reduction CI that includes zero), and our first
+  registration of this prediction failed on it.
+\item \textbf{An allocator for both consumers.} The allocator logs every
+  decision with its inputs. In one logged run on multi-step problems it never
+  spent the window on the reply drafter (Table~\ref{tab:allocator}). Wherever a
+  draft would have fit, its measured usability was below break-even. Wherever
+  usability passed break-even, the registered window model left no room for a
+  draft.
+\item \textbf{The record.} Every prediction is listed with its registration
+  commit and its verdict, the failed and the untestable included, and with
+  the cases where a scorer or a registration was written late
+  (Table~\ref{tab:ledger}).
 \end{enumerate}
 
 \begin{figure}[t]
@@ -90,73 +97,72 @@ choose between them. Our contributions:
 \section{Related work}
 \label{sec:related}
 
-\textbf{Speculating the reply.} Several systems start the language model
-before the user has finished. They predict the rest of the input, trigger
-generation on semantic or acoustic cues, or let the model reason over the
-incoming stream
+\textbf{Speculating the reply.} Cascaded systems start the language model
+before the user has finished, through input-time speculation, semantic
+triggering, endpoint anticipation or simultaneous inference
 \cite{predgen2025,ltsvoiceagent2026,epa2026,livemind2024,ddtsr2026}. Spoken
-language models fold listening and thinking into one model
+language models interleave hearing, thinking and speaking
 \cite{shanks2025,stitch2026,miniomnireasoner2025,chronothink2026,shih2025thinklisten},
-and full-duplex models remove the turn boundary altogether
-\cite{moshi2024,lws2026}. Evaluations of turn-taking and voice agents
-\cite{fullduplexbench2025,fullduplexbenchv3_2026,voicebench2026,voiceagentbench2025,evabench2026,provoicebench2026,sid2026}
-and low-latency cascades \cite{ilava2025,chipchat2025,kame2026,streamrag2025,moshirag2026}
-measure latency end to end. None of them prices speculation against the
-recognizer on hardware the two share.
+and full-duplex models remove the turn boundary \cite{moshi2024,lws2026}.
+Benchmarks evaluate turn-taking and voice agents
+\cite{fullduplexbench2025,fullduplexbenchv3_2026,voicebench2026,voiceagentbench2025,evabench2026,provoicebench2026,sid2026}.
+Low-latency agent designs, both cascaded and speech-to-speech, are described in
+\cite{ilava2025,chipchat2025,kame2026,streamrag2025,moshirag2026}.
 
 \textbf{Speculating the transcript.} Streaming recognition with local
 agreement commits the prefix that consecutive hypotheses agree on
-\cite{machacek2023whisperstreaming}, on top of Whisper
-\cite{radford2023whisper}; others decide when a streaming recognizer should
-emit \cite{x2streaming2026}. We use the mechanism, not invent it. Our
-contribution is to put it head to head with reply speculation, under the same
-issue rule and the same overlap penalty on shared silicon, with a controller
-that chooses between them.
+\cite{machacek2023whisperstreaming}, on top of Whisper \cite{radford2023whisper}.
+Other work decides when a streaming recognizer should emit
+\cite{x2streaming2026}. We use the mechanism; we do not claim it. What we add
+is a measurement of it against reply speculation on hardware the two share,
+and a rule for when to issue it.
 
-\textbf{Interference on shared SoCs.} Co-running neural workloads interfere
-through shared memory bandwidth, caches and accelerators
-\cite{haxconn2024,aliyun2018bwlock,kim2024interference,kang2026emcgovernor,sgdrc2025,quilt2026,prophet2017,igniter2022}.
-We add a mechanism these models do not cover. A co-resident process taxes a
-CPU decoder through huge-page fallback, without consuming bandwidth and without
-running at all.
+\textbf{Interference between co-running models.} Co-running neural workloads
+interfere on heterogeneous systems-on-chip and on shared accelerators
+\cite{haxconn2024,aliyun2018bwlock,kim2024interference,kang2026emcgovernor,sgdrc2025,quilt2026},
+and in the datacenter \cite{prophet2017,igniter2022}. The tax we report
+involves a co-resident process that does not run at all. Its mechanism is
+huge-page fallback in the decoder's own allocations.
 
 \section{Problem}
 \label{sec:problem}
 
-A turn ends when the voice-activity detector declares the endpoint, a fixed
-settle time after the last speech. Let $D$ be the audio the recognizer holds at
-the endpoint. Time to first audio (TTFA), from the true end of speech, is
+A turn ends when the voice-activity detector declares the endpoint, a settle
+time after the last speech. Let $D$ be the audio the recognizer holds at the
+endpoint. Time to first audio (TTFA), from the true end of speech, is
 \begin{equation}
-\mathrm{TTFA} = s + F(D - C) + L + S,
+\mathrm{TTFA} = s + F(D - C) + L + S + O,
 \end{equation}
 where $s$ is the settle time, $C$ the audio committed before the endpoint, $F$
-the final decode of the uncommitted tail, $L$ the language model's
-time to first token and $S$ the synthesizer's first chunk. The final is close
-to affine in its audio, $F(a) = \phi_0 + \phi_1 a$. Two consumers can spend
-the listening window.
+the final decode of the uncommitted tail, $L$ the language model's time to
+first token, $S$ the synthesizer's first chunk and $O$ the audio output. The
+final is close to affine in its audio, $F(a) = \phi_0 + \phi_1 a$. Two
+consumers can spend the listening window.
 
 \textbf{The listener} decodes the uncommitted buffer with a small model and
-commits what two consecutive hypotheses agree on. It reduces $D - C$. A
-hypothesis decoding when the endpoint arrives competes with the final for the
-same cores. It adds $c$ milliseconds of final decode per second of overlap,
-unless it is stopped.
+commits what consecutive hypotheses agree on. It reduces $D - C$. A hypothesis
+still decoding at the endpoint competes with the final for the same cores,
+adding $c$ milliseconds of final decode per second of overlap, unless it is
+stopped.
 
 \textbf{The thinker} drafts the reply from the transcript so far, at fraction
 $f$ of the utterance. A draft is usable with probability $p_{\mathrm{usable}}(f)$,
 and is worth its cost only above a break-even $p^\ast$. A draft still decoding
-at the endpoint delays the reply by a fixed overlap penalty. A draft that
-cannot finish before the endpoint is all cost. So the window it can use,
+at the endpoint delays the reply; the size of the delay depends on device
+state. A draft that cannot finish before the endpoint is all cost, so its
+decode must fit the window
 \begin{equation}
 w(f) = D(1-f) - d(fD),
 \end{equation}
-the speech left after the decode $d$ of what has been heard, must exceed the
-draft's own decode.
+the speech left after the decode $d$ of what has been heard.
 
-A rule therefore issues work only if it is \emph{feasible}: it can finish, and
-for the listener commit, before the endpoint. It must also be \emph{valuable}:
-for the thinker, $p_{\mathrm{usable}}(\hat f) \ge p^\ast$ at the estimated
-fraction $\hat f$. Neither $D$ nor the endpoint is known in advance. The rule
-works from a prior over utterance length and from live, in-pipeline timings.
+Neither $D$ nor the endpoint is known while the user speaks. A rule has to
+judge, for each consumer separately, whether work issued now is
+\emph{feasible}: whether it can finish, and for the listener commit, before
+the endpoint. For the thinker it must also judge whether the work is
+\emph{valuable}: whether $p_{\mathrm{usable}}(\hat f) \ge p^\ast$ at the
+estimated fraction $\hat f$. Our rule estimates both from a point prior on
+utterance length and from in-pipeline timings.
 
 \section{System}
 \label{sec:system}
@@ -176,32 +182,45 @@ rails.
 \textbf{Committing while listening.} A hypothesis worker, a separate process,
 decodes only the audio after the committed point. A LocalAgreement-2 committer
 \cite{machacek2023whisperstreaming} commits the agreed prefix at segment
-granularity, guarding the last 0.3\,s of the buffer. At the endpoint the final
-decodes only the uncommitted tail.
+granularity, never a word inside the last 0.3\,s of the buffer. At the
+endpoint the final decodes only the uncommitted tail.
 
-\textbf{The issue rule.} Hypotheses are self-paced to a duty cycle. After a
-decode of length $d$ the worker rests $(1/\delta - 1)\,d$, so the recognizer's
-cores are never saturated and voice-activity detection is never starved.
+\textbf{Pacing.} Hypotheses are self-paced. After a decode of length $d$ the
+worker rests $(1/\delta - 1)\,d$, with duty $\delta = 0.6$, where $d$ is the
+measured length of the last decode. In our tests a duty near 1 split no more
+turns than this. The bound is kept because it gives the same outcome with
+fewer decodes.
 
-\textbf{The feasibility gate.} A hypothesis is issued only if the decodes still
-needed to commit its words, with their rests, fit in the expected remaining
-speech. The expected remaining speech is a prior utterance length, derived at
-run start as the median duration of the set's files, minus the speech heard so
-far. On short utterances the gate abstains outright.
+\textbf{The feasibility gate.} A hypothesis is issued only if the decodes
+still needed to commit its words, with their rests, fit in the expected
+remaining speech: a prior utterance length minus the audio heard so far. The
+prior is a point value, the median duration of the set's files, derived at
+run start. On short utterances the gate abstains outright.
 
 \textbf{Preemption at the endpoint.} A hypothesis still decoding at the
-endpoint is frozen (\texttt{SIGSTOP}). It is resumed only once the recognizer
-is idle after the reply has played, and its stale result is discarded by
-sequence number. Freezing removes the listener's overlap penalty without
-killing the worker. Two earlier designs did not survive their own validity
-checks: killing and respawning it, and keeping a hot spare
+endpoint is frozen (\texttt{SIGSTOP}). It is resumed once the recognizer is
+idle after the reply has played, and its stale result is discarded by sequence
+number. The freeze has costs:
+\begin{itemize}
+\item the resumed decodes still spend energy;
+\item a turn that opens while the worker is frozen issues no hypotheses.
+\end{itemize}
+Two earlier designs failed:
+\begin{itemize}
+\item Killing the worker and respawning it was falsified as run. By
+  elimination, the cause was the respawn landing at every endpoint.
+\item Killing it and promoting a hot spare could not be tested, because its
+  validity check failed in every attempt.
+\end{itemize}
+The freeze passed its registered test, with caveats we report with the result
 (Table~\ref{tab:ledger}).
 
 \textbf{The allocator.} For the thinker, at every partial transcript the
-allocator estimates $\hat f$ from the prior. It looks up $p_{\mathrm{usable}}(\hat f)$
-on a curve measured offline, and issues a draft of budget $B$ only if
-$p_{\mathrm{usable}}(\hat f) \ge p^\ast$ and $B$ tokens fit in $w(\hat f)$ at the
-live decode rate. Every decision is logged with its inputs and its reason
+allocator estimates $\hat f$ from the prior, looks up $p_{\mathrm{usable}}(\hat f)$
+on a curve measured offline, and admits a draft of budget $B$ only if
+$p_{\mathrm{usable}}(\hat f) \ge p^\ast$ and $B$ tokens fit in $w(\hat f)$ at
+the measured decode rate. The listener's gate runs independently of it.
+Every decision is logged with its inputs and its reason
 (Table~\ref{tab:allocator}).
 
 \section{Experimental setup}
@@ -210,35 +229,44 @@ live decode rate. Every decision is logged with its inputs and its reason
 \textbf{Device.} NVIDIA Jetson Orin Nano Super, 8\,GB of unified memory, in
 power mode MAXN\_SUPER with clocks pinned, run headless.
 
-\textbf{Sets.} One benchmark, five utterance lengths: a 16-utterance
-development set, two digit sets and the multi-step split of Spoken-MQA
-\cite{spokenmqa}, whose problems derive from GSM8K \cite{cobbe2021gsm8k}. We
-use 80 items drawn with a fixed seed, and as a fifth length the 20 longest of
-them. Lengths are in Fig.~\ref{fig:stages}.
+\textbf{Sets.} A development set of 16 short spoken assistant queries, and
+three splits of Spoken-MQA \cite{spokenmqa}:
+\begin{itemize}
+\item two digit splits;
+\item the multi-step split, derived from GSM8K \cite{cobbe2021gsm8k}. We use 80
+  items drawn with a fixed seed and, as a fifth length, the 20 longest of
+  them.
+\end{itemize}
+Lengths are in Fig.~\ref{fig:stages}.
 
 \textbf{Protocol.}
 \begin{itemize}
 \item Audio enters through the microphone's delivery path at real time, one
   file per turn. The next file starts only after the reply has finished and a
-  fixed quiet period has passed, so turns never overlap.
+  quiet period has passed, so turns never overlap.
 \item TTFA is measured from the true end of speech, known to the file source,
   to the first reply audio.
-\item Arms are compared on the same items. Each item's value is its median
-  over three runs, the difference is taken per item, and the 95\% confidence
-  interval is a percentile bootstrap over items.
+\item In the main comparisons, arms are compared on the same items. Each
+  item's value is its median over three runs, the difference is taken per
+  item, and the 95\% confidence interval is a percentile bootstrap over items.
+  Analyses that depart from this, such as the occupancy tax with one run per
+  condition and the overlap fit with intervals over runs, state their design
+  with their result.
 \item Turns split by the voice-activity detector, turns whose endpoint fired
-  after the final, and runs that fail a pre-registered validity check are
-  excluded by rules fixed before scoring.
+  after the final, and runs that fail a registered validity check are
+  excluded.
 \end{itemize}
 
 \textbf{Metrics.} TTFA and its stages, the word-error-rate difference against
 the baseline on the same audio, energy per turn from the board's power rails
 net of the idle floor, and the fraction of words committed at the endpoint.
 
-\textbf{Pre-registration.} Every prediction, its bar and its scoring rule was
-committed to the lab notebook before the run that tests it. A correction is
-appended, never edited in. Table~\ref{tab:ledger} lists every prediction with
-its registration commit and its verdict.
+\textbf{Pre-registration.} Predictions, bars and scoring rules were committed
+to the lab notebook before the runs that test them. Corrections are appended,
+never edited in. Table~\ref{tab:ledger} lists every prediction with its
+registration commit and its verdict. Where a prediction was stated informally,
+a bar moved before its data, or a scorer was written after the data, the table
+says so.
 
 % Sections 6-8 (results, limitations, conclusion with the required
 % generative-AI disclosure) follow from RESULTS.md.
