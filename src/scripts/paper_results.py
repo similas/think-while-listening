@@ -564,6 +564,7 @@ def numbers_tex() -> str:
 def tex(x: str) -> str:
     for a_, b_ in (
         ("\\", r"\textbackslash{}"),
+        ("~", r"\textasciitilde{}"),
         ("&", r"\&"),
         ("%", r"\%"),
         ("_", r"\_"),
