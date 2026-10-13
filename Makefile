@@ -31,6 +31,7 @@ results:
 
 figures:
 	PYTHONPATH=src $(BIN)/python src/scripts/make_figures.py
+	PYTHONPATH=src $(BIN)/python src/scripts/paper_figures.py
 
 paper thesis slides:
 	@command -v latexmk >/dev/null 2>&1 || { \
