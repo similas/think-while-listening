@@ -55,6 +55,7 @@ PASS8 = _runs("20261009-105401-6ac01d", "20261009-112837-d4ef5e")
 SOURCES: dict[str, Source] = {
     "figs": Source("paper_figures.py", ("--only", "1,2", "--print-only")),
     "tax": Source("occupancy_tax.py"),
+    "worker": Source("worker_memory.py"),
     "p2": Source("p2_score.py"),
     "overlap": Source("overlap_penalties.py"),
     "p2k": Source(
@@ -161,6 +162,7 @@ H_P1N = (
 )
 H_ATTR = "2026-10-13 — THE OCCUPANCY TAX, PAIRED: intervals for the 2026-09-16 medians"
 H_THP = H_ATTR
+H_REVIEW = "2026-10-13 — PAPER TABLES REVIEWED: corrections to the tables and the tax entry"
 TAX_BALLAST = (
     "Occupancy tax: STT final decode with an inert process that only holds pages "
     "co-resident, minus the recognizer alone, paired per turn"
@@ -172,9 +174,30 @@ TAX_FULL = (
 
 CLAIMS: tuple[Claim, ...] = (
     Claim(
+        "p2a_pop",
+        "P2a population: turns and runs (CI resamples runs)",
+        "p2",
+        r"^P2a population",
+        '2026-10-13 — CORRECTION to "P2a AND P2b SCORED"',
+    ),
+    Claim(
+        "stale_net",
+        "Stale decodes, net energy: mean and total (the median alone understates it)",
+        "p2k",
+        r"\[report\] stale net:",
+        '2026-10-08 — CORRECTION to "PASS 2k: P3 HOLDS" (reviewer, 7 findings)',
+    ),
+    Claim(
+        "worker_memory",
+        "The listener's live memory: the decoding hypothesis worker process at spawn",
+        "worker",
+        r"^HYPOTHESIS WORKER",
+        H_REVIEW,
+    ),
+    Claim(
         "p3",
-        "Listener speculation done right (COMMIT-WL-STOP + feasibility gate) cuts median "
-        "TTFA on multi_step against REACTIVE-NOPARTIAL",
+        "Listener speculation (COMMIT-WL-STOP + feasibility gate): median paired per-item TTFA "
+        "reduction on multi_step against REACTIVE-NOPARTIAL",
         "p2k",
         r"^\s*P3 TTFA reduction",
         "2026-10-08 — PASS 2k: P3 HOLDS. +357 ms on multi_step, inside the predicted "
@@ -182,7 +205,7 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         "p3_dev",
-        "On dev (short utterances) the gate abstains and TTFA is unchanged",
+        "On dev (short utterances) the gate abstains: no detectable TTFA cost",
         "p2k",
         r"^\s*DEV TTFA NOPARTIAL-STOP",
         "2026-10-08 — PASS 2k: P3 HOLDS. +357 ms on multi_step, inside the predicted "
@@ -190,7 +213,7 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         "p4",
-        "Speculative commitment costs no accuracy on multi_step (dWER)",
+        "Accuracy cost of speculative commitment on multi_step (dWER), bounded, not shown absent",
         "p2k",
         r"^\s*P4 dWER STOP-NOPARTIAL: .* n=70",
         "2026-10-08 — PASS 2k: P3 HOLDS. +357 ms on multi_step, inside the predicted "
@@ -279,7 +302,7 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         "thinker_finished",
-        "No thinker penalty when the draft finished before the endpoint",
+        "Thinker: no detectable penalty in the blocked policy runs when the draft finished first",
         "overlap",
         r"decode finished\s+at the endpoint:",
         "2026-10-13 — PROVENANCE GAP closed: two claim-bearing numbers had no script",

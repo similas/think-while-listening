@@ -71,55 +71,68 @@ def table1() -> str:
             "Survival: how much of the speculation is kept",
             "words committed before the endpoint: "
             + grab("p8_listener", r"median (\S+ \[[^\]]+\] n=\d+)")
-            + " items (pass 6, P8)",
+            + " items (STOP + gate, pass 6; P8)",
             grab("spec_survival", r"per turn median (\d+)")
-            + " draft tokens produced per turn, accepted / produced "
+            + " draft tokens per turn; per-item median of accepted / produced "
             + grab("spec_survival", r"accepted/produced median (\S+ \(n=\d+ items\))")
             + " (pass 7)",
         ),
         (
-            "Value: TTFA saved on multi_step",
-            grab("p3", r"(\+\d+ ms \[[^\]]+\] n=\d+)") + " (pass 2k, gated, vs NOPARTIAL)",
-            "SPEC - REACTIVE "
+            "Value: TTFA, paired per item, multi_step",
+            "reduction vs REACTIVE-NOPARTIAL "
+            + grab("p3", r"(\+\d+ ms \[[^\]]+\] n=\d+)")
+            + " (pass 2k)",
+            "difference SPEC-CONTINUE - REACTIVE "
             + grab("spec_ttfa", r"\(ms\): (\S+ \[[^\]]+\] n=\d+)")
-            + " ms: no saving detected (pass 7, descriptive)",
+            + " ms, positive = slower: no saving detected (pass 7, descriptive)",
         ),
         (
-            "Overlap cost: what speculating in flight at the endpoint costs",
-            "c = "
+            "Overlap cost: a decode in flight at the endpoint",
+            "final decode +"
             + grab("listener_c", r"c (\d+ ms/s \[[^\]]+\])")
-            + " of final decode per s of overlap, n=960 turns (P2a); removing partials "
+            + " per s of overlap; "
+            + grab("p2a_pop", r"(\d+ turns, \d+ runs)")
+            + ", CI over runs; arms with partial decodes in flight (P2a, not the STOP arm, "
+            "which freezes them). Partials in flight cost canonical REACTIVE "
             + grab("listener_intervention", r"(\+[0-9.]+ ms \[[^\]]+\] n=\d+)")
-            + " TTFA on dev (pass 1n)",
-            "TTFA "
-            + grab("thinker_overlap", r"endpoint: (\+[0-9.]+ ms \[[^\]]+\] n=\d+)")
+            + " of TTFA on dev against NOPARTIAL (pass 1n)",
+            "TTFA +"
+            + grab("thinker_overlap", r"endpoint: \+([0-9.]+ ms \[[^\]]+\] n=\d+)")
             + " when the draft is still decoding; "
             + grab("thinker_finished", r"endpoint: (\+[0-9.]+ ms \[[^\]]+\] n=\d+)")
-            + " when it finished (blocked policy runs, 2026-09-18/20)",
+            + " when it finished (blocked policy runs, 2026-09-18/20; the onset test found "
+            "a finished-draft penalty at one contended cell)",
         ),
         (
             "Energy per turn, net of the board floor",
-            grab("energy_listener", r"j_net: (\+[0-9.]+ J \[[^\]]+\] n=\d+)")
-            + " (pass 2k); of it, discarded stale decodes "
-            + grab("stale", r"net median ([0-9.]+ J)")
-            + " each, n="
-            + grab("stale", r"(\d+) measured")
-            + "; "
+            "vs REACTIVE-NOPARTIAL "
+            + grab("energy_listener", r"j_net: (\+[0-9.]+ J \[[^\]]+\] n=\d+)")
+            + " (pass 2k); "
             + grab("p7_jms", r"medians (\+[0-9.]+ J/ms \[[^\]]+\])")
-            + " per ms saved",
-            grab("spec_energy", r"net SPEC - REACTIVE: (\+[0-9.]+ \[[^\]]+\] n=\d+)")
+            + " per ms saved; resumed-and-discarded stale decodes "
+            + grab("stale_net", r"(mean [0-9.]+ J, total [0-9.]+ J)")
+            + " net over "
+            + grab("stale", r"(\d+) measured")
+            + " decodes",
+            "vs REACTIVE "
+            + grab("spec_energy", r"net SPEC - REACTIVE: (\+[0-9.]+ \[[^\]]+\] n=\d+)")
             + " J (pass 7, descriptive)",
         ),
         (
             "Memory",
-            "resident second recognizer (tiny, idle): "
+            "the decoding worker process: "
+            + grab("worker_memory", r"(PSS median [0-9.]+ MB)")
+            + ", MemAvailable "
+            + grab("worker_memory", r"pool spawn median (-?[0-9.]+ MB)")
+            + " lower (pass 2k, at spawn). Keeping an idle second engine resident: "
             + grab("residency_memory", r"medians\): (\+[0-9.]+ MB)")
-            + " agent RSS, run level, "
+            + " RSS, "
             + grab("residency_memory", r"(n=\d+/\d+ runs)")
-            + "; costs no detectable TTFA, "
+            + ", no detectable TTFA cost "
             + grab("residency", r"(\+[0-9.]+ ms \[[^\]]+\] n=\d+)")
             + " (pass 1r)",
-            "no second model: drafts run in the reply LLM's process; not measured separately",
+            "no second model: drafts run in the reply LLM's single slot (--parallel 1, "
+            "fixed context); not measured separately",
         ),
     ]
     out = [
@@ -220,6 +233,8 @@ def table3() -> str:
         corr = ", ".join(commit_of(h).split()[0] for h in e.get("corrections", [])) or "none"
         pred = e["prediction"].replace("|", "/")
         verdict = e["verdict"].replace("|", "/")
+        if e.get("notes"):
+            verdict += " *Note: " + e["notes"].replace("|", "/") + "*"
         out.append(f"| {i} | **{e['id']}**: {pred} | {reg} | {sc} | {verdict} | {corr} |")
     return "\n".join(out) + "\n"
 
@@ -246,6 +261,7 @@ SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "thinker_overlap",
             "thinker_finished",
             "listener_c",
+            "p2a_pop",
             "p2a",
             "p2b",
             "listener_intervention",
@@ -255,27 +271,36 @@ SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("When a draft still fits (Fig 4), and who survives", ("fstar", "p8_listener")),
     (
         "Listener speculation, gated (Fig 5)",
-        ("p3", "p3_dev", "p4", "p6", "energy_listener", "p7_jms", "stale", "pass2"),
+        ("p3", "p3_dev", "p4", "p6", "energy_listener", "p7_jms", "stale", "stale_net", "pass2"),
     ),
     ("Thinker speculation (Table 1)", ("spec_ttfa", "spec_energy", "spec_survival")),
-    ("Residency", ("residency", "residency_memory")),
+    ("Residency and memory", ("residency", "residency_memory", "worker_memory")),
 )
 
 CAVEATS = {
     "stages_dev": "P1 (share rises with duration) is FALSIFIED as registered (Table 3); "
     "what stands is that the final decode is the largest stage on every set.",
-    "tax_ballast_7dc19e": "Paired per turn by occupancy_tax.py (2026-10-13, existing logs). "
-    "NOTES recorded differences of medians (+102 ms ballast, +247 ms full) without "
-    "intervals; the paired figures are the ones cited.",
-    "tax_ballast_ace562": "The replicate run; the two ballast figures do not agree in size "
-    "(+113 vs +249 ms), both exclude 0. The paper cites the range.",
+    "tax_ballast_7dc19e": "Paired per turn position by occupancy_tax.py (2026-10-13, existing "
+    "logs), CI resampling the 16 files. One run per condition, run after B: time order "
+    "is confounded with condition.",
+    "tax_ballast_ace562": "Run 5d30c2 is not a plain replicate: it added vmstat/smaps "
+    "sampling around every decode. The two runs disagree on size and on the ordering "
+    "of conditions; both exclude 0.",
     "thinker_overlap": "Reproduces the 2026-09-21 figure (+100.3 [+78.0, +123.9] n=130), "
     "which had no script; the paper cites this one.",
     "listener_c": "Below the registered band [500, 1500] ms/s; separate-arm coding (added "
     "post hoc, conditioned interval) gives 576 [518, 638]. Scorer written after the data.",
     "listener_intervention": "Reproduces pass 1n's +315 [+188, +453] n=16 (no script); one "
     "item dropped by the reference-match filter.",
-    "p9c": "The P9b-b CI's lower end (+57 ms) lies below its 150 ms bar.",
+    "p9c": "The P9b-b CI's lower end (+57 ms) lies below its 150 ms bar. Under the "
+    "original check 2 (3894a8c) this result would be NOT TESTABLE; it holds under the "
+    "amendment (4184a7d), and it is conditional on the 3 s post-reply quiet period.",
+    "thinker_finished": "Not a general zero: the 2026-09-21 onset test found +128.8 ms "
+    "[+57.6, +155.7] for finished drafts at B=64 contended (Table 3).",
+    "worker_memory": "At spawn, before any decode; the per-decode working set is not logged.",
+    "p2a_pop": "The bootstrap resamples the runs.",
+    "stale_net": "Per-decode median 0.60 J understates the cost; mean and total are the "
+    "figures to quote. Some stale decodes drew 15-17 W, unexplained (Limitations).",
     "fstar": "As registered (mixed clocks) the estimate was 0.895 [0.891, 0.901]; 0.861 is "
     "the clock-consistent correction and the figure cited. Predicted 0.858.",
     "p8_listener": "Expectation >= 0.60 not met. The thinker half is a curve value, greedy "
@@ -285,7 +310,7 @@ CAVEATS = {
     "p4": "Mean dWER CI [-0.0039, +0.0135]; 14 items worse, 8 better.",
     "energy_listener": "Net is the like-for-like figure: the energy window ends at first "
     "audio, which STOP moves earlier.",
-    "stale": "Some stale decodes drew 15-17 W, unexplained; one line in Limitations.",
+    "stale": "Raw figures; the net mean and total are the next claim.",
     "pass2": "Unconditional ablation: speculating on every turn, without the gate or the "
     "SIGSTOP preemption. paired = NOPARTIAL - COMMIT-WL, a reduction: -155 ms means "
     "COMMIT-WL was slower; the CI includes 0. P3 FAILS on this pass (Table 3).",
@@ -307,7 +332,8 @@ def results_page() -> str:
         "src/scripts/paper_results.py (`make results`). The paper is written from this",
         "page, not from the notebook. Verdicts of every registered prediction: Table 3",
         "(results/tables/paper_table3_ledger.md). Medians with 95% bootstrap CIs and n",
-        "throughout, as the scorers print them.",
+        "as the scorers print them; where a line carries a range, a count or a ratio",
+        "instead, that is all its scorer measures, and the caveat says so.",
         "",
         "Measurement froze 2026-10-13 13:03 with pass 1r. Pass 9 (live microphone) is",
         "the approved post-freeze exception: descriptive, no claim; PENDING.",

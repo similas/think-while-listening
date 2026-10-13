@@ -30,13 +30,13 @@
   "prediction": "BUDGET-R does not beat REACTIVE on TTFA (falsified if it beats it, CI excl. 0); B=0 on >80% of turns; occupancy <20% of SPEC-ALWAYS-PG; beats spec arms by ~+98-104 ms",
   "registered": "PRE-REGISTERED PREDICTION for BUDGET-R (2026-09-18, before the controller exists)",
   "scored": "The pre-registered prediction: CONFIRMED ON DIFFERENT GROUND",
-  "verdict": "CONFIRMED ON DIFFERENT GROUND (HOLDS, BUT via cost side not p_usable): no budget shows a resolvable net benefit; B=1 -5.9 ms [-63.6, +42.3] n=48, B=32 -16.0 ms [-45.9, +12.9] n=96; controller chooses B=0. Never run live against REACTIVE; points 3-4 never scored",
+  "verdict": "CONFIRMED ON DIFFERENT GROUND, after a FALSIFIED first scoring (41413f6) that was then restored: no budget shows a resolvable net benefit; B=1 -5.9 ms [-63.6, +42.3] n=48, B=32 -16.0 ms [-45.9, +12.9] n=96. Under the through-origin model the controller picks B=0 contended and B=32 uncontended, the uncontended pick reported as undetermined (RETRACTION). Never run live against REACTIVE; points 3-4 never scored",
   "corrections": [
    "TTFA cost model: contention does NOT scale the per-token cost (2026-09-18)",
    "The negative fee does not replicate. BUDGET-R degenerates to B=0 (2026-09-20)",
    "RETRACTION: contention moves the SLOPE, not the fee. And the uncontended cost is unresolved"
   ],
-  "notes": "Not CORRECTION-titled: 'TTFA cost model...' declared points 1-2 FALSIFIED (fitted -76.9 ms fee); 'The negative fee does not replicate...' restored it; 'RETRACTION...' qualified the uncontended B=0 as undetermined."
+  "notes": "The first scoring commit (FALSIFIED ON POINTS 1 AND 2) predates the restoring entry; it is listed among the corrections."
  },
  {
   "id": "onset-overlap",
@@ -222,13 +222,24 @@
   ]
  },
  {
-  "id": "P4",
+  "id": "P4 (selection set, two-tier)",
+  "prediction": "COMMIT-WL dWER <= +0.020 on the 16-item selection set (the two-tier selection bar)",
+  "registered": "PRE-REGISTRATION 2026-09-23g — P3 to P8, before any Phase 5 run",
+  "scored": "DECISION 2026-10-02 — NEITHER QUALIFIES. tiny a=2 runs, P4 is reported failed",
+  "verdict": "REPORTED FAILED: no configuration meets +0.020 on the selection set (tiny a=2 median dWER above the bar); restated by the 2026-10-05 decision. CONFLICTS with pass 2's 'P4 PASSES'",
+  "corrections": [
+   "DECISION 2026-10-05 — two-tier v2 FAILS at both batch sizes. The standing decision holds"
+  ],
+  "notes": "The decision cites a 2026-10-01 'option 2' pre-registration that is not in NOTES."
+ },
+ {
+  "id": "P4 (pass 2, live)",
   "prediction": "COMMIT-WL dWER <= +2.0 points on every split; FALSIFIED if > +5 on any",
   "registered": "PRE-REGISTRATION 2026-09-23g — P3 to P8, before any Phase 5 run",
   "scored": "2026-10-06 — PASS 2 SCORED. P3 FAILS, P7 FALSIFIED, P4 PASSES, P6 NOT MET ON TWO SETS",
-  "verdict": "PASSES: worst multi_step mean +0.0082 (median 0), n=62; other sets 0",
+  "verdict": "PASSES on pass 2's sets: multi_step mean +0.0082 (median 0), n=62; other sets 0. CONFLICTS with the DECISION entries of 2026-10-02 and 2026-10-05, which report P4 FAILED on the two-tier selection set; NOTES never reconciles the two",
   "corrections": [],
-  "notes": "DECISION 2026-10-02 / 2026-10-05 entries said 'P4 IS REPORTED FAILED' (selection set, +0.028 vs +0.020 bar); the live pass 2 scoring says PASSES. See ambiguities."
+  "notes": "Open: which population is the registered P4. The 'option 2' registration the decisions cite (2026-10-01) is not in NOTES."
  },
  {
   "id": "P4 (pass 2k)",
@@ -394,7 +405,7 @@
   "registered": "2026-10-09 — AMENDMENTS before passes 7, 9, 1r (user decisions; no data from these passes yet)",
   "registered_original": "2026-10-08 — PRE-REGISTRATION for 2026-10-09: passes 8, 6, 7, 9, 1r. Committed before the allocator build",
   "scored": "2026-10-13 — PASS 7 SCORED: the interleave design broke at the first VAD split; what survives is thin",
-  "verdict": "DESCRIPTIVE: TTFA +32 ms [-92, +92], n=22 paired items; +36.2 J/turn raw [+35.1, +36.7]; 0/96 draft tokens accepted (n=38)",
+  "verdict": "DESCRIPTIVE: TTFA +32 ms [-92, +92], n=22 paired items; +36.2 J/turn raw [+35.1, +36.7]; median accepted/produced 0.000 of 96 tokens per turn (n=38 items)",
   "corrections": [
    "2026-10-13 — CORRECTION to \"PASS 7 SCORED\" (reviewer, 4 findings)",
    "2026-10-13 — DECISIONS on fe19ac4 (user), and the interleave fix"

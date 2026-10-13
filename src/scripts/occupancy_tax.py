@@ -6,7 +6,8 @@ differences, without intervals. Every condition replays the same dev files in
 the same order (dev never splits), so turn k of a condition and turn k of B
 decode the same audio: the pairing the "+4 ms, pipeline minus isolation" result
 used. A condition whose valid turns do not line up with B's file by file is not
-paired and is reported as such. Written 2026-10-13 over existing logs; it adds
+paired and is reported as such. The CI resamples the 16 files (each played
+twice), not the 32 positions. Written 2026-10-13 over existing logs; it adds
 intervals to recorded medians and makes no new measurement.
 """
 
@@ -22,6 +23,7 @@ ATTRIBUTION = (
     "results/raw/stt_attribution/stt-attribution-20260916-104404-a81993.jsonl",
     "results/raw/stt_attribution/stt-attribution-20260916-115211-5d30c2.jsonl",
 )
+REPEATS = 2  # stt_attribution.py --repeat default: the dev set played twice per condition
 LABELS = {
     "Cprime": "C' inert ballast",
     "C2b": "C''b llama, no CUDA",
@@ -45,9 +47,14 @@ def stt_by_position(run: str) -> list[tuple[str, float | None]]:
     return out
 
 
-def boot(v: list[float], reps: int = 4000, seed: int = 0) -> tuple[float, float]:
+def boot(by_file: list[list[float]], reps: int = 4000, seed: int = 0) -> tuple[float, float]:
+    """Resample FILES, not positions: each file is decoded once per repeat, and
+    its repeats are not independent draws."""
     rng = random.Random(seed)
-    m = sorted(statistics.median(v[rng.randrange(len(v))] for _ in v) for _ in range(reps))
+    m = sorted(
+        statistics.median(x for _ in by_file for x in by_file[rng.randrange(len(by_file))])
+        for _ in range(reps)
+    )
     return m[int(0.025 * reps)], m[int(0.975 * reps) - 1]
 
 
@@ -65,12 +72,18 @@ def main() -> None:
                     f"  {label}: {len(cond)} turns vs B {len(base)}, {same} aligned -- NOT PAIRED"
                 )
                 continue
-            d = [
-                c[1] - b[1]
-                for b, c in zip(base, cond, strict=True)
-                if b[1] is not None and c[1] is not None
-            ]
-            lo, hi = boot(d)
+            files = len(base) // REPEATS
+            if any(base[k][0][:15] != base[k + files][0][:15] for k in range(files)) and (
+                sum(base[k][0][:15] == base[k + files][0][:15] for k in range(files)) < 0.9 * files
+            ):
+                print(f"  {label}: repeats do not line up file by file -- NOT PAIRED")
+                continue
+            by_file: list[list[float]] = [[] for _ in range(files)]
+            for k, (b, c) in enumerate(zip(base, cond, strict=True)):
+                if b[1] is not None and c[1] is not None:
+                    by_file[k % files].append(c[1] - b[1])
+            d = [x for v in by_file for x in v]
+            lo, hi = boot([v for v in by_file if v])
             print(
                 f"  TAX {label} - B, paired per turn position: {statistics.median(d):+.0f} ms "
                 f"[{lo:+.0f}, {hi:+.0f}] n={len(d)}; transcripts aligned {same}/{len(base)}; "

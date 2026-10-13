@@ -7964,3 +7964,126 @@ src/scripts/paper_results.py from a claim registry
 (src/scripts/paper_sources.py). The registry pins each scorer invocation with
 the run ids recorded in NOTES, and every invocation was checked to reproduce
 its entry's headline. Figs 1 and 2 now print the values they plot.
+
+## 2026-10-13 — PAPER TABLES REVIEWED: corrections to the tables and the tax entry
+
+Appended, not edited. The reviewer checked ed00441 and a6f37a2. The fixes are
+in the generator (paper_results.py, paper_sources.py, paper_ledger.json) and
+the outputs are regenerated.
+
+1. P4 HAS TWO VERDICTS IN THIS NOTEBOOK, AND NOTHING RECONCILES THEM. The
+   decisions of 2026-10-02 and 2026-10-05 report P4 FAILED on the two-tier
+   selection set (bar +0.020). Pass 2 (2026-10-06) scores P4 PASSES on its
+   live sets. Table 3 had shown only the second. It now carries both rows,
+   each marked as conflicting. Those decisions cite an "option 2"
+   pre-registration of 2026-10-01 that is not in NOTES. WHICH POPULATION IS
+   THE REGISTERED P4 IS ALI'S CALL; until he makes it, both stand.
+2. Claim wording now matches the 2026-10-08 correction (abb44e6):
+   - P3 is "median paired per-item TTFA reduction", not "cuts median TTFA".
+   - P4 is "bounded, not shown absent".
+   - dev is "no detectable TTFA cost".
+   - "Finished draft, no penalty" is limited to the blocked policy runs. The
+     onset test's +128.8 ms at B=64 contended is the counter-case.
+3. Table 1's listener memory figure was pass 1r's idle engine. That is not the
+   design's memory. The decoding worker's own figure is now scored by
+   src/scripts/worker_memory.py (pass 2k, at spawn, 3 runs): PSS 121.4 MB
+   (121.2–121.5), MemAvailable drop 118.9 MB. This matches the ~+121 MB live
+   figure that 1r did not re-measure.
+4. The stale-decode cost is quoted with its net mean and total (1.74 J,
+   101.1 J), not with the 0.60 J median alone.
+5. The P9c caveat now carries all three of its conditions: the result is
+   NOT TESTABLE under the original check 2; it holds under the amendment; and
+   it depends on the 3 s quiet period.
+6. Table 1 now states each baseline and sign convention per cell. The overlap
+   cell names the arms behind c, which are not the STOP arm. The pass 1n
+   figure reads as a cost of partials in flight.
+7. BUDGET-R's verdict now states the RETRACTION (B=32 uncontended,
+   undetermined) and its FALSIFIED-then-restored history. Ledger notes are now
+   rendered in Table 3.
+8. THE TAX ENTRY ABOVE OVERREACHED IN THREE PLACES:
+   (a) "About 0.1–0.25 s per decode" leaves out D in a81993 (+288 ms). The
+       range of the paired figures is +113 to +288 ms.
+   (b) 5d30c2 is not a plain replicate. It added vmstat/smaps sampling around
+       every decode, so the disagreement in size may come from
+       instrumentation, not noise. Each condition is one run, made after B,
+       so time order is confounded with condition.
+   (c) In a81993 the paired ballast (+113) and the full pipeline (+288) no
+       longer support 09-16's "an inert ballast costs as much as a live
+       inference server". In 5d30c2 they do (+249 vs +212).
+   The CI now resamples the 16 files rather than the 32 positions, since each
+   file is played twice. Every interval still excludes 0; the widest is D
+   a81993, +288 [+200, +348].
+9. Pass 2's six run ids were not in NOTES. They are the only multi_step
+   NOPARTIAL (10-02) and COMMIT-WL (10-05) runs on disk, and they reproduce
+   -155.1 [-486.6, +59.1] n=62:
+   - NOPARTIAL: reactive-20261002-104047-106290, -112138-a6c31a, -120244-4be4d4
+   - COMMIT-WL: reactive-20261005-145416-dac216, -153526-e45863, -161631-1f1168
+
+## 2026-10-13 — LEVEL-2 PLANNER, SIMULATED: no live pass on the median; the gain is in the long tail
+
+`src/scripts/planner_sim.py`, existing logs only, no measured run. The policy
+table is in results/tables/planner_policy_table.csv.
+
+THE SIMULATOR is calibrated per item on multi_step (70 items, buffer clock):
+- E: the buffer at the endpoint, from REACTIVE-NOPARTIAL.
+- Boundaries: the commit points each item ever produced over pass 2k STOP,
+  pass 6 and pass 2 (2 per item at the median). Each boundary has a commit
+  rate p_b from the runs that reached it (median 0.57).
+- Commit rule: replay accuracy 0.797 over 1824 logged hypotheses.
+- Partial decode: 754 + 45.0 ms/s, with residuals drawn from the logs.
+- Final decode: 1284 + 68.2 ms/s within item, plus an item effect.
+- Unconditional arm: its final carries pass 2's measured 1.31x.
+- Paired arms share random numbers.
+
+THE DP plans with only the hazard (the smoothed duration distribution) and a
+population commit model (lag 2.67 s), on a 0.2 s grid over (t, x_prev, x_pp).
+It runs at the gate's duty bound (0.6) and, as a sensitivity, without it. A
+CLAIRVOYANT policy that knows E and which boundaries will commit gives the
+ceiling.
+
+VALIDATION. Simulated STOP+gate vs NOPARTIAL: +364 ms [+324, +421], against
++351 ms measured on these items (pass 2k: +357 [+294, +412]). Unconditional:
+-194 [-245, -118], against pass 2's -155 [-487, +59].
+
+RESULT, median paired TTFA (= final) reduction over STOP+gate, n=70 items
+(40 replicates each):
+
+    DP, duty 0.6          +0 ms [+0, +0]    mean +87,  >= 100 ms on 15/70 items
+    DP, no duty bound     +0 ms [+0, +3]    mean +120, 19/70
+    clairvoyant ceiling   +0 ms [+0, +3]    mean +128, 19/70
+
+THE MEDIAN IS 0 BECAUSE THE GATE ALREADY COMMITS EVERY BOUNDARY THAT CAN
+COMMIT ON MOST ITEMS. The gain sits in the long items, where the fixed 15.4 s
+prior stops the gate early.
+
+CENSORING, THE ONE ASSUMPTION THAT MATTERS. A boundary no run reached is
+invisible, and the gate stops early on long items. Synthetic boundaries were
+added every 2.99 s (the median observed gap) after each item's last observed
+one, at commit rate p. The measured committed fraction at the endpoint
+arbitrates (pass 2k gate 0.40–0.43 per run; pass 2 ungated 0.42–0.46):
+
+    fill p        gate   ungated   DP (duty 0.6) median       mean
+    none          0.37    0.40     +0  [+0, +0]               +87
+    0.1           0.37    0.43     +29 [+10, +48]             +112
+    0.2           0.38    0.46     +50 [+20, +92]             +132
+    0.3           0.40    0.48     +69 [+27, +97]             +150
+    0.57 (p_b)    0.42    0.54     +105 [+31, +133]           +193
+
+The ungated arm commits wherever a boundary exists, so it is the direct probe
+of late boundaries. The fills consistent with it (p 0.1–0.2) put the DP's
+median gain at +29 to +50 ms, with CIs below 100. p = 0.3 matches the gate's
+fraction better but overshoots the ungated one; it gives +69 [+27, +97]. Only
+the uncalibrated full fill crosses 100 ms, and it predicts an ungated
+fraction of 0.54 that pass 2 did not show.
+
+DECISION INPUT, as asked: ON THE MEDIAN PAIRED REDUCTION, the statistic every
+TTFA claim in this project uses, the DP does NOT predict >= 100 ms over the
+gate under any calibrated variant. On the MEAN it does in the filled variants
+(+112 to +150), because the gain is concentrated in long items. Whether that
+justifies the one live pass is a decision for Ali. The registered statistic
+says no.
+
+What it means for the thesis: most of what a planner adds over the gate comes
+from not stopping on items longer than the prior. A gate that conditions its
+prior on the elapsed time (a hazard gate) would take most of that, and is the
+formalisation the planner reduces to.
