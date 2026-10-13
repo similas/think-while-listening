@@ -407,6 +407,14 @@ NUMBERS: tuple[tuple[str, str, str], ...] = (
     ("ResidencyTTFA", "residency", r"(\+[0-9.]+ ms \[[^\]]+\])"),
     ("WorkerPSS", "worker_memory", r"PSS median ([0-9.]+) MB"),
     ("PtwoTTFA", "pass2", r"paired\s+(-?[0-9.]+)\s+CI"),
+    ("PlannerDP", "planner_dp", r"(\+\d+ ms \[[^\]]+\])"),
+    ("PlannerNoDuty", "planner_noduty", r"(\+\d+ ms \[[^\]]+\])"),
+    ("StaleMean", "stale_net", r"mean ([0-9.]+) J"),
+    ("StaleN", "stale", r"(\d+) measured"),
+    ("PfourMean", "p4", r"mean (\+[0-9.]+)"),
+    ("PsixRatio", "p6", r"item-median ([0-9.]+x \[[^\]]+\])"),
+    ("SevenJms", "p7_jms", r"medians (\+[0-9.]+ J/ms \[[^\]]+\])"),
+    ("ResidencyMem", "residency_memory", r"medians\): \+([0-9.]+) MB"),
 )
 
 

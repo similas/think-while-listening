@@ -386,3 +386,38 @@ HYPOTHESIS WORKER at spawn: PSS median 121.4 MB (range 121.2-121.5), RSS median 
 - runs: see the scorer's run list
 - NOTES: "2026-10-13 — PAPER TABLES REVIEWED: corrections to the tables and the tax entry" (a462589 2026-10-13)
 - caveat: At spawn, before any decode; the per-decode working set is not logged.
+
+## The Level-2 planner, simulated (no measured run)
+
+### Planner simulator, validation: simulated STOP+gate vs NOPARTIAL (measured +351 on these items)
+
+```
+simulated TTFA reduction, NOPARTIAL - STOP+gate: +399 ms [+362, +477] n=70
+```
+
+- command: `src/scripts/planner_sim.py --reps 40 --fill --fill-p 0.1`
+- runs: see the scorer's run list
+- NOTES: "2026-10-13 — CORRECTION to "LEVEL-2 PLANNER, SIMULATED" (reviewer, 6 findings)" (8b6bbca 2026-10-13)
+- caveat: Simulation from logs, not a measurement. The final's slope is fitted largely from the contrast this line reproduces; the committed fraction is the real check (gate 0.40, ungated 0.44 simulated; measured 0.40-0.43 and 0.42-0.46).
+
+### Level-2 planner (DP, the gate's duty bound) over STOP+gate, simulated: the gate is within this of the DP's optimum
+
+```
+DP (duty 0.6)          +12 ms [+0, +30] n=70; [report] mean +92 ms, Q3 +94 ms, items gaining >= 100 ms: 15/70
+```
+
+- command: `src/scripts/planner_sim.py --reps 40 --fill --fill-p 0.1`
+- runs: see the scorer's run list
+- NOTES: "2026-10-13 — CORRECTION to "LEVEL-2 PLANNER, SIMULATED" (reviewer, 6 findings)" (8b6bbca 2026-10-13)
+- caveat: Decision on f5e1b8f: no live pass; the gate is near-optimal under the measured cost model. Fill p 0.1 is the calibrated setting; with no fill the DP gains +0 [+0, +0]. The adaptive-prior hypothesis is unsimulated.
+
+### DP without the duty bound over STOP+gate, simulated (the gain of back-to-back decoding)
+
+```
+DP (no duty bound)     +46 ms [+25, +71] n=70; [report] mean +139 ms, Q3 +125 ms, items gaining >= 100 ms: 22/70
+```
+
+- command: `src/scripts/planner_sim.py --reps 40 --fill --fill-p 0.1`
+- runs: see the scorer's run list
+- NOTES: "2026-10-13 — CORRECTION to "LEVEL-2 PLANNER, SIMULATED" (reviewer, 6 findings)" (8b6bbca 2026-10-13)
+- caveat: Decoding back to back, not planning; the duty bound is a harness constant equal across arms.
