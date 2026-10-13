@@ -36,7 +36,8 @@
    "The negative fee does not replicate. BUDGET-R degenerates to B=0 (2026-09-20)",
    "RETRACTION: contention moves the SLOPE, not the fee. And the uncontended cost is unresolved"
   ],
-  "notes": "The first scoring commit (FALSIFIED ON POINTS 1 AND 2) predates the restoring entry; it is listed among the corrections."
+  "notes": "The first scoring commit (FALSIFIED ON POINTS 1 AND 2) predates the restoring entry; it is listed among the corrections.",
+  "qualifier": "first scored FALSIFIED, then restored; uncontended pick retracted as undetermined"
  },
  {
   "id": "onset-overlap",
@@ -45,7 +46,8 @@
   "scored": "Onset prediction test: PARTIALLY confirmed. Overlap is a factor, not the only one",
   "verdict": "PARTIALLY confirmed: overlap penalty +131.1 ms [+82.0, +244.9] (B=64 uncont.), +205.1 [+88.9, +295.5] (B=96 cont.); 'finished implies ~0' NOT CONFIRMED (+128.8 [+57.6, +155.7] at B=64 cont.); n=32 per cell",
   "corrections": [],
-  "notes": "Informal: stated in body text ('a prediction this model makes'), not under a PRE-REGISTRATION heading."
+  "notes": "Informal: stated in body text ('a prediction this model makes'), not under a PRE-REGISTRATION heading.",
+  "qualifier": "stated informally; 'finished implies ~0' not confirmed"
  },
  {
   "id": "feasibility-BUDGET-R",
@@ -105,7 +107,8 @@
   "scored": null,
   "verdict": "NEVER SCORED: the live Spoken-MQA runs failed/voided (2026-09-22) and the question was superseded by window(f)/f*",
   "corrections": [],
-  "notes": "Registered as item (d) of the prefix-probe amendment."
+  "notes": "Registered as item (d) of the prefix-probe amendment.",
+  "qualifier": "superseded by window(f)"
  },
  {
   "id": "greedy-test (replication.1)",
@@ -143,7 +146,8 @@
   "corrections": [
    "2026-10-09 — CORRECTION to \"PASS 8 (f*), PASS 6, P8\": pass 8's f* was on mixed clocks. Corrected, it lands on the prediction"
   ],
-  "notes": "First attempt (run 3) VOID: '2026-09-22 — POST-MORTEM of reactive-20260922-130314-6a8b26 (run 3, VOID)'. Estimator fixed in the 2026-10-08 pre-registration."
+  "notes": "First attempt (run 3) VOID: '2026-09-22 — POST-MORTEM of reactive-20260922-130314-6a8b26 (run 3, VOID)'. Estimator fixed in the 2026-10-08 pre-registration.",
+  "qualifier": "as registered 0.895 on mixed clocks; 0.861 on consistent clocks"
  },
  {
   "id": "P1",
@@ -152,7 +156,8 @@
   "scored": "2026-10-01 — PASS 1 COMPLETE. P1 IS FALSIFIED",
   "verdict": "FALSIFIED: 56.0, 47.9, 46.2, 61.5 % (dev/short/long/multi, n=48/60/54/213) — non-monotone, two sets < 50%; re-scored on NOPARTIAL same verdict (52.9, 47.0, 46.1, 61.5)",
   "corrections": [],
-  "notes": "Originally v3 §5.4 (not in NOTES); declared not testable on existing logs in '2026-09-23 — §4 analyses wired...'. NOPARTIAL re-score in PASS 1n entry."
+  "notes": "Originally v3 §5.4 (not in NOTES); declared not testable on existing logs in '2026-09-23 — §4 analyses wired...'. NOPARTIAL re-score in PASS 1n entry.",
+  "qualifier": "first registered in the research brief, not the notebook"
  },
  {
   "id": "P2a",
@@ -167,7 +172,8 @@
   "corrections": [
    "2026-10-13 — CORRECTION to \"P2a AND P2b SCORED\""
   ],
-  "notes": "Withdrawn first scoring (677537d) said HOLDS, c=572 [516, 620] n=503, on a population that broke the amendment. Reported with the band. The separate-arm coding (576 [518, 638], 1717/2000 draws) was added after the first scorer's numbers and is labelled post hoc. Scorer written after the data."
+  "notes": "Withdrawn first scoring (677537d) said HOLDS, c=572 [516, 620] n=503, on a population that broke the amendment. Reported with the band. The separate-arm coding (576 [518, 638], 1717/2000 draws) was added after the first scorer's numbers and is labelled post hoc. Scorer written after the data.",
+  "qualifier": "scorer written after the data; band [500, 1500] ms/s; separate-arm coding 576 is post hoc"
  },
  {
   "id": "P2b",
@@ -180,7 +186,8 @@
   "verdict": "NOT TESTABLE: n=0 structural (each item played once per run); withdrawn 1.41x [1.23, 1.54] n=50 is descriptive only",
   "corrections": [
    "2026-10-13 — CORRECTION to \"P2a AND P2b SCORED\""
-  ]
+  ],
+  "qualifier": "structural: each item played once per run; the 1.41x cross-run ratio is descriptive only"
  },
  {
   "id": "P3",
@@ -193,7 +200,8 @@
   "scored": "2026-10-06 — PASS 2 SCORED. P3 FAILS, P7 FALSIFIED, P4 PASSES, P6 NOT MET ON TWO SETS",
   "verdict": "FAILS: -155.1 ms [-486.6, +59.1] n=62 (regression); dev -394.5 ms [-526.8, -253.2] n=16; secondary no; not monotone",
   "corrections": [],
-  "notes": "Original bar >= 1000 ms (2026-09-23g), amended to >= 500 (2026-10-01), then >= 300 ms CI excl. 0 (2026-10-01b). PASS 2 text says 'amended 2026-10-04'; git dates the 2026-10-01b entry to 2026-10-01."
+  "notes": "Original bar >= 1000 ms (2026-09-23g), amended to >= 500 (2026-10-01), then >= 300 ms CI excl. 0 (2026-10-01b). PASS 2 text says 'amended 2026-10-04'; git dates the 2026-10-01b entry to 2026-10-01.",
+  "qualifier": "bar moved before the data: >=1000, >=500, then >=300 ms"
  },
  {
   "id": "P3 (pass 2k)",
@@ -208,7 +216,8 @@
   "corrections": [
    "2026-10-08 — CORRECTION to \"PASS 2k: P3 HOLDS\" (reviewer, 7 findings)",
    "2026-10-08 — DECISIONS on abb44e6 (user)"
-  ]
+  ],
+  "qualifier": "CI lower end +294 below the 300 ms bar"
  },
  {
   "id": "feasibility gate / dev (pass 2k)",
@@ -230,7 +239,8 @@
   "corrections": [
    "2026-10-13 — DECISIONS on f5e1b8f (user): P4 reconciled, Spoken-MQA, planner, P2a"
   ],
-  "notes": "Selection-time estimate on the 16-item selection set (median 10.6 s): tiny a=2 median dWER +0.028 (+0.009..+0.042), reported as FAILED in the 2026-10-02/05 decisions; prior evidence that did not carry. The 'option 2' rule was Ali's instruction of 2026-10-01, not a NOTES registration."
+  "notes": "Selection-time estimate on the 16-item selection set (median 10.6 s): tiny a=2 median dWER +0.028 (+0.009..+0.042), reported as FAILED in the 2026-10-02/05 decisions; prior evidence that did not carry. The 'option 2' rule was Ali's instruction of 2026-10-01, not a NOTES registration.",
+  "qualifier": "selection-set estimate +0.028 (median 10.6 s items) did not carry"
  },
  {
   "id": "P4 (pass 2k)",
@@ -378,7 +388,8 @@
   "verdict": "HOLDS: P9b-a 0.93x [0.92, 0.98] n=17; P9b-b +462 ms [+57, +737] n=16 (CI lower end below 150 bar); under the original 3894a8c check 2 it would be NOT TESTABLE",
   "corrections": [
    "2026-10-08 — CORRECTION to \"P9c HOLDS\" (reviewer, 5 findings on the entry)"
-  ]
+  ],
+  "qualifier": "CI lower end +57 below the 150 ms bar; NOT TESTABLE under the original check 2; conditional on the 3 s quiet period"
  },
  {
   "id": "pass 6 (ALLOCATOR)",
@@ -400,7 +411,8 @@
   "corrections": [
    "2026-10-13 — CORRECTION to \"PASS 7 SCORED\" (reviewer, 4 findings)",
    "2026-10-13 — DECISIONS on fe19ac4 (user), and the interleave fix"
-  ]
+  ],
+  "qualifier": "scorer written after the run; interleave broke at the first split"
  },
  {
   "id": "pass 1r",
@@ -414,7 +426,8 @@
   "verdict": "NO RESIDENCY COST DETECTED: +1.8 ms [-30.3, +37.0] n=16 (fence-compliant headline, U1 dropped); full pass +12.1 [-31.1, +39.1]; >= ~146 ms of ~185 ms remainder unattributed",
   "corrections": [
    "2026-10-13 — CORRECTION to \"PASS 1r SCORED\" (reviewer, 4 findings)"
-  ]
+  ],
+  "qualifier": "headline drops one rep run during a fence breach"
  },
  {
   "id": "pass 9",

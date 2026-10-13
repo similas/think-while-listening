@@ -37,9 +37,10 @@ the endpoint, cuts the median paired time to first audio by \PthreeRed{}
 ($n=\PthreeN$ items). That is our pre-registered prediction, although the
 interval's lower end lies below the registered bar. On short utterances the
 gate abstains at no detectable TTFA cost. A simulated finite-horizon planner,
-calibrated from the logs, improves on the gate's median by \PlannerDP{} at the
-gate's duty bound (\PlannerNoDuty{} without it, from decoding back to back).
-At the median, the simple rule is near-optimal under the measured costs. Every prediction, including
+calibrated from the logs, beats the gate by a median paired \PlannerDP{} per
+item at the gate's duty bound (\PlannerNoDuty{} without it, from decoding back
+to back). At the median, the gate is within that of the planner's optimum
+under the measured costs. Every prediction, including
 those that failed, is reported with its registration.
 \end{abstract}
 
@@ -254,16 +255,16 @@ Every decision is logged with its inputs and its reason
 power mode MAXN\_SUPER with clocks pinned, run headless.
 
 \textbf{Sets.} A development set of 16 short spoken assistant queries, and
-three splits of Spoken-MQA \cite{wei2025towards}:
+splits of Spoken-MQA \cite{wei2025towards}:
 \begin{itemize}
 \item two digit splits;
 \item the multi-step split, derived from GSM8K \cite{cobbe2021gsm8k}. We use 80
   items drawn with a fixed seed and, as a fifth length, the 20 longest of
   them.
 \end{itemize}
-The preemption test (Sec.~\ref{sec:penalties}) used Spoken-MQA's single-step
-split.
-Lengths are in Fig.~\ref{fig:stages}.
+Lengths are in Fig.~\ref{fig:stages}. Spoken-MQA's single-step split served
+to select the listener's configuration and to test preemption
+(Sec.~\ref{sec:penalties}); it is not in Fig.~\ref{fig:stages}.
 
 \textbf{Protocol.}
 \begin{itemize}
@@ -304,8 +305,8 @@ It takes \SttShareDev\%, \SttShareShort\%, \SttShareLong\% and \SttShareMulti\%
 of the stage sum on the development, short-digit, long-digit and multi-step
 sets. The language model's first token takes \LlmShareMulti\% on multi-step
 problems. We had predicted that the final's share would rise with utterance
-length and stay above half. It does neither, so that prediction is falsified
-(Table~\ref{tab:ledger}). What stands is that the final decode is the largest
+length and stay above half. It is not monotone in length and is below half on
+two sets, so that prediction is falsified (Table~\ref{tab:ledger}). What stands is that the final decode is the largest
 single stage at every length.
 
 \subsection{The occupancy tax}
@@ -314,8 +315,8 @@ single stage at every length.
   \includegraphics[width=0.9\textwidth]{paper_fig2_occupancy_tax.pdf}
   \caption{Residency alone taxes the recognizer. Final decode, huge pages kept
   and huge-page fault fallbacks per decode, for the recognizer alone and under
-  five co-resident conditions (one instrumented run, 32 turns per
-  condition).}
+  five co-resident conditions: six runs from one instrumented attribution
+  session, one per condition, 32 turns each.}
   \label{fig:tax}
 \end{figure*}
 With the recognizer alone, a final decode takes \AloneSTT{} and suffers
@@ -334,8 +335,9 @@ Every interval excludes zero.
 \begin{figure}[t]
   \centering
   \includegraphics[width=\columnwidth]{paper_fig3_overlap_penalties.pdf}
-  \caption{Both consumers' overlap penalties on one axis. The listener bar is
-  the fitted cost per second of overlap times the median overlap.}
+  \caption{Both consumers' overlap penalties on one axis. Thinker bars and the
+  partials-removed bar are TTFA; the listener's in-flight bar is final-decode
+  time, the fitted cost per second of overlap times the median overlap.}
   \label{fig:penalties}
 \end{figure}
 \textbf{Thinker.} A reply draft still decoding at the endpoint delays the
@@ -344,10 +346,11 @@ item's reactive turns in the same run. A draft that finished first shows no
 detectable penalty in these runs (\ThinkerFinished, $n=\ThinkerFinishedN$).
 An earlier onset test found one contended condition where it did.
 
-\textbf{Listener.} Across arms, a hypothesis still decoding at the endpoint
+\textbf{Listener.} Across the arms that let a partial decode run past the
+endpoint (not the freezing arm), a hypothesis still decoding at the endpoint
 adds \ListenerC\,ms of final decode per second of overlap, \ListenerCCI{} with
 the interval taken over runs (Fig.~\ref{fig:penalties}). That is below the
-band we registered, and not falsified. Its scorer was written after the data,
+band we registered, 500 to 1500\,ms/s, and not falsified. Its scorer was written after the data,
 and a coding of the arms chosen afterwards gives a higher value. Removing
 partial decodes from the reactive pipeline cuts TTFA on the development set by
 \PartialsDev{} ($n=\PartialsDevN$ items).
@@ -370,7 +373,8 @@ reply.
   \label{fig:window}
 \end{figure}
 The last fraction of the utterance at which a 10-token draft still fits
-before the endpoint is \Fstar{} ($n=\FstarN$ items of median length). We had
+before the endpoint is \Fstar{} ($n=\FstarN$ items in the interquartile range
+of duration). We had
 predicted 0.858 (Fig.~\ref{fig:window}). There, a greedy draft is usable with
 probability \FstarUsable, within sampling error of the break-even
 \BreakEven. Where a draft fits, it is rarely worth issuing, and where it would
@@ -392,7 +396,7 @@ In one logged multi-step run, the allocator made \AllocDecisions{} decisions
   \caption{The gated, freezing listener (pass 2k) and the same mechanism
   ungated and unfrozen (pass 2), each against the reactive pipeline without
   partial decodes: TTFA reduction, word-error-rate difference and raw energy
-  per turn.}
+  per turn (the text gives energy net of the idle floor).}
   \label{fig:listener}
 \end{figure*}
 Against the reactive pipeline without partial decodes, the gated, freezing
@@ -408,9 +412,9 @@ detectable TTFA cost (\DevTTFA). On multi-step problems:
 \item \textbf{The final decode} runs at \PsixRatio{} of the solo model of its
   tail.
 \item \textbf{Energy.} The listener spends \EnergyListenerr{} more per turn,
-  net of the idle floor; that is \SevenJms{} per millisecond saved. Frozen
-  decodes resumed and discarded after the reply account for \StaleTotal\,J
-  over \StaleN{} decodes.
+  net of the idle floor, which is \SevenJms{} of time saved. Frozen decodes
+  resumed and discarded after the reply account for \StaleTotal\,J net over
+  \StaleN{} decodes.
 \end{itemize}
 The same mechanism without the gate and the freeze changed TTFA by \PtwoCI{}
 ($n=\PtwoN$, as a reduction): slower, with an interval that includes zero.
@@ -425,17 +429,17 @@ was \SpecAccepted{} ($n=\SpecItems$ items). This comparison is descriptive:
 its interleaved design broke at the first voice-activity split, and its scorer
 was written after the run. Keeping the second recognizer resident costs no
 detectable TTFA (\ResidencyTTFA); the decoding hypothesis worker holds
-\WorkerPSS\,MB.
+\WorkerPSS\,MB at spawn.
 
 \subsection{Is the gate enough?}
 A finite-horizon dynamic program over elapsed time was calibrated from the
 logs: decode times, commit boundaries, the final's cost and the endpoint
-hazard. In simulation, at the gate's duty bound, it improves on the gate's
-median TTFA by \PlannerDP. Without the bound it improves by
-\PlannerNoDuty{}, a gain that comes from decoding back to back, not from
-planning. Under the measured costs the simple rule is near-optimal at the
-median. The planner's remaining gain sits in items longer than the gate's
-prior.
+hazard. In simulation, at the gate's duty bound, the median paired per-item
+TTFA reduction of the planner over the gate is \PlannerDP. Without the bound
+it is \PlannerNoDuty{}, a gain that comes from decoding back to back, not from
+planning. Under the measured costs, the gate is within \PlannerDP{} of the
+planner's optimum at the median. Its remaining gain sits in items longer than
+the gate's prior. The planner was not run live.
 
 \subsection{The record}
 \input{generated/table3.tex}
@@ -464,7 +468,7 @@ pre-registered prediction, but its interval's lower end lies below the
 registered bar. The same mechanism without the gate and the freeze did not
 reduce TTFA, and our first test of this prediction failed. The listener's
 overlap cost per second (\ListenerC\,ms/s, \ListenerCCI) lies below the band
-we registered, and its scorer was written after the data. The share of TTFA
+we registered (500 to 1500\,ms/s), and its scorer was written after the data. The share of TTFA
 taken by the final decode does not rise monotonically with utterance length,
 although we predicted it would, and it is below half on two sets.
 
@@ -504,11 +508,12 @@ the author's direction. It:
 \begin{itemize}
 \item wrote most of the software and analysis scripts;
 \item executed the measurement runs the author approved;
-\item drafted the lab-notebook entries and the text of this paper;
+\item drafted the pre-registrations, the lab-notebook entries and the text of
+  this paper;
 \item reviewed its own work through separate reviewer instances.
 \end{itemize}
-The author designed the study, set every pre-registered prediction and every
-decision, approved each run, and verified the text. Every measured or
+The author designed the study, approved every pre-registered prediction,
+made every decision, approved each run, and verified the text. Every measured or
 simulated value in this paper is produced by a script from the logs;
 registered bars and set sizes are stated as designed.
 

@@ -67,6 +67,26 @@ Fig1 20 longest (20): TTFA median 4305 ms, STT final 2700 ms = 64% of the stage 
 
 ## The occupancy tax (Fig 2)
 
+### Recognizer alone: final decode, THP fallback and huge pages (run 5d30c2, condition B)
+
+```
+Fig2 B: recognizer alone: STT final 1723 ms [1520, 1866] n=32; thp_fault_fallback 0/decode; AnonHugePages 196 MB; run reactive-20260916-115218-058b62
+```
+
+- command: `src/scripts/paper_figures.py --only 1,2 --print-only`
+- runs: see the scorer's run list
+- NOTES: "2026-09-16 — The sub-mechanism: THP fallback, not reclaim" (dfa36c0 2026-09-16)
+
+### Inert ballast co-resident: final decode, THP fallback and huge pages (run 5d30c2)
+
+```
+Fig2 C': inert ballast: STT final 1954 ms [1742, 2061] n=32; thp_fault_fallback 285/decode; AnonHugePages 46 MB; run reactive-20260916-120043-ace562
+```
+
+- command: `src/scripts/paper_figures.py --only 1,2 --print-only`
+- runs: see the scorer's run list
+- NOTES: "2026-09-16 — The sub-mechanism: THP fallback, not reclaim" (dfa36c0 2026-09-16)
+
 ### Occupancy tax: STT final decode with an inert process that only holds pages co-resident, minus the recognizer alone, paired per turn
 
 ```
@@ -255,6 +275,16 @@ P4 dWER STOP-NOPARTIAL: median -0.0000 [-0.0000, -0.0000] mean +0.0043 n=70 -> H
 - NOTES: "2026-10-08 — PASS 2k: P3 HOLDS. +357 ms on multi_step, inside the predicted bracket; the gate abstains on dev" (59cf3ab 2026-10-08)
 - caveat: Mean dWER CI [-0.0039, +0.0135]; 14 items worse, 8 better.
 
+### dWER mean, multi_step, pass 2k: interval and worse/better counts
+
+```
+[report] dWER mean CI [-0.0039, +0.0135]; worse 14, better 8
+```
+
+- command: `src/scripts/p2k_score.py` with the 12 runs below
+- runs: reactive-20261008-103300-abd218, reactive-20261008-121644-d2b5ad, reactive-20261008-125425-f94b44, reactive-20261008-110545-1f7989, reactive-20261008-114351-9ae173, reactive-20261008-132718-54285c, reactive-20261008-113854-585574, reactive-20261008-125153-9aab0d, reactive-20261008-140024-eda306, reactive-20261008-114121-6c121f, reactive-20261008-124928-58fcc2, reactive-20261008-140252-12b836
+- NOTES: "2026-10-08 — CORRECTION to "PASS 2k: P3 HOLDS" (reviewer, 7 findings)" (abb44e6 2026-10-08)
+
 ### The final decode after a committed prefix is no slower than a solo decode of its tail
 
 ```
@@ -421,3 +451,17 @@ DP (no duty bound)     +46 ms [+25, +71] n=70; [report] mean +139 ms, Q3 +125 ms
 - runs: see the scorer's run list
 - NOTES: "2026-10-13 — CORRECTION to "LEVEL-2 PLANNER, SIMULATED" (reviewer, 6 findings)" (8b6bbca 2026-10-13)
 - caveat: Decoding back to back, not planning; the duty bound is a harness constant equal across arms.
+
+## The allocator's decisions (Table 2)
+
+Computed by this script from the decision records of reactive-20261009-120309-a4f48d (pass 6), not quoted from a scorer line; the values below are what the paper's macros carry.
+
+```
+AllocDecisions = 576
+AllocBelow = 537
+AllocInfeasible = 39
+AllocSpends = 0
+BreakEven = 0.1412
+```
+
+- NOTES: "2026-10-09 — PASS 8 (f*), PASS 6 (ALLOCATOR), P8. Scored once, as registered in 71d1612 + amendments"
