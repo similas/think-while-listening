@@ -7758,3 +7758,39 @@ TTFA difference is detectable; effects below ~90 ms are not excluded.
    number, 2 of the 3 tests fail (the third checks budget_for's contract
    directly). REQUIRED for any future interleaved run; nothing is re-run.
 3. WAITING for "at the box now, room quiet" -> pass 9 -> 1r -> freeze.
+
+## 2026-10-13 — PASS 1r SCORED: no residency cost detected. MEASUREMENT FROZEN
+
+REACTIVE-NOPARTIAL (both engines resident) vs NOPARTIAL-UNLOADED (tiny never
+built), dev, U,N / N,U / U,N, build 38b9869 clean, gate_quiet_ms 3000,
+12:48-13:03. Runs: U eecf2d, 291019, 414699; N 6884cf, 3e3ca7, def96a
+(results/raw/reactive/reactive-20261013-*). 16 turns each, 0 invalid. Scored
+once by src/scripts/p1r_score.py (committed before the run).
+
+    PAIRED TTFA, NOPARTIAL - UNLOADED   +12.1 ms [-31.1, +39.1]   n=16
+    -> NO RESIDENCY COST DETECTED. Costs above +39 ms are excluded.
+    AGENT RSS at turn open: NOPARTIAL 661.8 MB, UNLOADED 639.5 MB,
+       delta +22.2 MB -- MEASURED, and the figure T-EPA takes. The "+134 MB"
+       the registration quoted for the second engine is not what this run
+       shows; it is not cited.
+
+PER THE REGISTERED BRANCH: residency is not the ~185 ms 2026-09-15
+remainder, which is recorded as HARNESS DRIFT. The consequence registered on
+2026-10-02c applies: cross-date comparisons in this project need a same-day
+baseline, which every claim-bearing pass since pass 1n has had.
+
+### A fence breach of mine during this pass
+
+At ~12:49-12:50 I ran two short Python parses on the box (inventorying the
+Fig 2 sources, ~1 s of CPU each) while rep U1 (eecf2d, 12:48:25-12:50:50) was
+measuring -- against the rule of 2026-10-06 that nothing runs during a
+measured run. SENSITIVITY with U1 dropped: +1.8 ms [-30.3, +37.0], same
+verdict. The full-pass figure above is the one reported; the user decides
+whether U1 stands.
+
+### THE FREEZE
+
+MEASUREMENT IS FROZEN as of 13:03, 2026-10-13. No further claim-bearing run.
+Pass 9 (live mic) is the APPROVED POST-FREEZE EXCEPTION, descriptive only: the
+freeze is on claims and pass 9 makes none. Everything from here is analysis of
+existing logs, the simulator (no measured runs), and writing.
