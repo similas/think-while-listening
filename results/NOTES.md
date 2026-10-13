@@ -7635,3 +7635,66 @@ does. Whether a live voice clears it is untested.
 
 STATUS: pass 9 runs when the user says "at the box now, room quiet" -- noise
 floor first, then runs 1-4 -- followed by 1r and the freeze. 1r is NOT started.
+
+## 2026-10-13 — PASS 7 SCORED: the interleave design broke at the first VAD split; what survives is thin
+
+Run reactive-20261009-141221-943340 (reactive.yaml, --interleave-policies
+reactive,spec_continue, multi_step, build 16f7da2, gate_quiet_ms 3000),
+14:12-15:35, 240 turns, 30 of 200 played utterances split. Scored by
+src/scripts/p7_score.py, WRITTEN AFTER THE RUN (pass 7 is descriptive and had
+no registered scorer); disclosed as such.
+
+### The harness defect
+
+In interleave mode the turn recorder takes a turn's ITEM, and the policy runner
+its ARM, from the plan BY TURN NUMBER (plan[turn - 1]); the file source plays
+the plan BY POSITION. A VAD split gives one file two turns, so from the first
+split on, a turn's recorded item and applied arm belong to a LATER plan
+position than the file it is hearing, each further split shifts it again, and
+turns past the plan's end (here 201-240) fall back to the first arm. The
+same-arm washout no longer sits where the design put it. Pass 7 split first at
+TURN 6. Verified: the plan regenerated from the run's defaults (80 items, 2
+arms, block 4, seed 20260916, warmup 0) reproduces the played playlist
+exactly; the applied arm equals schedule[turn - 1] on every turn with a
+decision record; the recorded utterance equals plan[turn - 1].utterance on
+every turn <= 200.
+
+SCOPE, audited: of the 41 plan-driven runs with a playback timeline, PASS 7 IS
+THE ONLY ONE with more turns than files played. Earlier interleaved results
+(budget grids, policy arms -- dev-set runs without splits) are not affected.
+Runs that predate the playback timeline file are not covered by this check.
+The defect itself stands until fixed: an interleaved run on a set that splits
+is not the design it claims to be.
+
+### What was recovered
+
+The FILE each turn heard, by the monotone DP alignment over WER (pass 2's
+method, returning playlist POSITIONS because items repeat across arms):
+alignment median WER 0.043 over all 240 turns. The arm APPLIED, from the
+schedule by turn number. Scored: valid turns, their position's only turn, not
+endpoint_after_final, the plan's role at that position "measured".
+
+    ledger: scored REACTIVE 80, SPEC-CONTINUE 45; plan-washout positions 58;
+            invalid / split / endpoint_after_final 57
+    SCORED TURNS WHOSE APPLIED ARM DIFFERS FROM THE ARM THE PLAN INTENDED FOR
+    THEIR FILE: 64 of 125
+    items scored under REACTIVE 56, SPEC-CONTINUE 34, BOTH 18
+
+### Results, descriptive, n = 18 paired items
+
+    TTFA, SPEC-CONTINUE - REACTIVE   +56 ms [-63, +153]  (mean -21)
+    dWER                             +0.000 [0, 0]       (mean +0.007)
+    J/turn raw                       +36.0 J [+33.9, +37.3]
+    J/turn net                       +35.5 J [+34.5, +36.8]
+    SPEC-CONTINUE within arm: 96 tokens produced per turn (the full budget),
+      accepted / produced 0.000 (median over 34 items)
+
+READING. On 18 items, SPEC-CONTINUE shows no detectable TTFA difference from
+REACTIVE (a CI ~215 ms wide that includes 0), costs ~36 J per turn, and none of
+its drafts' tokens were accepted. That is consistent with everything the
+thinker side has shown on this corpus (greedy p_usable 0.062 at f=0.75; pass
+6's B=0) but it is a small, design-compromised sample: the arm balance the
+interleave was meant to guarantee was lost after turn 6, and which items
+reached both arms was decided by where the splits fell, not by the plan.
+THE TTFA NULL EXCLUDES NOTHING SMALLER THAN ~150 ms, and the comparison with
+canonical REACTIVE is the only one this pass carries.
