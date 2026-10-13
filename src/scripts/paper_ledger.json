@@ -167,7 +167,7 @@
   "corrections": [
    "2026-10-13 — CORRECTION to \"P2a AND P2b SCORED\""
   ],
-  "notes": "Withdrawn first scoring said HOLDS, c=572 [516, 620] n=503. Bar set in 2026-09-22g; population amended 2026-09-23; restated in 2026-09-23g."
+  "notes": "Reported with the band. The separate-arm coding (576 [518, 638], 1717/2000 draws) was added after the first scorer's numbers and is labelled post hoc. Scorer written after the data."
  },
  {
   "id": "P2b",
@@ -222,24 +222,15 @@
   ]
  },
  {
-  "id": "P4 (selection set, two-tier)",
-  "prediction": "COMMIT-WL dWER <= +0.020 on the 16-item selection set (the two-tier selection bar)",
-  "registered": "PRE-REGISTRATION 2026-09-23g — P3 to P8, before any Phase 5 run",
-  "scored": "DECISION 2026-10-02 — NEITHER QUALIFIES. tiny a=2 runs, P4 is reported failed",
-  "verdict": "REPORTED FAILED: no configuration meets +0.020 on the selection set (tiny a=2 median dWER above the bar); restated by the 2026-10-05 decision. CONFLICTS with pass 2's 'P4 PASSES'",
-  "corrections": [
-   "DECISION 2026-10-05 — two-tier v2 FAILS at both batch sizes. The standing decision holds"
-  ],
-  "notes": "The decision cites a 2026-10-01 'option 2' pre-registration that is not in NOTES."
- },
- {
-  "id": "P4 (pass 2, live)",
+  "id": "P4",
   "prediction": "COMMIT-WL dWER <= +2.0 points on every split; FALSIFIED if > +5 on any",
   "registered": "PRE-REGISTRATION 2026-09-23g — P3 to P8, before any Phase 5 run",
   "scored": "2026-10-06 — PASS 2 SCORED. P3 FAILS, P7 FALSIFIED, P4 PASSES, P6 NOT MET ON TWO SETS",
-  "verdict": "PASSES on pass 2's sets: multi_step mean +0.0082 (median 0), n=62; other sets 0. CONFLICTS with the DECISION entries of 2026-10-02 and 2026-10-05, which report P4 FAILED on the two-tier selection set; NOTES never reconciles the two",
-  "corrections": [],
-  "notes": "Open: which population is the registered P4. The 'option 2' registration the decisions cite (2026-10-01) is not in NOTES."
+  "verdict": "PASSES: multi_step mean +0.0082 (median 0), n=62; other sets 0",
+  "corrections": [
+   "2026-10-13 — DECISIONS on f5e1b8f (user): P4 reconciled, Spoken-MQA, planner, P2a"
+  ],
+  "notes": "Selection-time estimate on the 16-item selection set (10.6 s): tiny a=2 median dWER +0.028 (+0.009..+0.042), reported as FAILED in the 2026-10-02/05 decisions; prior evidence that did not carry. The 'option 2' rule was Ali's instruction of 2026-10-01, not a NOTES registration."
  },
  {
   "id": "P4 (pass 2k)",

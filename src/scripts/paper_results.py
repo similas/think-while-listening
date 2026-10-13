@@ -275,6 +275,10 @@ SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     ("Thinker speculation (Table 1)", ("spec_ttfa", "spec_energy", "spec_survival")),
     ("Residency and memory", ("residency", "residency_memory", "worker_memory")),
+    (
+        "The Level-2 planner, simulated (no measured run)",
+        ("planner_validation", "planner_dp", "planner_noduty"),
+    ),
 )
 
 CAVEATS = {
@@ -299,6 +303,14 @@ CAVEATS = {
     "[+57.6, +155.7] for finished drafts at B=64 contended (Table 3).",
     "worker_memory": "At spawn, before any decode; the per-decode working set is not logged.",
     "p2a_pop": "The bootstrap resamples the runs.",
+    "planner_validation": "Simulation from logs, not a measurement. The final's slope is "
+    "fitted largely from the contrast this line reproduces; the committed fraction is the "
+    "real check (gate 0.40, ungated 0.44 simulated; measured 0.40-0.43 and 0.42-0.46).",
+    "planner_dp": "Decision on f5e1b8f: no live pass; the gate is near-optimal under the "
+    "measured cost model. Fill p 0.1 is the calibrated setting; with no fill the DP gains "
+    "+0 [+0, +0]. The adaptive-prior hypothesis is unsimulated.",
+    "planner_noduty": "Decoding back to back, not planning; the duty bound is a harness "
+    "constant equal across arms.",
     "stale_net": "Per-decode median 0.60 J understates the cost; mean and total are the "
     "figures to quote. Some stale decodes drew 15-17 W, unexplained (Limitations).",
     "fstar": "As registered (mixed clocks) the estimate was 0.895 [0.891, 0.901]; 0.861 is "

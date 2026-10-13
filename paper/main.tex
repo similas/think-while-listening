@@ -111,9 +111,11 @@ Low-latency agent designs, both cascaded and speech-to-speech, are described in
 
 \textbf{Speculating the transcript.} Streaming recognition with local
 agreement commits the prefix that consecutive hypotheses agree on
-\cite{machacek2023whisperstreaming}, on top of Whisper \cite{radford2023whisper}.
-Other work decides when a streaming recognizer should emit
-\cite{x2streaming2026}. We use the mechanism; we do not claim it. What we add
+\cite{machacek2023whisperstreaming}, on top of Whisper \cite{radford2023whisper};
+our listener uses this mechanism. Simul-Whisper streams Whisper with
+attention-guided chunk decoding and truncation detection
+\cite{wang2024simulwhisper}, and other work decides when a streaming
+recognizer should emit \cite{x2streaming2026}. We use the mechanism; we do not claim it. What we add
 is a measurement of it against reply speculation on hardware the two share,
 and a rule for when to issue it.
 
@@ -230,7 +232,7 @@ Every decision is logged with its inputs and its reason
 power mode MAXN\_SUPER with clocks pinned, run headless.
 
 \textbf{Sets.} A development set of 16 short spoken assistant queries, and
-three splits of Spoken-MQA \cite{spokenmqa}:
+three splits of Spoken-MQA \cite{wei2025towards}:
 \begin{itemize}
 \item two digit splits;
 \item the multi-step split, derived from GSM8K \cite{cobbe2021gsm8k}. We use 80

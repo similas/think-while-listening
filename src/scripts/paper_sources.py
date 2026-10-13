@@ -56,6 +56,10 @@ SOURCES: dict[str, Source] = {
     "figs": Source("paper_figures.py", ("--only", "1,2", "--print-only")),
     "tax": Source("occupancy_tax.py"),
     "worker": Source("worker_memory.py"),
+    # The calibrated planner simulation: fill p 0.1 is the only setting that
+    # matches both measured commit fractions (NOTES, CORRECTION to "LEVEL-2
+    # PLANNER, SIMULATED"). Writes the DP policy table, which fill does not change.
+    "planner": Source("planner_sim.py", ("--reps", "40", "--fill", "--fill-p", "0.1")),
     "p2": Source("p2_score.py"),
     "overlap": Source("overlap_penalties.py"),
     "p2k": Source(
@@ -162,6 +166,7 @@ H_P1N = (
 )
 H_ATTR = "2026-10-13 — THE OCCUPANCY TAX, PAIRED: intervals for the 2026-09-16 medians"
 H_THP = H_ATTR
+H_PLANNER = 'CORRECTION to "LEVEL-2 PLANNER, SIMULATED" (reviewer, 6 findings)'
 H_REVIEW = "2026-10-13 — PAPER TABLES REVIEWED: corrections to the tables and the tax entry"
 TAX_BALLAST = (
     "Occupancy tax: STT final decode with an inert process that only holds pages "
@@ -173,6 +178,29 @@ TAX_FULL = (
 )
 
 CLAIMS: tuple[Claim, ...] = (
+    Claim(
+        "planner_validation",
+        "Planner simulator, validation: simulated STOP+gate vs NOPARTIAL (measured +351 on "
+        "these items)",
+        "planner",
+        r"simulated TTFA reduction, NOPARTIAL - STOP\+gate",
+        "2026-10-13 — " + H_PLANNER,
+    ),
+    Claim(
+        "planner_dp",
+        "Level-2 planner (DP, the gate's duty bound) over STOP+gate, simulated: the gate is "
+        "within this of the DP's optimum",
+        "planner",
+        r"^  DP \(duty 0\.6\)",
+        "2026-10-13 — " + H_PLANNER,
+    ),
+    Claim(
+        "planner_noduty",
+        "DP without the duty bound over STOP+gate, simulated (the gain of back-to-back decoding)",
+        "planner",
+        r"^  DP \(no duty bound\)",
+        "2026-10-13 — " + H_PLANNER,
+    ),
     Claim(
         "p2a_pop",
         "P2a population: turns and runs (CI resamples runs)",

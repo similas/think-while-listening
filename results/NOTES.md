@@ -8147,3 +8147,36 @@ for STOP+DP over STOP+gate on multi_step, at the median or on the mean, at
 the calibrated setting. By the 2026-10-08 rule the planner goes into the
 thesis as the formalisation, with this simulator result, and does not earn a
 live pass.
+
+## 2026-10-13 — DECISIONS on f5e1b8f (user): P4 reconciled, Spoken-MQA, planner, P2a
+
+Recorded as given.
+
+1. P4 RECONCILED. The registered population is the sets P4 was scored on. The
+   verdict is PASSES. The selection-set figure (tiny a=2 one-tier, median dWER
+   +0.028, +0.009 to +0.042 over reps, on the 16 selection items of median
+   10.6 s; DECISION 2026-10-02 and 2026-10-05) was the selection-time
+   estimate. It is reported as prior evidence that did not carry. THE "OPTION
+   2" RULE THOSE DECISIONS CITE AS "PRE-REGISTERED ON 2026-10-01" WAS ALI'S
+   INSTRUCTION OF THAT DAY, NOT A NOTES REGISTRATION; it is recorded here as
+   such. Table 3 carries one P4 row, PASSES, with the selection figure in a
+   note. Pass 2's P4: mean +0.0082, median 0, n=62 on multi_step. Pass 2k's
+   P4: mean +0.0043 [-0.0039, +0.0135], n=70.
+2. SPOKEN-MQA: evaluation use with citation. Ali has sent a licence request;
+   figures proceed. The dataset is cited as Wei et al. 2025
+   (arXiv:2505.15000). Simul-Whisper (Wang et al., Interspeech 2024) is added
+   to related work. whisper_streaming stays the citation for the listener's
+   mechanism. Both entries were checked against arXiv on 2026-10-13.
+3. LEVEL-2 PLANNER: NO LIVE PASS. In the thesis it is the formalisation, and
+   its result is stated as a result. Under the measured cost model the gate
+   is within ~12 ms of the DP's optimum at the median (+12 ms [+0, +30],
+   calibrated fill, at the gate's duty bound). The simple rule is
+   near-optimal, which is why it is simple. Stated with it: without the duty
+   bound the DP gains +46 [+25, +71]. That gain comes from decoding back to
+   back, not from planning. The adaptive-prior (hazard-gate) hypothesis stays
+   recorded and unsimulated.
+4. P2a: 492 ms/s [439, 574], below the registered band [500, 1500], not
+   falsified. It is reported with the band. The separate-arm coding (576) is
+   labelled post hoc.
+5. NEXT: Limitations, the abstract and the generative-AI-use disclosure from
+   RESULTS.md, then pass 9 when Ali is home.
