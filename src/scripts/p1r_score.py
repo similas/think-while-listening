@@ -74,6 +74,31 @@ def main() -> None:
             f"AGENT RSS at turn open: NOPARTIAL {mn:.1f} MB, UNLOADED {mu:.1f} MB, "
             f"delta {mn - mu:+.1f} MB"
         )
+    # RUN-LEVEL memory (reviewer, 2026-10-13): RSS climbs ~200 MB across a
+    # run's 16 turns and turns within a run are not independent, so the
+    # pooled-turn median above is mostly late-run steady state. Per-run
+    # medians, and MemAvailable beside RSS as corroboration.
+    per_run: dict[str, list[tuple[float, float]]] = {"NOPARTIAL": [], "UNLOADED": []}
+    for d, r in zip(a.runs, runs, strict=True):
+        tr = [x for x in p2k.lines(d) if x["kind"] == "turn_record"]
+        rs = [t["rss_before_mb"] for t in tr if isinstance(t.get("rss_before_mb"), (int, float))]
+        ma = [
+            t["mem_available_mb"] for t in tr if isinstance(t.get("mem_available_mb"), (int, float))
+        ]
+        if rs and ma:
+            per_run[r["label"]].append((st.median(rs), st.median(ma)))
+    if per_run["NOPARTIAL"] and per_run["UNLOADED"]:
+        n_rss = st.median(x[0] for x in per_run["NOPARTIAL"])
+        u_rss = st.median(x[0] for x in per_run["UNLOADED"])
+        n_ma = st.median(x[1] for x in per_run["NOPARTIAL"])
+        u_ma = st.median(x[1] for x in per_run["UNLOADED"])
+        pairs = [n[0] - u[0] for n in per_run["NOPARTIAL"] for u in per_run["UNLOADED"]]
+        print(
+            f"RUN-LEVEL agent RSS delta (median of run medians): {n_rss - u_rss:+.1f} MB, "
+            f"range over run pairs {min(pairs):+.1f} to {max(pairs):+.1f} MB, "
+            f"n={len(per_run['NOPARTIAL'])}/{len(per_run['UNLOADED'])} runs"
+        )
+        print(f"RUN-LEVEL MemAvailable delta, NOPARTIAL - UNLOADED: {n_ma - u_ma:+.1f} MB")
     med = p2k.item_medians(runs)
     b, lo, hi, n, _ = p2k.paired(med, "ttfa", +1)
     print(f"\nPAIRED TTFA, NOPARTIAL - UNLOADED: {b:+.1f} ms [{lo:+.1f}, {hi:+.1f}] n={n}")

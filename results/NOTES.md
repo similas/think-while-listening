@@ -7794,3 +7794,34 @@ MEASUREMENT IS FROZEN as of 13:03, 2026-10-13. No further claim-bearing run.
 Pass 9 (live mic) is the APPROVED POST-FREEZE EXCEPTION, descriptive only: the
 freeze is on claims and pass 9 makes none. Everything from here is analysis of
 existing logs, the simulator (no measured runs), and writing.
+
+## 2026-10-13 — CORRECTION to "PASS 1r SCORED" (reviewer, 4 findings)
+
+Appended, not edited.
+
+1. THE HEADLINE IS THE FENCE-COMPLIANT FIGURE. With rep U1 (overlapped by my
+   parses) dropped: PAIRED TTFA +1.8 ms [-30.3, +37.0], n=16, U = 2 reps --
+   costs above +37 ms excluded. The full pass, +12.1 ms [-31.1, +39.1], is the
+   sensitivity line. Under the freeze a voided U1 is NOT re-run; 1r stands on
+   2 U reps if the user voids it. Direction: extra CPU during U1 would slow
+   UNLOADED and push toward "no cost"; dropping U1 moves the estimate further
+   to 0, so the breach did not manufacture the null.
+
+2. THE MEMORY FIGURE IS RUN-LEVEL AND IS NOT T-EPA's. Agent RSS climbs ~200 MB
+   within each run, and turns within a run are not independent, so the
+   pooled-turn +22.2 MB is replaced by the run-level figure from
+   p1r_score.py: +19.1 MB (range over run pairs +14.0 to +43.1), n = 3 runs
+   per arm; MemAvailable delta -13.3 MB corroborates it. BUT THIS IS AN IDLE,
+   NEVER-DECODED tiny engine: in NOPARTIAL tiny is loaded and never runs. It
+   isolates residency, which is what 1r asks; it is NOT the two-engine
+   design's memory as priced in T-EPA, where tiny decodes (the earlier live
+   figure, ~+121 MB, NOTES ~line 1229, is not re-measured here). T-EPA keeps
+   the live figure, marked not re-measured.
+
+3. "RECORDED AS HARNESS DRIFT" IS REPLACED: residency accounts for at most
+   ~37-39 ms; at least ~146 ms of the cross-date ~185 ms remainder is
+   UNATTRIBUTED and recorded as drift per the 2026-10-02c branch. This pass
+   rules out one candidate; it does not identify the source (harness, box
+   state, llama-server, ambient). The same-day-baseline consequence stands.
+
+4. The fence breach is recorded above; its handling is item 1.
