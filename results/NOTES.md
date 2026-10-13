@@ -7887,3 +7887,46 @@ P2b  final-decode ratio, overlapped / clean, per multi_step item, REACTIVE
          1.41x [1.23, 1.54]   n = 50 items
      REGISTERED: >= 1.5; falsified if the CI includes 1.2.
      -> P2b NOT MET (1.41 < 1.5) AND NOT FALSIFIED (the CI excludes 1.2).
+
+## 2026-10-13 — CORRECTION to "P2a AND P2b SCORED"
+
+The entry above is withdrawn as a verdict but stays on record. Its scorer
+(677537d) broke the amendment in two ways: canonical REACTIVE turns entered as
+overlap cases, and P2b paired items across runs. THE SCORER WAS WRITTEN AFTER
+THE DATA EXISTED. The predictions and the population were registered before
+Phase 5. `src/scripts/p2_score.py` scores Phase 5 logs, n = 960 turns over 43
+runs; the bootstrap resamples runs.
+
+P2a, with the population as amended (canonical REACTIVE enters at overlap = 0
+only) and REACTIVE coded as one arm: c = 492 ms/s [439, 574], with 2000/2000
+draws kept. BELOW THE REGISTERED BAND [500, 1500], NOT FALSIFIED: the CI lies
+above 300. One arm is the headline coding for three reasons:
+- it is the only coding in which the registered baseline clause does anything;
+- the amendment's "long audio needs contrast" (dense against canonical) assumes it;
+- the first scorer already used it.
+The paper states: listener overlap costs about 0.5 s of final decode per
+second of overlap. The point estimate misses the band's lower edge by 8 ms/s.
+
+[report] sensitivity: coding dense and canonical REACTIVE as separate arms
+gives 576 [518, 638], with only 1717/2000 draws kept, so that interval is
+conditioned. The baseline then reaches c only through the audio slope. This
+coding was added after the first scorer's numbers were known. It is not a
+co-primary.
+
+[report] by arm family, each fitted with the canonical baseline:
+- COMMIT-WL thread, 12 runs: 566 [472, 653]
+- RACE child, 12 runs: 469 [444, 510]
+- REACTIVE dense, 2 runs: 456 [0, 514]. With 2 run clusters this CI does not
+  mean much.
+
+[report] sensitivities, one-arm coding:
+- KILL/STOP arms included: 481 [423, 551]
+- dirty builds included: 491 [443, 554]
+
+P2b: NOT TESTABLE on the Phase 5 design. Each multi_step run plays each item
+once, so no item can have an overlapped and a clean final within one run;
+n = 0 is structural. Pairing within a run is this scorer's reading of
+"paired on the same items". The 1.41× (n = 50 items) in the withdrawn entry
+compares dense-overlapped runs against canonical-clean runs. It mixes arm
+cadence, clock state, build (35c26f8 vs 34a7b43) and day (10-01 vs 10-09),
+stays descriptive only, and carries no verdict.
