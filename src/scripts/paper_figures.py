@@ -258,11 +258,13 @@ def fig3(out: Path) -> None:
     can = op.per_item_ttfa(RAW, op.CANONICAL_DEV, refs)
     nop = op.per_item_ttfa(RAW, op.NOPARTIAL_DEV, refs)
     interv = [can[i] - nop[i] for i in sorted(set(can) & set(nop))]
-    fd = _script("final_decode_model")
-    rows, _by_run = fd.load("results/raw/reactive/reactive-2026092[12]-*/turns.jsonl")
-    trip = [(r["audio_s"], r["overlap_s"], r["final_ms"]) for r in rows]
-    _a, _b, c, _se = fd.fit3(trip)
-    ci = fd.bootstrap(trip, [r["run"] for r in rows], 2000, 0)["c"]
+    # Listener c is the registered P2a fit (p2_score.py headline coding), so the
+    # figure and the ledger carry one number.
+    p2 = _script("p2_score")
+    pop = p2.population(p2.collect(p2.runs()))
+    beta, c_lo, c_hi, _kept = p2.fit_c(pop, key=p2.merged)
+    c = float(beta[2])
+    rows = [r for _, _, r in pop]
     med_ov = statistics.median(r["overlap_s"] for r in rows if r["overlap_s"] > 0)
     bars = [
         (
@@ -282,10 +284,10 @@ def fig3(out: Path) -> None:
             OKABE[4],
         ),
         (
-            f"listener: partial in flight\n({med_ov:.2f} s median overlap)",
+            f"listener: partial in flight\n(model: c x {med_ov:.2f} s median overlap)",
             c * med_ov,
-            (ci[0] * med_ov, ci[1] * med_ov),
-            len(rows),
+            (c_lo * med_ov, c_hi * med_ov),
+            sum(1 for r in rows if r["overlap_s"] > 0),
             "final decode",
             OKABE[0],
         ),
@@ -311,7 +313,7 @@ def fig3(out: Path) -> None:
     for i, b_ in enumerate(bars):
         ax.text(i, b_[2][1] + 15, f"{b_[1]:+.0f} ms\n({b_[4]})\nn={b_[3]}", ha="center", fontsize=7)
     ax.set_xticks(x, [b_[0] for b_ in bars], fontsize=7)
-    ax.set_ylabel("added latency (ms), median with 95% CI")
+    ax.set_ylabel("added latency (ms) with 95% CI")
     ax.set_ylim(min(0, min(b_[2][0] for b_ in bars)) - 50, max(b_[2][1] for b_ in bars) * 1.35)
     ax.set_title(
         f"Fig 3. Two consumers, two overlap penalties (listener c = {c:.0f} ms per s of overlap)",
