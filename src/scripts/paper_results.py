@@ -588,7 +588,7 @@ FORMATTED: tuple[tuple[str, str, str, str], ...] = (
     (
         "Carry",
         "carry",
-        r"delta\s+([+-]\d+) \[([+-]\d+), ([+-]\d+)\]",
+        r":\s+([+-]\d+) ms \[([+-]\d+), ([+-]\d+)\]",
         "{0:+.0f} ms [{1:+.0f}, {2:+.0f}]",
     ),
     (
