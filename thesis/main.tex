@@ -1,0 +1,140 @@
+% M.Sc. thesis, Concordia University (SGS Thesis Preparation Guide, April 2026;
+% RESEARCH_BRIEF v1 §9). Chapter-based. Letter, 1 in margins, Times 12, roman
+% numerals from iii at the Abstract, single bibliography, PDF/A-2b deposit.
+% Every number is a macro from generated/numbers.tex (src/scripts/paper_results.py).
+% Compiled on the LaTeX host, never on the Jetson.
+\documentclass[12pt,letterpaper,oneside]{report}
+
+% PDF/A-2b. pdfx reads the metadata from main.xmpdata.
+\usepackage[a-2b]{pdfx}
+\usepackage[T1]{fontenc}
+\usepackage{newtxtext,newtxmath}        % Times New Roman equivalent
+\usepackage[letterpaper,margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage[nottoc]{tocbibind}
+\graphicspath{{figures/}}
+\input{generated/numbers.tex}
+
+% A number the registry does not yet carry. Renders as a red box naming the
+% NOTES entry that records it; the thesis is not final while any remains.
+\newcommand{\needsclaim}[2]{\fbox{\textcolor{red}{\footnotesize CLAIM NEEDED: #1 (NOTES: #2)}}}
+
+% --- Verify with the graduate program assistant (brief v1 §9) -------------
+\newcommand{\thesistitle}{The Window Belongs to the Listener: Allocating
+Think-While-Listening Compute on a Device That Pays for It}
+\newcommand{\degreename}{Master of Computer Science}            % VERIFY
+\newcommand{\departmentname}{Department of Computer Science and Software
+Engineering}                                                    % VERIFY
+\newcommand{\depositdate}{TODO Month Year}                       % VERIFY
+\newcommand{\deposityear}{2026}                                   % VERIFY
+% ---------------------------------------------------------------------------
+
+\begin{document}
+
+% ---------------------------------------------------------- title page ----
+\begin{titlepage}
+\centering
+\vspace*{1in}
+{\Large\bfseries \thesistitle\par}
+\vspace{1in}
+Ali Salimi Sadr\par
+\vspace{1in}
+A Thesis\\
+in the\\
+\departmentname\par
+\vspace{0.5in}
+Presented in Partial Fulfillment of the Requirements\\
+for the Degree of \degreename\ (Computer Science) at\\
+Concordia University\\
+Montreal, Quebec, Canada\par
+\vspace{0.5in}
+\depositdate\par
+\vspace{0.5in}
+\copyright\ Ali Salimi Sadr, \deposityear\par
+\end{titlepage}
+
+% ------------------------------------------------------ signature page ----
+% Blank copy of the SGS signature page; examiners' names and titles added
+% from the SGS template at deposit.
+\thispagestyle{empty}
+\begin{center}
+{\large CONCORDIA UNIVERSITY}\\
+School of Graduate Studies
+\end{center}
+\noindent This is to certify that the thesis prepared\\[1ex]
+By: Ali Salimi Sadr\\
+Entitled: \thesistitle\\[1ex]
+and submitted in partial fulfillment of the requirements for the degree of
+\degreename\ (Computer Science) complies with the regulations of the
+University and meets the accepted standards with respect to originality and
+quality.\\[2ex]
+Signed by the final examining committee:\\[3ex]
+\rule{3in}{0.4pt}\quad Chair\\[3ex]
+\rule{3in}{0.4pt}\quad Examiner\\[3ex]
+\rule{3in}{0.4pt}\quad Supervisor\\[5ex]
+Approved by \rule{3in}{0.4pt}\\[3ex]
+\rule{1.5in}{0.4pt}\quad 20\rule{0.3in}{0.4pt}
+\clearpage
+
+% ----------------------------------------------- front matter, roman iii ----
+\pagenumbering{roman}
+\setcounter{page}{3}
+
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+\begin{center}
+\thesistitle\\[1ex]
+Ali Salimi Sadr
+\end{center}
+% At most 250 words. Written last, from results/RESULTS.md.
+TODO: abstract.
+
+\chapter*{Acknowledgements}
+\addcontentsline{toc}{chapter}{Acknowledgements}
+TODO: acknowledgements.
+
+\chapter*{Contribution of Authors}
+\addcontentsline{toc}{chapter}{Contribution of Authors}
+TODO: contribution of authors, consistent with the generative-AI disclosure.
+
+\tableofcontents
+\listoffigures
+\listoftables
+
+\chapter*{List of Abbreviations}
+\addcontentsline{toc}{chapter}{List of Abbreviations}
+\begin{tabular}{ll}
+ASR & automatic speech recognition \\
+CI & confidence interval (95\%, percentile bootstrap unless stated) \\
+COMMIT-WL & commit while listening (the listener's speculation) \\
+DP & dynamic program \\
+dWER & word-error-rate difference against the baseline on the same audio \\
+EPA & endpoint anticipation (acoustic trigger) \\
+LLM & large language model \\
+PSS & proportional set size \\
+SoC & system-on-chip \\
+STT & speech to text \\
+T-SEM & semantic trigger \\
+THP & transparent huge pages \\
+TTFA & time to first audio, from the true end of speech \\
+TTS & text to speech \\
+VAD & voice-activity detection \\
+\end{tabular}
+
+% ------------------------------------------------------- body, arabic 1 ----
+\clearpage
+\pagenumbering{arabic}
+
+% Chapters 1, 2, 7, 8 and the appendices follow.
+\include{chapters/ch3_methods}
+\include{chapters/ch4_cost}
+\include{chapters/ch5_value}
+\include{chapters/ch6_allocator}
+
+\bibliographystyle{IEEEtran}
+\bibliography{../paper/refs}
+
+\end{document}

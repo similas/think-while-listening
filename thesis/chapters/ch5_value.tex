@@ -1,0 +1,121 @@
+% Chapter 5. Every number is a macro (generated/numbers.tex) or a \needsclaim box.
+\chapter{The Value of Thinking While Listening}
+\label{ch:value}
+
+Chapter~\ref{ch:cost} priced the thinker's speculation. This chapter asks what
+it buys. The answer is a negative, and the aim is to state it precisely: on
+this task a reply draft is rarely usable at any point where it can still
+finish. When it is usable, it is too late. No trigger available to the
+pipeline can tell the two cases apart in advance.
+
+\section{What a usable draft is}
+\label{sec:usable}
+
+A draft saves time only if what it would say first is what the final reply
+says first. We call a draft usable if its first synthesized chunk is a word
+prefix of the first chunk of the reply generated from the full transcript.
+Matches that share no digit and no content word with the problem are
+reported separately. The break-even usability follows from the measured costs: a draft
+is worth issuing only if the probability that it is usable exceeds
+$p^\ast = c / (c + s)$. Here $c$ is the overlap cost of a draft still running
+at the endpoint, and $s$ the time a usable draft saves. On this pipeline
+$p^\ast = \BreakEven$.
+
+\section{The prefix probe}
+\label{sec:probe}
+
+Offline, the language model was given the first fraction $f$ of each
+multi-step problem's reference transcript, for $f \in \{0.25, 0.5, 0.75, 0.9,
+1\}$, and its draft was compared with the reply to the full transcript. The 80
+seeded items were run twice: once sampling at temperature 0.5, once greedy.
+
+\textbf{The gate.} The probe is meaningful only if the model can answer the
+full problem. From the full transcript, its final answer is correct on
+\SampledGate{} of items when sampling, which fails the registered 30\% gate.
+Greedy, it is correct on \GreedyGate, which passes. Accuracy-scored live runs
+therefore decode greedily.
+
+\textbf{The curve.} Greedy usability is \GreedyFifty{} at half the utterance,
+\GreedySeventyFive{} at three-quarters (\GreedySeventyFiveK{} items) and
+\GreedyNinety{} at 0.9. When sampling, usability at three-quarters is
+\SampledSeventyFive.
+
+\textbf{The registered test.} Before the run we registered that if greedy
+usability at three-quarters of the utterance fell below the break-even, the
+value side would be closed on this corpus. It is \GreedySeventyFive, against
+$p^\ast = \BreakEven$: the test fires, and the value side is closed. At 0.9
+the point estimate clears the break-even. That figure was exploratory, not
+the registered test, and its interval reaches below the break-even.
+
+\textbf{Why.} The problems ask their question last. A draft can anticipate the
+answer only once the question has been heard, and by then the utterance is
+nearly over.
+
+\section{Where a draft still fits}
+\label{sec:fstar}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.85\textwidth]{paper_fig4_usable_vs_window.pdf}
+  \caption{Draft usability rises with the fraction heard; the window to finish
+  a draft falls. The last fraction at which a 10-token draft fits, as
+  predicted and as measured.}
+  \label{fig:th-window}
+\end{figure}
+
+Usability rises with the fraction heard, and the time left to finish a draft
+falls (Figure~\ref{fig:th-window}). We registered a window model: the speech
+left after the decode of what has been heard. From it we predicted the last
+fraction at which a 10-token draft still fits, $f^\ast = 0.858$. Measured on
+consistent clocks it is \Fstar{} ($n=\FstarN$ items in the interquartile range
+of duration). The first estimate, on mixed clocks, was higher, and its
+correction is on record.
+
+At $f^\ast$, greedy usability on the probe's curve is \FstarUsable, within
+sampling error of the break-even \BreakEven. This is the crux of the negative.
+Where a draft fits, it is rarely worth issuing. Where it would be worth
+issuing, it has stopped fitting. The two curves meet at the edge of
+break-even, not above it.
+
+\section{Could a trigger tell?}
+\label{sec:triggers}
+
+A trigger that predicted the remaining speech could time drafts better than a
+fixed fraction. Two were evaluated against whether more than 900\,ms of speech
+remained: a semantic trigger on the partial transcript, and an acoustic
+endpoint-anticipation model. Over \TriggerPoints{} decision points from
+\TriggerUtts{} utterances, their AUCs are \TsemAUC{} and \EpaAUC. Neither is
+distinguishable from chance on this set, and the intervals are too wide to
+call either useless. The acoustic model is also disqualified on time alone: it
+runs slower than real time on this device.
+
+\section{Drafts in the live pipeline}
+\label{sec:live-thinker}
+
+Live, the drafts confirm the probe. In the first live comparison, drafts that
+restarted on every new partial matched the final reply's first sentence in
+none of the turns where one existed
+(\needsclaim{first-sentence matches}{SPEC-ALWAYS-PG vs SPEC-CONTINUE: the
+prediction scored}). Successive drafts shared few of their tokens
+(\needsclaim{token survival between candidates}{same entry}). Restarting also
+made TTFA worse than not speculating
+(\needsclaim{SPEC-ALWAYS-PG minus REACTIVE}{same entry}).
+
+In the last comparison, a continuing draft was interleaved with the reactive
+pipeline on multi-step problems. Each draft produced \SpecTokens{} tokens per
+turn, the full budget, and the per-item median share of its tokens accepted
+was \SpecAccepted{} ($n=\SpecItems$ items). TTFA changed by \SpecTTFAr{}
+($n=\SpecN$ items, positive is slower) at \SpecEnergyr{} per turn. This
+comparison is descriptive. Its interleaved design broke at the first
+voice-activity split, and its scorer was written after the run.
+
+\section{Summary}
+
+On this task, with this model, the thinker's speculation has a measured cost
+(Chapter~\ref{ch:cost}) and no measured value. The negative is specific. A
+draft becomes usable only near the end of the utterance, after the question
+has been heard. By then the window to finish it has closed or nearly closed,
+and nothing the pipeline can observe predicts the end well enough to time it.
+The result would change on a task with short questions and long answers, and
+the allocator in Chapter~\ref{ch:allocator} would then issue drafts, because it
+reads the measured usability curve rather than assuming one.

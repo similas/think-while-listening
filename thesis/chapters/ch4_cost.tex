@@ -1,0 +1,155 @@
+% Chapter 4. Every number is a macro (generated/numbers.tex) or a \needsclaim box.
+\chapter{The Cost of Thinking While Listening}
+\label{ch:cost}
+
+Speculation on a shared device is paid for by whatever runs next to it. This
+chapter prices it: where the silence goes, what co-residence costs before
+anything runs, and what each consumer's speculation costs when it is still
+running at the endpoint.
+
+\section{Where the silence goes}
+\label{sec:stages}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\textwidth]{paper_fig1_stage_decomposition.pdf}
+  \caption{Median stage durations after the end of speech, reactive pipeline
+  without partial decodes, five utterance lengths.}
+  \label{fig:th-stages}
+\end{figure}
+
+The reactive pipeline, with no partial decodes, starts speaking a median of
+\TTFAMulti\,ms after the end of a multi-step problem
+(Figure~\ref{fig:th-stages}). The final decode is the largest stage on every
+set: \SttShareDev\%, \SttShareShort\%, \SttShareLong\% and \SttShareMulti\% of
+the stage sum on the development, short-digit, long-digit and multi-step
+sets. The language model's first token takes \LlmShareMulti\% on multi-step
+problems.
+
+We had registered that the final's share would exceed half at every length
+and rise with length. It does neither at every length: the share is not
+monotone in length, and it is below half on two sets. That prediction is
+falsified. What stands is that the silence is mostly the recognizer's: its
+final decode is the largest single stage everywhere. Speculating the reply
+attacks a small stage, and speculating the transcript attacks the largest.
+
+\section{The occupancy tax}
+\label{sec:tax}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\textwidth]{paper_fig2_occupancy_tax.pdf}
+  \caption{Final decode, huge pages kept and huge-page fault fallbacks per
+  decode: the recognizer alone and under five co-resident conditions. Six
+  runs from one instrumented attribution session, one per condition, 32 turns
+  each.}
+  \label{fig:th-tax}
+\end{figure}
+
+Before any speculation runs, the recognizer is taxed by what shares its
+memory. With the recognizer alone, a final decode takes \AloneSTT{}, with
+\AloneFallback{} huge-page fault fallbacks per decode, and the process keeps
+\AloneHuge\,MB of huge pages (Figure~\ref{fig:th-tax}). Next to it, an inert
+process of the language model's size, which holds pages and does nothing
+else, raises fallbacks to \BallastFallback{} per decode. The recognizer keeps
+\BallastHuge\,MB.
+
+Paired per turn on the same audio, the inert process adds \TaxBallastA{} and
+\TaxBallastB{} to the final decode in two attribution sessions. The full
+pipeline adds \TaxFullA{} and \TaxFullB. Every interval excludes zero. Each
+condition is one run made after its baseline, so time order is confounded
+with condition. The two sessions disagree on the size and on the order of
+conditions, and only the second was instrumented for huge pages.
+
+The mechanism the counters point to is transparent-huge-page fallback in the
+decoder's own allocations. The decoder allocates and frees working buffers on
+every call, and a co-resident footprint keeps the pool fragmented, so each new
+allocation falls back to small pages. Two mitigations were tried: loading the
+recognizer before the language model, and advising huge pages on its buffers.
+Neither recovered the huge pages
+(\needsclaim{huge pages and decode time under each mitigation}{2026-09-16 ---
+THP mitigation: both levers fail}). The tax is a property of the platform,
+not of this pipeline.
+
+\section{The thinker's overlap penalty}
+\label{sec:thinker-penalty}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.85\textwidth]{paper_fig3_overlap_penalties.pdf}
+  \caption{Both consumers' overlap penalties on one axis. Thinker bars and the
+  partials-removed bar are TTFA; the listener's in-flight bar is final-decode
+  time, the fitted cost per second of overlap times the median overlap.}
+  \label{fig:th-penalties}
+\end{figure}
+
+A reply draft still decoding when the user stops competes with the final
+decode and with the reply itself. Against the same item's reactive turns in
+the same run, a draft still running at the endpoint delays the first audio by
+\ThinkerOverlap{} ($n=\ThinkerOverlapN$ turns). A draft that finished first
+shows no detectable penalty in these runs (\ThinkerFinished,
+$n=\ThinkerFinishedN$). The penalty depends on device state. Under a
+contended memory system it was larger
+(\needsclaim{contended overlap penalty}{Onset prediction test: PARTIALLY
+confirmed}). In one contended condition, drafts that had finished before the
+endpoint were penalised too. The cost also carries over: speculation in one
+turn delays the next
+(\needsclaim{carry-over onto the following turn}{SPEC-ALWAYS-PG vs
+SPEC-CONTINUE: the prediction scored}), which is why every comparison since
+uses a same-arm washout.
+
+These costs are the thinker's whether or not the draft is useful. Its value is
+the subject of Chapter~\ref{ch:value}.
+
+\section{The listener's overlap penalty}
+\label{sec:listener-penalty}
+
+The listener pays its own overlap penalty. A partial hypothesis still decoding
+at the endpoint runs on the same cores as the final. Across the arms that let
+a partial decode run past the endpoint, each second of overlap adds
+\ListenerC\,ms of final decode, \ListenerCCI. The interval is taken over
+runs, from \PtwoaPop. That lies below the band we registered, 500 to
+1500\,ms/s, and is not falsified. The scorer was written after the data. A
+coding of the arms chosen afterwards gives a higher value, and is reported
+only as a sensitivity.
+
+The cost is visible end to end. Removing the partial decodes from the
+reactive pipeline cuts TTFA on the development set by \PartialsDev{}
+($n=\PartialsDevN$ items). The canonical reactive pipeline was paying that
+for partial transcripts it does not use.
+
+The listener's penalty, unlike the thinker's, can be removed at its source:
+the orphaned decode can be stopped. Chapter~\ref{ch:allocator} describes how,
+and what the first attempts got wrong.
+
+\section{Residency and memory}
+\label{sec:residency}
+
+Keeping the second recognizer resident costs no detectable TTFA: \ResidencyTTFA,
+against the same pipeline with the partial engine never built. That headline
+drops one repetition run during a breach of the fence. With it, the result is
+the same. An idle resident engine adds +\ResidencyMem\,MB of agent memory at
+run level (range \ResidencyMemRange\,MB over run pairs). The decoding
+hypothesis worker, a separate process, holds \WorkerPSS\,MB at spawn.
+
+The residency result rules out one explanation of a cross-date drift in
+baseline TTFA, without identifying another. Every claim-bearing comparison
+therefore has a same-day baseline.
+
+\section{Energy}
+\label{sec:energy-cost}
+
+Speculation costs energy whether or not it pays. Against the reactive
+pipeline, continuing a reply draft costs \SpecEnergyr{} per turn, net of the
+board's idle floor ($n=\SpecN$ items). The gated listener costs
+\EnergyListenerr{} per turn against the reactive pipeline without partial
+decodes. Chapter~\ref{ch:allocator} sets that against what it saves.
+
+\section{Summary}
+
+The silence after the user stops is mostly the recognizer's. Its final decode
+is taxed by mere co-residence, and either consumer's speculation adds to it if
+still running at the endpoint. The thinker's draft costs \ThinkerOverlap{}
+when it overlaps the endpoint. The listener's partial costs \ListenerC\,ms of
+final decode per second of overlap, but it can be stopped. The next chapter asks
+what the thinker's cost buys.

@@ -1,0 +1,164 @@
+% Chapter 3. Every number is a macro (generated/numbers.tex) or a \needsclaim box.
+\chapter{Testbed and Methodology}
+\label{ch:methods}
+
+This chapter describes the device, the pipeline, the audio and the protocol
+under which every number in Chapters~\ref{ch:cost}--\ref{ch:allocator} was
+measured. It closes with the methods results: rules this project adopted
+because a measurement went wrong without them. They are reported as results
+because each one changed a number.
+
+\section{Device}
+\label{sec:device}
+
+All measurements were made on one NVIDIA Jetson Orin Nano Super developer kit
+with 8\,GB of memory shared by the CPU and the GPU. The board ran in power mode
+MAXN\_SUPER with clocks pinned and was operated headless. Clock state, power
+mode and software versions are recorded in every run's header.
+
+The board's six CPU cores are split in two. The language-model server runs on
+three cores with every layer offloaded to the GPU. The agent, the voice-activity
+detector and both speech recognizers share the other three. Offloading was
+audited: every run that called the language model ran in a server segment that
+reported GPU decoding. The decode rate across those runs had a median of
+\LlmRate\,ms per token.
+
+\section{Pipeline}
+\label{sec:pipeline}
+
+The agent is a cascade built on Pipecat:
+\begin{itemize}
+\item Silero voice-activity detection, which declares an endpoint after a
+  fixed silence;
+\item two Whisper engines through faster-whisper with int8 weights:
+  \texttt{tiny} decodes partial hypotheses while the user speaks, and
+  \texttt{base} decodes the final transcript at the endpoint;
+\item a 4-bit Gemma~4~E2B language model served by llama.cpp, with one slot;
+\item Piper for synthesis.
+\end{itemize}
+Each turn writes one record. It holds a timestamp for every stage boundary on a
+single clock, every partial and hypothesis decode with its start and end, the
+board's power rails, and process memory. Speculation arms add their own
+records: drafts, commits, freezes and allocation decisions, each with the
+inputs it was taken on.
+
+TTFA is the time from the true end of speech to the first reply audio. The
+true end of speech is known to the audio source, not inferred by the pipeline,
+so a late endpoint shows up as latency rather than being absorbed into the
+definition.
+
+\section{Audio and sets}
+\label{sec:sets}
+
+Audio enters through the microphone's delivery path, one file per turn, at
+real time. The next file starts only after the reply has finished playing and
+a quiet period has passed. Earlier designs used a fixed gap between files and
+let a reply overlap the next utterance; the turn gate replaced the fixed gap
+(Section~\ref{sec:methods-results}).
+
+The sets:
+\begin{itemize}
+\item a development set of 16 short spoken assistant queries;
+\item from Spoken-MQA \cite{wei2025towards}: two digit splits, a single-step
+  split used to select configurations and to test preemption, and the
+  multi-step split, derived from GSM8K \cite{cobbe2021gsm8k}. Of the
+  multi-step split we use 80 items drawn with a fixed seed and, as a fifth
+  length, the 20 longest of them.
+\end{itemize}
+
+\section{Protocol}
+\label{sec:protocol}
+
+\textbf{Arms and blocking.} Arms are run in blocks with a same-arm washout
+turn, or interleaved within one run where the comparison needs it. Every
+comparison that carries a claim has a same-day baseline.
+
+\textbf{Pairing and intervals.} Arms are compared on the same items. In the
+main comparisons each item's value is its median over three runs, the
+difference is taken per item, and the 95\% confidence interval is a
+percentile bootstrap over items. Analyses that depart from this state their
+design with their result.
+
+\textbf{Validity.} Turns are checked against the file's ground truth. A turn
+split by the voice-activity detector, a turn whose endpoint fired after its
+final transcript, and a run that fails a registered validity check are
+excluded by rules fixed before scoring.
+
+\textbf{The fence.} Between a measured run's start and its teardown, nothing
+else runs on the board: no edits, no builds, no tests, no analysis. One breach
+is on record. Its run is reported both with and without the affected
+repetition, and the headline uses the run without it
+(Chapter~\ref{ch:cost}).
+
+\textbf{Pre-registration.} Every prediction, its bar and its scoring rule were
+committed to the lab notebook before the run that tests it. A correction is
+appended, never edited in. Each prediction is scored once. The full ledger
+is in Appendix~\ref{app:prereg}. It records where a prediction was stated
+informally, where a bar moved before its data, and where a scorer was written
+after the data.
+
+\textbf{Provenance.} Every number in this thesis is produced by a script in
+the repository from a log of a measured run. A claim registry pins each
+scorer's invocation to the run identifiers the notebook records. Each claim is
+one line of that scorer's output, and the thesis cites it through a generated
+macro, so no measured value is typed by hand.
+
+\section{Methods results}
+\label{sec:methods-results}
+
+Each rule below was adopted after a specific number turned out wrong without
+it.
+
+\textbf{Pair within run, on the item.} A difference of medians across
+differently sized audio once suggested a large pipeline overhead in the
+recognizer. Paired per segment on fixed audio, the overhead disappeared
+(\needsclaim{pipeline minus isolation, paired per segment}{2026-09-16 --- STT
+inflation attributed}). Every comparison since pairs on the item, within run.
+
+\textbf{No underpowered null is reported as a null.} The triggers evaluated
+in Chapter~\ref{ch:value} have AUCs of \TsemAUC{} (semantic) and \EpaAUC{}
+(acoustic) over \TriggerPoints{} decision points from \TriggerUtts{}
+utterances. Intervals that wide support ``not detectable on this set'', not
+``does not predict'', and that is how they are reported.
+
+\textbf{Report marginal rates.} An agreement statistic between two
+recognizers once read as perfect because neither had fired; the trigger was
+dead on punctuated partials. Every agreement, accuracy or firing statistic is
+reported with the base rate it rests on, and a statistic over a constant is
+flagged as degenerate.
+
+\textbf{Compare on common support.} When one configuration covers items that
+another does not, paired deltas are reported on the items both cover and on
+the newly covered items separately. Pooled, one comparison changed sign
+(\needsclaim{anticipation lead, pooled vs common support}{CLAUDE.md §2,
+2026-09-17}).
+
+\textbf{A controller has to vary.} A controller whose output is constant is
+reported with its inputs and its decision log, not as a policy. The
+allocator's \AllocSpends{} spends in \AllocDecisions{} decisions are reported
+that way, with the reason for each decision (Chapter~\ref{ch:allocator}).
+
+\textbf{Derive corpus-dependent constants.} A constant that depends on the
+corpus is derived at run time or asserted at start. The feasibility gate's
+duration prior is derived at run start as the median duration of the set's
+files and recorded in the run header. The break-even usability \BreakEven{}
+is derived from the measured overlap cost and the measured saving.
+
+\textbf{Wait for the event, not a proxy.} Three runs on one day were voided by
+a harness that waited for a count, a silence or a clock instead of the event
+it depended on. A reply still playing when the next file began made every
+later turn one turn late. The turn gate now waits for the reply to finish.
+The abort record is written before the abort.
+
+\textbf{Keep retractions in place.} The notebook holds every withdrawn result
+next to its correction:
+\begin{itemize}
+\item a first scoring of the listener's overlap cost that broke its registered
+  population;
+\item an estimate of the draft window on mixed clocks;
+\item a preemption result voided by its own validity check;
+\item an interleaved run whose plan was indexed by turn number, not by file
+  position.
+\end{itemize}
+Chapters~\ref{ch:cost}--\ref{ch:allocator} cite the corrected figures and
+name the corrections.

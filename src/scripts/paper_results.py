@@ -486,6 +486,8 @@ NUMBERS: tuple[tuple[str, str, str], ...] = (
     ("TriggerPoints", "trigger_points", r"decision points: (\d+)"),
     ("TriggerUtts", "trigger_points", r"utterances: (\d+)"),
     ("LlmRate", "llm_rate", r"median ([0-9.]+) ms/token"),
+    ("PtwoaPop", "p2a_pop", r"(\d+ turns, \d+ runs)"),
+    ("PlannerVal", "planner_validation", r"(\+\d+ ms \[[^\]]+\])"),
     ("PtwoN", "pass2", r"n=(\d+)"),
     ("ResidencyMemRange", "residency_memory", r"range over run pairs (\+[0-9.]+ to \+[0-9.]+) MB"),
 )

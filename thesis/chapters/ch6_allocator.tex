@@ -1,0 +1,200 @@
+% Chapter 6. Every number is a macro (generated/numbers.tex) or a \needsclaim box.
+\chapter{The Window Allocator}
+\label{ch:allocator}
+
+Chapters~\ref{ch:cost} and~\ref{ch:value} found that on this device the
+silence is mostly the recognizer's, that the thinker's speculation costs
+without paying, and that the listener's own speculation has a penalty that can
+be stopped at its source. This chapter builds the rule that follows. The
+listening window is allocated per turn, to whichever consumer can finish
+before the endpoint and whose output survives it. The chapter then measures
+what that rule achieves, and asks whether a planner could do better.
+
+\section{Design}
+\label{sec:design}
+
+\textbf{Committing while listening.} A hypothesis worker, a separate process
+running the \texttt{tiny} engine, decodes only the audio after the committed
+point. A LocalAgreement-2 committer \cite{machacek2023whisperstreaming}
+commits the prefix that two consecutive hypotheses agree on, at segment
+granularity, and never commits a word inside the last 0.3\,s of the buffer.
+At the endpoint the final engine decodes only the uncommitted tail.
+
+\textbf{Pacing.} Hypotheses are self-paced. After a decode of length $d$, the
+worker rests $(1/\delta - 1)\,d$ before the next, with duty $\delta = 0.6$ and
+$d$ the measured length of the last decode. Cadence is an output of the rule,
+not an input. A duty near 1 split no more turns than this; the bound is kept
+because it gives the same outcome with fewer decodes.
+
+\textbf{The feasibility gate.} A hypothesis is issued only if the decodes
+still needed to commit its words, with their rests, fit in the expected
+remaining speech. The expected remaining speech is a prior utterance length
+minus the audio heard so far. The prior is a point value, derived at run start
+as the median duration of the set's files. On short utterances the gate
+abstains outright.
+
+\textbf{Freezing the orphan.} A hypothesis still decoding at the endpoint is
+frozen with \texttt{SIGSTOP}. It is resumed only when the recognizer is idle
+after the reply has played, and its stale result is discarded by sequence
+number. This removes the listener's overlap penalty without killing the
+worker. It costs the energy of the resumed decodes, and a turn that opens
+while the worker is frozen gets no hypotheses.
+
+\textbf{The allocator.} For the thinker, at every partial transcript the
+allocator:
+\begin{enumerate}
+\item estimates the fraction $\hat f$ heard, from the prior;
+\item reads usability $p_{\mathrm{usable}}(\hat f)$ from the curve measured
+  offline (Chapter~\ref{ch:value});
+\item admits a draft of budget $B$ only if $p_{\mathrm{usable}}(\hat f) \ge
+  p^\ast$ and $B$ tokens fit in the window at the measured decode rate.
+\end{enumerate}
+The listener's gate runs independently of it. Every decision is logged with
+its inputs and its reason.
+
+\section{The listener without the gate}
+\label{sec:pass2}
+
+The first test of the listener ran it on every turn, with a thread worker,
+no gate and no freeze. Against the reactive pipeline without partial decodes,
+it changed TTFA on multi-step problems by \PtwoCI{} ($n=\PtwoN$ items, as a
+reduction): slower, with an interval that includes zero. Its final decode ran
+above the solo model of its own tail
+(\needsclaim{final over solo model, multi-step}{2026-10-06 --- PASS 2 SCORED}).
+On the short development set it was clearly slower
+(\needsclaim{dev-set TTFA regression}{same entry}), a property of the design
+at short durations. The registered prediction failed on this pass, and its two
+causes became the gate and the freeze.
+
+\section{Preemption}
+\label{sec:preemption}
+
+Three designs for stopping the orphaned hypothesis were tried, each
+pre-registered with the same bars.
+\begin{itemize}
+\item \textbf{Kill and respawn.} Falsified as run
+  (\needsclaim{final over solo model under KILL}{2026-10-06 --- P9 FALSIFIED
+  AS RUN}). By elimination, the respawn landed at every endpoint.
+\item \textbf{Kill and promote a hot spare.} Not testable. Its validity check,
+  which voids a run whose spawn overlaps a scored endpoint-to-final window,
+  failed in every attempt. The first attempt's favourable result was withdrawn
+  for that reason.
+\item \textbf{Freeze.} Against letting the orphan race the final, freezing it
+  cuts paired TTFA by \PnineTTFA{} ($n=\PnineN$ items). The final runs at
+  \PnineRatio{} of the solo model of its tail. Three qualifications hold every
+  time this figure is cited:
+  \begin{itemize}
+  \item the interval's lower end lies below the registered 150\,ms bar;
+  \item the result holds under an amendment made before the run, and under
+    the original validity rule it would not be testable;
+  \item it depends on a 3\,s quiet period after each reply.
+  \end{itemize}
+\end{itemize}
+
+\section{The gated, freezing listener}
+\label{sec:pass2k}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\textwidth]{paper_fig5_pass2k.pdf}
+  \caption{The gated, freezing listener (pass 2k) and the ungated, unfrozen
+  one (pass 2), each against the reactive pipeline without partial decodes:
+  TTFA reduction, word-error-rate difference and raw energy per turn.}
+  \label{fig:th-listener}
+\end{figure}
+
+With the gate and the freeze, against the reactive pipeline without partial
+decodes, the listener cuts the median paired TTFA on multi-step problems by
+\PthreeRed{} ($n=\PthreeN$ items; Figure~\ref{fig:th-listener}). This meets
+the prediction we registered for it, though the interval's lower end lies
+below the registered 300\,ms bar. On the development set the gate issued no
+hypothesis, at no detectable TTFA cost (\DevTTFA). On multi-step problems:
+\begin{itemize}
+\item \textbf{Commits.} The listener commits a median \WordsCommitted{} of
+  the words before the endpoint ($n=\WordsN$ items). That is short of the
+  0.60 we expected.
+\item \textbf{Accuracy.} The word-error-rate cost is bounded but not shown to
+  be absent: mean \PfourMean{} \PfourCI, with \PfourWorse{} items worse and
+  \PfourBetter{} better.
+\item \textbf{The final decode} runs at \PsixRatio{} of the solo model of its
+  tail, consistent with the freeze removing the overlap penalty that pass 2
+  paid.
+\item \textbf{Energy.} The listener costs \EnergyListenerr{} per turn, net of
+  the idle floor, which is \SevenJms{} of time saved. Frozen decodes resumed
+  and discarded after the reply cost a net mean of \StaleMean\,J each, and
+  \StaleTotal\,J over all \StaleN.
+\end{itemize}
+
+\section{What the allocator decided}
+\label{sec:decisions}
+
+\input{generated/table2.tex}
+
+In one logged multi-step run the allocator took \AllocDecisions{} thinker
+decisions (Table~\ref{tab:allocator}). \AllocBelow{} were below break-even:
+the draft would have fit, but its usability at the estimated fraction was
+below $p^\ast$. \AllocInfeasible{} were infeasible: usability had passed
+break-even, but under the registered window model no draft fit. It spent the
+window on the drafter \AllocSpends{} times. Every record carries the inputs
+its reason rests on. The rule's constant output is therefore an outcome of
+the measured curves, not a hard-coded choice.
+
+\input{generated/table1.tex}
+
+Table~\ref{tab:where} puts the two consumers side by side on survival, value,
+overlap cost, energy and memory.
+
+\section{Is the gate enough? A planner}
+\label{sec:planner}
+
+The gate is a single threshold on a point prior. A planner that reasons about
+when the user will stop could, in principle, time hypotheses better. We
+formalise that planner and evaluate it in simulation. No live pass was run.
+
+\textbf{Formulation.} State is the buffered audio $t$ and the buffer ends
+$x_{k-1}$, $x_{k-2}$ of the last two completed hypotheses. Under
+LocalAgreement-2 these determine what is committed. At each idle instant the
+planner either issues a hypothesis on the buffer or waits. A hypothesis issued
+at $t$ completes after its decode time, unless the endpoint arrives first; at
+the endpoint it is frozen and lost. The objective is the expected committed
+audio at the endpoint. That minimises the expected final decode, because the
+final is affine in the uncommitted tail and the freeze removes the overlap
+term. The endpoint enters through its hazard, from the smoothed distribution
+of utterance lengths. A finite-horizon dynamic program over $t$ gives the
+policy table. The planner sees neither the item's length nor its segment
+boundaries.
+
+\textbf{Calibration.} The simulator draws, per item, from the logs:
+\begin{itemize}
+\item the buffer at the endpoint;
+\item the segment boundaries the item ever committed, each with its own commit
+  rate;
+\item partial decode times with their residuals;
+\item the final's within-item cost per second of audio.
+\end{itemize}
+Boundaries that no logged run reached are filled synthetically, at a rate
+calibrated so that the simulated committed fractions match those measured with
+and without the gate. Run through the simulator, the gate reproduces its
+measured saving: \PlannerVal{} simulated, against \PthreeRed{} measured. The
+simulated interval does not contain the value measured on the same items, so
+the validation is approximate. The real check is the committed fraction, which
+the calibration matches.
+
+\textbf{Result.} At the gate's duty bound, the median paired per-item TTFA
+reduction of the planner over the gate is \PlannerDP. Without the bound it is
+\PlannerNoDuty, and that gain comes from decoding back to back, not from
+planning. Under the measured costs, the gate is within \PlannerDP{} of the
+planner's optimum at the median. The simple rule is near-optimal, which is why
+it can be simple. What gain remains sits in items longer than the gate's
+prior, where the gate stops issuing early. A gate whose prior adapts to the
+elapsed speech might capture it; that is a hypothesis, not simulated here.
+
+\section{Summary}
+
+The allocator spends the listening window on the listener. With a feasibility
+gate and a freeze at the endpoint, the listener cuts the median paired TTFA on
+long utterances by \PthreeRed{}, abstains on short ones, and costs
+\EnergyListenerr{} per turn. On this task the allocator never spends the
+window on the thinker, and its log shows why. A planner that reasons about
+the endpoint's hazard does not beat the gate by more than \PlannerDP{} at the
+median.
