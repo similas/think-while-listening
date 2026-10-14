@@ -77,7 +77,67 @@ SOURCES: dict[str, Source] = {
         ),
     ),
     "trigger": Source("trigger_auc.py"),
-    "audit": Source("audit_gpu_offload.py"),
+    # Provenance gaps closed 2026-10-14 (NOTES "PROVENANCE GAPS CLOSED for the thesis").
+    "attr": Source("stt_attribution_paired_score.py"),
+    "thpmit": Source("thp_mitigation_score.py"),
+    "pg": Source(
+        "pg_prediction_score.py",
+        (
+            "--reactive",
+            *_runs("20260917-200223-dea8c4"),
+            "--pg",
+            *_runs("20260918-095453-dd2a79"),
+            "--cont",
+            *_runs("20260918-095658-7c38fb"),
+        ),
+    ),
+    "blocked": Source(
+        "arm_compare.py",
+        _runs("20260918-161707-78504b", "20260918-162406-e3c290", "20260918-163057-ef8422"),
+    ),
+    "carry": Source("arm_compare.py", _runs("20260918-101854-158018", "20260918-102424-da35bc")),
+    "p6pass2": Source(
+        "pass2_p6_score.py",
+        (
+            "--set",
+            "multi_step",
+            *_runs("20261005-145416-dac216", "20261005-153526-e45863", "20261005-161631-1f1168"),
+        ),
+    ),
+    "pass2dev": Source(
+        "pass2_score.py",
+        (
+            *("--set", "sixteen", "--set-dir", DEV, "--base"),
+            *_runs("20261002-103129-d917b8", "20261002-111217-ca59d8", "20261002-115311-72786f"),
+            "--test",
+            *_runs("20261005-144439-089fb9", "20261005-152547-ac8aac", "20261005-160652-523169"),
+        ),
+    ),
+    "p9": Source(
+        "p9_score.py",
+        _runs(
+            "20261006-122533-90e1ca",
+            "20261006-123127-3473c1",
+            "20261006-123652-0ed456",
+            "20261006-124247-5f382b",
+            "20261006-124807-e2f290",
+            "20261006-125404-a6d9a6",
+        ),
+    ),
+    "onset": Source("onset_grid_penalties.py"),
+    "twoeng": Source("two_engine_lead.py", ("--section", "both")),
+    "epa": Source(
+        "epa_wallclock.py",
+        (
+            "--log",
+            "results/raw/triggers/epa_wallclock/epa_run.log",
+            "--scored",
+            "results/raw/triggers/epa_scored_raw.json",
+        ),
+    ),
+    # Pinned to the runs started up to the measurement freeze (2026-10-13 13:03),
+    # so post-freeze runs (pass 9) cannot move the cited decode rate.
+    "audit": Source("audit_gpu_offload.py", ("--until", "2026-10-13T13:04:00-04:00")),
     # The calibrated planner simulation: fill p 0.1 is the only setting that
     # matches both measured commit fractions (NOTES, CORRECTION to "LEVEL-2
     # PLANNER, SIMULATED"). Writes the DP policy table, which fill does not change.
@@ -200,7 +260,158 @@ TAX_FULL = (
     "recognizer alone, paired per turn"
 )
 
+H_ATTR09 = "2026-09-16 — STT inflation attributed: page reclaim, not GPU, not storage"
+H_THPMIT = "2026-09-16 — THP mitigation: both levers fail. The tax is a platform property."
+H_PG = "SPEC-ALWAYS-PG vs SPEC-CONTINUE: the prediction scored (2026-09-18)"
+H_BLOCK = "Blocked design: arms re-measured, washout inconclusive (2026-09-18)"
+H_CARRY = "Policy carry-over is REAL: speculation costs the turn that FOLLOWS it"
+H_PASS2 = "2026-10-06 — PASS 2 SCORED. P3 FAILS, P7 FALSIFIED, P4 PASSES, P6 NOT MET ON TWO SETS"
+H_P9 = "2026-10-06 — P9 FALSIFIED AS RUN. The run tested my respawn bug, not the kill"
+H_ONSET = "Onset prediction test: PARTIALLY confirmed. Overlap is a factor, not the only one"
+H_TWO = "Two-engine STT, live (B1). Shared cores PASS the T-EPA standard; split FAILS"
+H_EPA0 = "EPA (acoustic trigger): AUC 0.531. Neither trigger predicts the window"
+
 CLAIMS: tuple[Claim, ...] = (
+    Claim(
+        "attr_paired",
+        "Recognizer final decode, pipeline minus isolation, paired per segment",
+        "attr",
+        r"^paired pipeline - isolation: median",
+        H_ATTR09,
+    ),
+    Claim(
+        "thp_m0",
+        "Huge pages kept by the recognizer, control (LLM loaded first)",
+        "thpmit",
+        r"M0_control anon_huge_mb",
+        H_THPMIT,
+    ),
+    Claim(
+        "thp_m1",
+        "Huge pages kept, recognizer loaded first",
+        "thpmit",
+        r"M1_stt_first anon_huge_mb",
+        H_THPMIT,
+    ),
+    Claim(
+        "thp_m2",
+        "Huge pages kept, MADV_HUGEPAGE on the recognizer's buffers",
+        "thpmit",
+        r"M2_madvise anon_huge_mb",
+        H_THPMIT,
+    ),
+    Claim(
+        "thp_m3",
+        "Huge pages kept, both levers",
+        "thpmit",
+        r"M3_both anon_huge_mb",
+        H_THPMIT,
+    ),
+    Claim(
+        "pg_first",
+        "Restarting drafts: first sentence matching the final reply's",
+        "pg",
+        r"SPEC-ALWAYS-PG: first-sentence EXACT",
+        H_PG,
+    ),
+    Claim(
+        "pg_survival",
+        "Restarting drafts: tokens surviving from one candidate to the next",
+        "pg",
+        r"SPEC-ALWAYS-PG: survived",
+        H_PG,
+    ),
+    Claim(
+        "pg_blocked",
+        "Restarting drafts vs REACTIVE, TTFA, blocked design",
+        "blocked",
+        r"spec_always_pg:\s+[+-]\d+ ms",
+        H_BLOCK,
+    ),
+    Claim(
+        "carry",
+        "Carry-over: TTFA of the turn after a SPEC-CONTINUE turn vs after REACTIVE",
+        "carry",
+        r"after\s+spec_continue:",
+        H_CARRY,
+    ),
+    Claim(
+        "p6_pass2",
+        "Ungated listener (pass 2): final over the solo model of its tail, multi-step",
+        "p6pass2",
+        r"^P6 multi_step",
+        H_PASS2,
+    ),
+    Claim(
+        "pass2_dev",
+        "Ungated listener (pass 2) on the development set: TTFA reduction",
+        "pass2dev",
+        r"^\s*ttfa_ms\s*:",
+        H_PASS2,
+    ),
+    Claim(
+        "p9_kill",
+        "Kill and respawn (P9): final over the solo model, KILL and RACE",
+        "p9",
+        r"^\s+ratio\s+",
+        H_P9,
+    ),
+    Claim(
+        "onset_c96",
+        "Contended, B=96: penalty for drafts finished / still running at the endpoint",
+        "onset",
+        r"^\s+cont\s+96",
+        H_ONSET,
+    ),
+    Claim(
+        "onset_c64",
+        "Contended, B=64: penalty for drafts finished / still running at the endpoint",
+        "onset",
+        r"^\s+cont\s+64",
+        H_ONSET,
+    ),
+    Claim(
+        "lead_one",
+        "Anticipation lead, one engine, pooled",
+        "twoeng",
+        r"POOLED lead, one engine",
+        H_TWO,
+    ),
+    Claim(
+        "lead_shared",
+        "Anticipation lead, two engines on shared cores, pooled",
+        "twoeng",
+        r"POOLED lead, shared",
+        H_TWO,
+    ),
+    Claim(
+        "lead_cs_shared",
+        "Anticipation lead, two engines, on the utterances both configurations covered",
+        "twoeng",
+        r"COMMON SUPPORT lead, shared",
+        H_TWO,
+    ),
+    Claim(
+        "lead_new",
+        "Anticipation lead, two engines, on the newly covered utterances",
+        "twoeng",
+        r"NEWLY COVERED lead, shared",
+        H_TWO,
+    ),
+    Claim(
+        "epa_wall",
+        "Acoustic trigger: wall clock per segment (logged mean)",
+        "epa",
+        r"logged mean over all",
+        H_EPA0,
+    ),
+    Claim(
+        "epa_rtf",
+        "Acoustic trigger: real-time factor, ratio of totals",
+        "epa",
+        r"ratio of totals, mean wall / mean audio",
+        H_EPA0,
+    ),
     Claim(
         "residency_full",
         "Residency, full pass including the repetition run during the fence breach (sensitivity)",

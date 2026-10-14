@@ -8197,3 +8197,77 @@ points.
 The thesis also cites the full-pass residency figure (pass 1r, with rep U1)
 as a registered claim: the p1r_full source, "PAIRED TTFA" line. It was
 already a sensitivity line in "CORRECTION to PASS 1r SCORED".
+
+## 2026-10-14 — PROVENANCE GAPS CLOSED for the thesis: thirteen numbers, scripted or corrected
+
+Ali's decision on bc2b77f: close every CLAIM NEEDED box in the thesis. Find
+or write each scorer, check it reproduces its entry, and register the claim.
+A number that cannot be reproduced is removed and its entry corrected; it is
+never estimated. All scorers below were written or located on 2026-10-14 and
+run over existing logs only. Every one is registered in
+src/scripts/paper_sources.py with its run ids.
+
+REPRODUCED EXACTLY
+- THP mitigation, M0–M3: src/scripts/thp_mitigation_score.py. Huge pages kept
+  are 20 / 44 / 46 / 66 MB, n=16 each. Every value matches the stored record.
+  The "(recognizer alone, ref)" row came from another run and is not
+  reproduced by this script.
+- SPEC-ALWAYS-PG: src/scripts/pg_prediction_score.py. First sentence exact
+  0/15; token survival 2.4% (2/83), with an interval over turns now added,
+  [0.0%, 7.5%], n=16. The REACTIVE baseline of that entry is
+  reactive-20260917-200223-dea8c4, a 09-17 run.
+- SPEC-ALWAYS-PG minus REACTIVE: the entry's +116 [+59, +192] n=16
+  reproduces. THE THESIS CITES THE BLOCKED RE-MEASUREMENT THAT SUPERSEDES IT:
+  +114 [+61, +161] n=48 (src/scripts/arm_compare.py over the three blocked
+  runs of 09-18).
+- Pass 2, P6 multi_step: 1.31x [1.16, 1.46] n=211
+  (src/scripts/pass2_p6_score.py). THE INTERVAL IS OVER TURNS, pooled over
+  reps, not over items as the entry's preamble implies.
+- Pass 2, dev-set TTFA: -394.5 [-526.8, -253.2] n=16 (pass2_score.py), a
+  regression.
+- P9 KILL final over solo: 2.06x [2.01, 2.07] (p9_score.py at the current
+  revision, which has changed since the entry). The run ids, which the entry
+  did not list, are the six runs at build 65550d5 on 10-06.
+- Onset grid, contended B=96 still running +205.1 [+88.9, +295.5] n=16 and
+  contended B=64 finished +128.8 [+57.6, +155.7] n=29
+  (src/scripts/onset_grid_penalties.py). All ten medians reproduce. THIS
+  "TTFA" IS TIMED FROM SPEECH ONSET (stages_ms tts_first_audio, the
+  budget_fit metric), NOT FROM THE ENDPOINT; the thesis says so. Some
+  uncontended interval bounds differ by a few ms, because the original
+  bootstrap's input order is not recoverable. The data and the method are.
+
+REPRODUCED, WITH A CORRECTION TO THE ENTRY
+- Pipeline minus isolation, "+4 ms (n=32, IQR -114 to +331)": the +4 was the
+  upper of the two middle values. The usual median is +2.6 ms
+  [-99.5, +182.3], n=32, and the run's own record stores +2.6. The isolation
+  side is read from the stored per-segment pairs; the pipeline side is
+  recomputed and matches (src/scripts/stt_attribution_paired_score.py). The
+  conclusion stands.
+- Carry-over +169 [+65, +1204] n=12 (arm_compare.py): it reproduces from TWO
+  runs, 101854-158018 and 102424-da35bc, not from the three the entry names.
+  The third run predates the warm-up flag; with it included the figure is
+  +638.
+- Two-engine anticipation lead (src/scripts/two_engine_lead.py): the pooled
+  897 -> 561 ms uses both runs of each configuration and reproduces. The
+  common-support figures (1701 ms, paired +808, newly covered 465) came from
+  the LAST run of each configuration only. That mixes two populations.
+  Computed consistently over both runs, common support gives 897 -> 1685 ms,
+  paired +801, newly covered 477, n=12/12/18 turns. The thesis cites the
+  consistent figures; the conclusion and direction are unchanged.
+
+ARCHIVED, THEN REPRODUCED, WITH A CORRECTION
+- EPA wall clock. The only record was the stdout log of the 2026-09-21 scoring
+  pass, kept in a volatile scratch directory. It is now archived byte for byte
+  with its scoring script and evaluation set in
+  results/raw/triggers/epa_wallclock/ (sha256 epa_run.log 4a97814f...,
+  epa_score.py 61adca36..., epa_eval_set.json 4c11f7b0...).
+  The scored output is byte-identical to results/raw/triggers/epa_scored_raw.json.
+  src/scripts/epa_wallclock.py reads it:
+  - 11.53 s per segment is a LOGGED MEAN, n=200. Per-segment times were not
+    logged, so no median or interval exists.
+  - Median segment audio is 2.46 s.
+  - THE "4.8x REAL TIME" IS WITHDRAWN. It divided 11.5 by 2.4. The ratio of
+    totals is 4.16x.
+
+The decode-rate audit is now pinned to runs started up to the measurement
+freeze (--until 2026-10-13T13:04-04:00), so pass 9 cannot move it.

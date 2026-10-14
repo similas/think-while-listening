@@ -60,9 +60,9 @@ no gate and no freeze. Against the reactive pipeline without partial decodes,
 it changed TTFA on multi-step problems by \PtwoCI{} ($n=\PtwoN$ items, as a
 reduction): slower, with an interval that includes zero. Its final decode ran
 above the solo model of its own tail
-(\needsclaim{final over solo model, multi-step}{2026-10-06 --- PASS 2 SCORED}).
+(\PtwoSix{} per turn, $n=\PtwoSixN$ turns).
 On the short development set it was clearly slower
-(\needsclaim{dev-set TTFA regression}{same entry}), a property of the design
+(\PtwoDev{} as a reduction, $n=\PtwoDevN$ items), a property of the design
 at short durations. The registered prediction failed on this pass. Two
 mechanisms were proposed for the failure, the orphaned decode at the endpoint
 and speculation on utterances too short to pay; the freeze and the gate are
@@ -75,8 +75,7 @@ Three designs for stopping the orphaned hypothesis were tried, each
 pre-registered before its run.
 \begin{itemize}
 \item \textbf{Kill and respawn.} Falsified as run
-  (\needsclaim{final over solo model under KILL}{2026-10-06 --- P9 FALSIFIED
-  AS RUN}). The design respawned the worker at every endpoint, and by
+  (final at \PnineKill{} of the solo model of its tail). The design respawned the worker at every endpoint, and by
   elimination the respawn caused the slowdown.
 \item \textbf{Kill and promote a hot spare.} Not testable. Its validity check,
   which voided a run in which a spawn overlapped any endpoint-to-final window,

@@ -67,8 +67,7 @@ the decoder allocates and frees working buffers on every call while a
 co-resident footprint keeps the pool fragmented. Two per-process mitigations
 were tried: loading the recognizer before the language model, and advising
 huge pages on its buffers. Neither recovered the huge pages
-(\needsclaim{huge pages and decode time under each mitigation}{2026-09-16 ---
-THP mitigation: both levers fail}). The system-wide huge-page policy was left
+(\ThpMOne\,MB and \ThpMTwo\,MB of huge pages kept, and \ThpMThree\,MB with both, against \ThpMZero\,MB in the control). The system-wide huge-page policy was left
 untouched, so the tax could not be removed with the levers one process
 controls; whether a system-level change would remove it is open.
 
@@ -91,13 +90,10 @@ the same run, a draft still running at the endpoint delays the first audio by
 shows no detectable penalty in these runs (\ThinkerFinished,
 $n=\ThinkerFinishedN$). The penalty depends on device state. Under a
 contended memory system it was larger
-(\needsclaim{contended overlap penalty}{Onset prediction test: PARTIALLY
-confirmed}). In one contended condition, drafts that had finished before the
-endpoint were penalised too (\needsclaim{finished-draft penalty, B=64
-contended}{same entry}). The cost also carries over: speculation in one turn
+(\OnsetNinetySixRun{} for a draft still running at budget 96, $n=\OnsetNinetySixRunN$, timed in that test from speech onset). In one contended condition, drafts that had finished before the
+endpoint were penalised too (\OnsetSixtyFourFin, $n=\OnsetSixtyFourFinN$). The cost also carries over: speculation in one turn
 delays the next
-(\needsclaim{carry-over onto the following turn}{Policy carry-over is REAL:
-speculation costs the turn that FOLLOWS it}), which is why every comparison since
+(\Carry{} on the following turn, $n=\CarryN$ turns, two interleaved runs), which is why every comparison since
 uses a same-arm washout.
 
 These costs are the thinker's whether or not the draft is useful. Its value is

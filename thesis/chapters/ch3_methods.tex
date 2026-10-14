@@ -114,8 +114,7 @@ it.
 \textbf{Pair within run, on the item.} A difference of medians across
 differently sized audio once suggested a large pipeline overhead in the
 recognizer. Paired per segment on fixed audio, the overhead disappeared
-(\needsclaim{pipeline minus isolation, paired per segment}{2026-09-16 --- STT
-inflation attributed}). Every claim-bearing comparison since pairs on the
+(\AttrPaired, $n=\AttrN$ segments). Every claim-bearing comparison since pairs on the
 item; where a design pairs across runs or resamples runs, the result says so.
 
 \textbf{No underpowered null is reported as a null.} The triggers evaluated
@@ -133,9 +132,13 @@ flagged as degenerate.
 
 \textbf{Compare on common support.} When one configuration covers items that
 another does not, paired deltas are reported on the items both cover and on
-the newly covered items separately. Pooled, one comparison changed sign
-(\needsclaim{anticipation lead, pooled vs common support}{Two-engine STT,
-live (B1)}).
+the newly covered items separately. Pooled over both runs of each
+configuration, a second recognizer engine appeared to shorten the time by
+which a partial transcript anticipates the endpoint, from \LeadOne{}
+($n=\LeadOneN$ turns) to \LeadShared{} ($n=\LeadSharedN$). On the utterances
+both configurations covered, it lengthened it, to \LeadSharedCS; the
+utterances only the new configuration covered simply had shorter leads
+(\LeadNew, $n=\LeadNewN$).
 
 \textbf{A controller has to vary.} A controller whose output is constant is
 reported with its inputs and its decision log, not as a policy. The

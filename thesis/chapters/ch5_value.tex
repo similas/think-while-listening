@@ -93,8 +93,7 @@ call either useless. The question is open beyond ``not detectable''. Reading
 the triggers on the multi-step set was registered not to happen once the
 probe closed the value side, and it was not done. The acoustic model is also
 disqualified on time alone: it runs slower than real time on this device
-(\needsclaim{acoustic trigger, seconds per second of audio}{CORRECTION
-(2026-09-21) to the EPA entry above}).
+(a logged mean of \EpaWall\,s per segment, $n=\EpaN$, \EpaRtf{} times the audio as a ratio of totals).
 
 \section{Drafts in the live pipeline}
 \label{sec:live-thinker}
@@ -103,11 +102,10 @@ Live drafts were no better. In the first live comparison, on the development
 set and before the probe existed, drafts that restarted on every new partial
 matched the final reply's first sentence in
 none of the turns where one existed
-(\needsclaim{first-sentence matches}{SPEC-ALWAYS-PG vs SPEC-CONTINUE: the
-prediction scored}). Successive drafts shared few of their tokens
-(\needsclaim{token survival between candidates}{same entry}). Restarting also
+(\PgFirst). Successive drafts shared few of their tokens
+(\PgSurvival{} of tokens, \PgSurvivalCI, $n=\PgSurvivalN$ turns). Restarting also
 made TTFA worse than not speculating
-(\needsclaim{SPEC-ALWAYS-PG minus REACTIVE}{same entry}).
+(\PgBlocked, $n=\PgBlockedN$ turns, blocked re-measurement).
 
 In the last comparison, a continuing draft was interleaved with the reactive
 pipeline on multi-step problems. Each draft produced \SpecTokens{} tokens per

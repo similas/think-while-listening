@@ -173,8 +173,9 @@ def is_invalid(segment_warned: bool, requested_ngl: int | None) -> bool:
     return segment_warned and requested_ngl is not None and requested_ngl > 0
 
 
-def load_runs() -> list[dict]:
-    """(wall time, run id, notes, requested ngl) for every run on disk."""
+def load_runs(until: dt.datetime | None = None) -> list[dict]:
+    """(wall time, run id, notes, requested ngl) for every run on disk, or, with
+    ``until``, for every run that started at or before it."""
     runs = []
     for path in sorted(glob.glob("results/raw/*/*/turns.jsonl")):
         try:
@@ -185,6 +186,9 @@ def load_runs() -> list[dict]:
         if meta.get("kind") != "run_meta" or "wall_time" not in meta:
             continue
         stamp = meta["wall_time"]
+        at = dt.datetime.fromisoformat(f"{stamp[:-2]}:{stamp[-2:]}")
+        if until is not None and at > until:
+            continue
         cmdline = (meta.get("software") or {}).get("llama-server-cmdline", "")
         ngl = re.search(r"--n-gpu-layers (\d+)", cmdline)
         replies = []
@@ -198,7 +202,7 @@ def load_runs() -> list[dict]:
                     replies.append((row.get("reply") or "").strip())
         runs.append(
             {
-                "at": dt.datetime.fromisoformat(f"{stamp[:-2]}:{stamp[-2:]}"),
+                "at": at,
                 "id": meta["run_id"],
                 "notes": meta.get("notes", ""),
                 "ngl": int(ngl.group(1)) if ngl else None,
@@ -214,6 +218,13 @@ def main() -> None:
     p.add_argument("--unit", default="twl-llama.service")
     p.add_argument("--starts", type=Path, default=Path("results/raw/llama_server_starts.json"))
     p.add_argument("--runs", action="store_true", help="list every post-break run")
+    p.add_argument(
+        "--until",
+        type=dt.datetime.fromisoformat,
+        default=None,
+        help="only runs that started at or before this ISO time with offset (the claim "
+        "registry passes the measurement freeze, so later runs cannot move a cited number)",
+    )
     args = p.parse_args()
 
     segs = parse_segments(args.log)
@@ -263,7 +274,7 @@ def main() -> None:
         f"median {median(cpu):.1f} ms/token (n={len(cpu)} generations)"
     )
 
-    runs = load_runs()
+    runs = load_runs(args.until)
     post = [r for r in runs if r["at"] > GUARD_BROKE]
     print(f"\nruns on disk: {len(runs)}; started after the guard broke: {len(post)}")
     unattributed, in_warned = [], []
