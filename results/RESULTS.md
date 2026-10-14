@@ -417,6 +417,327 @@ HYPOTHESIS WORKER at spawn: PSS median 121.4 MB (range 121.2-121.5), RSS median 
 - NOTES: "2026-10-13 — PAPER TABLES REVIEWED: corrections to the tables and the tax entry" (a462589 2026-10-13)
 - caveat: At spawn, before any decode; the per-decode working set is not logged.
 
+## Thesis only: value side, triggers and the device
+
+### Greedy draft usable at half the utterance
+
+```
+0.50  2/80 = 0.025  [0.007, 0.087]
+```
+
+- command: `src/scripts/score_prefix_probe.py --probe results/raw/spoken_mqa/prefix_probe_seedB.json --items results/raw/spoken_mqa/multi_step_reasoning-seed20260922.json`
+- runs: see the scorer's run list
+- NOTES: "2026-09-22 — Replication and greedy on the seeded 80. The pre-registered test FALSIFIES" (68505dc 2026-09-22)
+
+### Greedy draft usable at three-quarters of the utterance (registered test vs break-even)
+
+```
+0.75  5/80 = 0.062  [0.027, 0.138]
+```
+
+- command: `src/scripts/score_prefix_probe.py --probe results/raw/spoken_mqa/prefix_probe_seedB.json --items results/raw/spoken_mqa/multi_step_reasoning-seed20260922.json`
+- runs: see the scorer's run list
+- NOTES: "2026-09-22 — Replication and greedy on the seeded 80. The pre-registered test FALSIFIES" (68505dc 2026-09-22)
+
+### Greedy draft usable at 0.90 of the utterance (exploratory)
+
+```
+0.90  15/80 = 0.188  [0.117, 0.287]
+```
+
+- command: `src/scripts/score_prefix_probe.py --probe results/raw/spoken_mqa/prefix_probe_seedB.json --items results/raw/spoken_mqa/multi_step_reasoning-seed20260922.json`
+- runs: see the scorer's run list
+- NOTES: "2026-09-22 — Replication and greedy on the seeded 80. The pre-registered test FALSIFIES" (68505dc 2026-09-22)
+
+### Gold accuracy from the full transcript, greedy (the probe's gate)
+
+```
+1.00     0.362   80     [0.266, 0.472]   <- GATE  PASS
+```
+
+- command: `src/scripts/score_prefix_probe.py --probe results/raw/spoken_mqa/prefix_probe_seedB.json --items results/raw/spoken_mqa/multi_step_reasoning-seed20260922.json`
+- runs: see the scorer's run list
+- NOTES: "2026-09-22 — Replication and greedy on the seeded 80. The pre-registered test FALSIFIES" (68505dc 2026-09-22)
+
+### Gold accuracy from the full transcript, T=0.5 (the probe's gate)
+
+```
+1.00     0.275   80     [0.189, 0.381]   <- GATE  FAIL
+```
+
+- command: `src/scripts/score_prefix_probe.py --probe results/raw/spoken_mqa/prefix_probe_seedA.json --items results/raw/spoken_mqa/multi_step_reasoning-seed20260922.json`
+- runs: see the scorer's run list
+- NOTES: "2026-09-22 — Replication and greedy on the seeded 80. The pre-registered test FALSIFIES" (68505dc 2026-09-22)
+
+### T=0.5 draft usable at three-quarters of the utterance
+
+```
+0.75  3/80 = 0.037  [0.013, 0.105]
+```
+
+- command: `src/scripts/score_prefix_probe.py --probe results/raw/spoken_mqa/prefix_probe_seedA.json --items results/raw/spoken_mqa/multi_step_reasoning-seed20260922.json`
+- runs: see the scorer's run list
+- NOTES: "2026-09-22 — Replication and greedy on the seeded 80. The pre-registered test FALSIFIES" (68505dc 2026-09-22)
+
+### Trigger evaluation: decision points, utterances, runs
+
+```
+decision points: 198   utterances: 16   points with no utterance index: 6   runs: 53
+```
+
+- command: `src/scripts/trigger_auc.py`
+- runs: see the scorer's run list
+- NOTES: "CORRECTION (2026-09-21) to the EPA entry above. Original text left unedited" (8f5d30f 2026-09-21)
+
+### Semantic trigger: AUC for more than 900 ms of speech remaining
+
+```
+T-SEM (semantic)   0.557                   [0.309, 0.820]
+```
+
+- command: `src/scripts/trigger_auc.py`
+- runs: see the scorer's run list
+- NOTES: "CORRECTION (2026-09-21) to the EPA entry above. Original text left unedited" (8f5d30f 2026-09-21)
+
+### Acoustic endpoint-anticipation trigger: AUC for the same
+
+```
+EPA (acoustic)   0.523                   [0.321, 0.734]
+```
+
+- command: `src/scripts/trigger_auc.py`
+- runs: see the scorer's run list
+- NOTES: "CORRECTION (2026-09-21) to the EPA entry above. Original text left unedited" (8f5d30f 2026-09-21)
+
+### Acoustic trigger: wall clock per segment (logged mean)
+
+```
+logged mean over all 200: 11.53 s/segment  n=200
+```
+
+- command: `src/scripts/epa_wallclock.py --log results/raw/triggers/epa_wallclock/epa_run.log --scored results/raw/triggers/epa_scored_raw.json`
+- runs: see the scorer's run list
+- NOTES: "2026-10-14 — PROVENANCE GAPS CLOSED for the thesis: thirteen numbers, scripted or corrected" (4c51f39 2026-10-14)
+
+### Acoustic trigger: real-time factor, ratio of totals
+
+```
+ratio of totals, mean wall / mean audio : 4.16x  n=200
+```
+
+- command: `src/scripts/epa_wallclock.py --log results/raw/triggers/epa_wallclock/epa_run.log --scored results/raw/triggers/epa_scored_raw.json`
+- runs: see the scorer's run list
+- NOTES: "2026-10-14 — PROVENANCE GAPS CLOSED for the thesis: thirteen numbers, scripted or corrected" (4c51f39 2026-10-14)
+- caveat: Replaces the withdrawn 4.8x (11.5 / 2.4).
+
+### Language-model decode rate on the device, per token
+
+```
+with a rate: 269 runs, median 31.8 ms/token, range 31.4-31.9
+```
+
+- command: `src/scripts/audit_gpu_offload.py --until 2026-10-13T13:04:00-04:00`
+- runs: see the scorer's run list
+- NOTES: "CORRECTION (2026-09-21c) to the CPU-fallback audit above. Outcome holds, two of its three legs do not" (95b6877 2026-09-21)
+
+## Thesis only: provenance gaps closed 2026-10-14
+
+### Recognizer final decode, pipeline minus isolation, paired per segment
+
+```
+paired pipeline - isolation: median +2.6 ms, 95% CI [-99.5, +182.3], n=32
+```
+
+- command: `src/scripts/stt_attribution_paired_score.py`
+- runs: see the scorer's run list
+- NOTES: "2026-10-14 — PROVENANCE GAPS CLOSED for the thesis: thirteen numbers, scripted or corrected" (4c51f39 2026-10-14)
+- caveat: Not detectable; the earlier difference-of-medians estimate lies just above the interval's upper end.
+
+### Huge pages kept by the recognizer, control (LLM loaded first)
+
+```
+M0_control anon_huge_mb: median 20.0 MB, 95% CI [20.0, 20.0], n=16  (stored 20.0)
+```
+
+- command: `src/scripts/thp_mitigation_score.py`
+- runs: see the scorer's run list
+- NOTES: "2026-09-16 — THP mitigation: both levers fail. The tax is a platform property." (8b44956 2026-09-16)
+
+### Huge pages kept, recognizer loaded first
+
+```
+M1_stt_first anon_huge_mb: median 44.0 MB, 95% CI [44.0, 44.0], n=16  (stored 44.0)
+```
+
+- command: `src/scripts/thp_mitigation_score.py`
+- runs: see the scorer's run list
+- NOTES: "2026-09-16 — THP mitigation: both levers fail. The tax is a platform property." (8b44956 2026-09-16)
+
+### Huge pages kept, MADV_HUGEPAGE on the recognizer's buffers
+
+```
+M2_madvise anon_huge_mb: median 46.0 MB, 95% CI [46.0, 46.0], n=16  (stored 46.0)
+```
+
+- command: `src/scripts/thp_mitigation_score.py`
+- runs: see the scorer's run list
+- NOTES: "2026-09-16 — THP mitigation: both levers fail. The tax is a platform property." (8b44956 2026-09-16)
+
+### Huge pages kept, both levers
+
+```
+M3_both anon_huge_mb: median 66.0 MB, 95% CI [66.0, 86.0], n=16  (stored 66.0)
+```
+
+- command: `src/scripts/thp_mitigation_score.py`
+- runs: see the scorer's run list
+- NOTES: "2026-09-16 — THP mitigation: both levers fail. The tax is a platform property." (8b44956 2026-09-16)
+
+### Restarting drafts: first sentence matching the final reply's
+
+```
+SPEC-ALWAYS-PG: first-sentence EXACT 0/15 (denominator: turns with a speculative first sentence; 16 turns total)
+```
+
+- command: `src/scripts/pg_prediction_score.py` with the 3 runs below
+- runs: reactive-20260917-200223-dea8c4, reactive-20260918-095453-dd2a79, reactive-20260918-095658-7c38fb
+- NOTES: "SPEC-ALWAYS-PG vs SPEC-CONTINUE: the prediction scored (2026-09-18)" (e080b60 2026-09-18)
+
+### Restarting drafts: tokens surviving from one candidate to the next
+
+```
+SPEC-ALWAYS-PG: survived 2.4% (= 2/83)  95% CI over turns [0.0%, 7.5%]  n=16 turns
+```
+
+- command: `src/scripts/pg_prediction_score.py` with the 3 runs below
+- runs: reactive-20260917-200223-dea8c4, reactive-20260918-095453-dd2a79, reactive-20260918-095658-7c38fb
+- NOTES: "SPEC-ALWAYS-PG vs SPEC-CONTINUE: the prediction scored (2026-09-18)" (e080b60 2026-09-18)
+
+### Restarting drafts vs REACTIVE, TTFA, blocked design
+
+```
+spec_always_pg:     +114 ms  95% CI [+61, +161]  n= 48  WORSE
+```
+
+- command: `src/scripts/arm_compare.py` with the 3 runs below
+- runs: reactive-20260918-161707-78504b, reactive-20260918-162406-e3c290, reactive-20260918-163057-ef8422
+- NOTES: "Blocked design: arms re-measured, washout inconclusive (2026-09-18)" (9cd7f29 2026-09-18)
+
+### Carry-over: TTFA of the turn after a SPEC-CONTINUE turn vs after REACTIVE (two-sample bootstrap)
+
+```
+two-sample bootstrap, after spec_continue - after reactive: +169 ms [-580, +1218] n=12/14
+```
+
+- command: `src/scripts/arm_compare.py results/raw/reactive/reactive-20260918-101854-158018 results/raw/reactive/reactive-20260918-102424-da35bc`
+- runs: reactive-20260918-101854-158018, reactive-20260918-102424-da35bc
+- NOTES: "2026-10-14 — CORRECTION to "PROVENANCE GAPS CLOSED": carry-over not established" (40ef495 2026-10-14)
+- caveat: The interval spans zero: carry-over is NOT established. The registered interval (+65, +1204) held the reference median fixed; this one resamples both groups.
+
+### Ungated listener (pass 2): final over the solo model of its tail, multi-step
+
+```
+P6 multi_step COMMIT-WL final / solo model (per turn, pooled over reps): median 1.31x CI [1.16, 1.46] n=211 -> over
+```
+
+- command: `src/scripts/pass2_p6_score.py` with the 3 runs below
+- runs: reactive-20261005-145416-dac216, reactive-20261005-153526-e45863, reactive-20261005-161631-1f1168
+- NOTES: "2026-10-06 — PASS 2 SCORED. P3 FAILS, P7 FALSIFIED, P4 PASSES, P6 NOT MET ON TWO SETS" (571d622 2026-10-06)
+
+### Ungated listener (pass 2) on the development set: TTFA reduction
+
+```
+ttfa_ms  : NOPARTIAL  3359.964  COMMIT-WL  3666.445   paired  -394.518  CI [-526.845, -253.247]  n=16
+```
+
+- command: `src/scripts/pass2_score.py` with the 6 runs below
+- runs: reactive-20261002-103129-d917b8, reactive-20261002-111217-ca59d8, reactive-20261002-115311-72786f, reactive-20261005-144439-089fb9, reactive-20261005-152547-ac8aac, reactive-20261005-160652-523169
+- NOTES: "2026-10-06 — PASS 2 SCORED. P3 FAILS, P7 FALSIFIED, P4 PASSES, P6 NOT MET ON TWO SETS" (571d622 2026-10-06)
+- caveat: Pass 2's baseline (10-02) and treatment (10-05) ran on different days.
+
+### Kill and respawn (P9): final over the solo model, KILL and RACE
+
+```
+ratio    2.06x [2.01x, 2.07]    1.24x [0.96x, 1.33]
+```
+
+- command: `src/scripts/p9_score.py` with the 6 runs below
+- runs: reactive-20261006-122533-90e1ca, reactive-20261006-123127-3473c1, reactive-20261006-123652-0ed456, reactive-20261006-124247-5f382b, reactive-20261006-124807-e2f290, reactive-20261006-125404-a6d9a6
+- NOTES: "2026-10-06 — P9 FALSIFIED AS RUN. The run tested my respawn bug, not the kill" (af067f4 2026-10-06)
+
+### Contended, B=96: penalty for drafts finished / still running at the endpoint
+
+```
+cont    96  16/32  +57.9 [-37.5, +129.8] n=16 | +205.1 [+88.9, +295.5] n=16
+```
+
+- command: `src/scripts/onset_grid_penalties.py`
+- runs: see the scorer's run list
+- NOTES: "Onset prediction test: PARTIALLY confirmed. Overlap is a factor, not the only one" (b834229 2026-09-21)
+- caveat: Timed from speech onset (tts_first_audio), not from the endpoint.
+
+### Contended, B=64: penalty for drafts finished / still running at the endpoint
+
+```
+cont    64   3/32  +128.8 [+57.6, +155.7] n=29 | +66.7 [-226.4, +177.8] n=3
+```
+
+- command: `src/scripts/onset_grid_penalties.py`
+- runs: see the scorer's run list
+- NOTES: "Onset prediction test: PARTIALLY confirmed. Overlap is a factor, not the only one" (b834229 2026-09-21)
+- caveat: Timed from speech onset. Under this re-score the uncontended B=96 finished-draft interval also excludes zero.
+
+### Anticipation lead, one engine, pooled
+
+```
+POOLED lead, one engine                  median   897.1 ms  95% CI [  607.0,  1095.6]  n=12
+```
+
+- command: `src/scripts/two_engine_lead.py --section both`
+- runs: see the scorer's run list
+- NOTES: "Two-engine STT, live (B1). Shared cores PASS the T-EPA standard; split FAILS" (1de0302 2026-09-17)
+
+### Anticipation lead, two engines on shared cores, pooled
+
+```
+POOLED lead, shared                      median   560.9 ms  95% CI [  502.1,  1351.0]  n=30
+```
+
+- command: `src/scripts/two_engine_lead.py --section both`
+- runs: see the scorer's run list
+- NOTES: "Two-engine STT, live (B1). Shared cores PASS the T-EPA standard; split FAILS" (1de0302 2026-09-17)
+
+### Anticipation lead, two engines, on the utterances both configurations covered
+
+```
+COMMON SUPPORT lead, shared              median  1684.7 ms  95% CI [ 1369.3,  1907.6]  n=12
+```
+
+- command: `src/scripts/two_engine_lead.py --section both`
+- runs: see the scorer's run list
+- NOTES: "2026-10-14 — PROVENANCE GAPS CLOSED for the thesis: thirteen numbers, scripted or corrected" (4c51f39 2026-10-14)
+- caveat: Both runs per configuration; NOTES's 1701 came from one run each.
+
+### Anticipation lead, two engines, on the newly covered utterances
+
+```
+NEWLY COVERED lead, shared               median   477.0 ms  95% CI [  276.4,   543.4]  n=18
+```
+
+- command: `src/scripts/two_engine_lead.py --section both`
+- runs: see the scorer's run list
+- NOTES: "2026-10-14 — PROVENANCE GAPS CLOSED for the thesis: thirteen numbers, scripted or corrected" (4c51f39 2026-10-14)
+
+### Residency, full pass including the repetition run during the fence breach (sensitivity)
+
+```
+PAIRED TTFA, NOPARTIAL - UNLOADED: +12.1 ms [-31.1, +39.1] n=16
+```
+
+- command: `src/scripts/p1r_score.py` with the 6 runs below
+- runs: reactive-20261013-124828-eecf2d, reactive-20261013-125053-6884cf, reactive-20261013-125318-3e3ca7, reactive-20261013-125544-291019, reactive-20261013-125815-414699, reactive-20261013-130040-def96a
+- NOTES: "2026-10-13 — CORRECTION to "PASS 1r SCORED" (reviewer, 4 findings)" (57489b6 2026-10-13)
+
 ## The Level-2 planner, simulated (no measured run)
 
 ### Planner simulator, validation: simulated STOP+gate vs NOPARTIAL (measured +351 on these items)
