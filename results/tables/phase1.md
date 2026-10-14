@@ -218,6 +218,120 @@ cold step-0 prefills: n=60, median 115.5 ms
 | reactive-20260921-115301-854092 | 16 | 0 | 1792 | 3844 | 3968 | 4664 | 4403 | 4403 | 3413 [3283,3527] | 3927 |
 | reactive-20260921-120718-cb887e | 16 | 0 | 1812 | 3846 | 3988 | 4779 | 4573 | 4573 | 3534 [3356,3687] | 4052 |
 | reactive-20260921-121005-8051cf | 16 | 0 | 1813 | 3816 | 3957 | 4896 | 4476 | 4477 | 3489 [3412,3602] | 4126 |
+| reactive-20260922-114950-c676ba | 94 | 8 (unfinished_turn x8) | 13550 | 2854 | 3262 | 4283 | 4225 | 4226 | 5452 [5000,6105] | 7482 |
+| reactive-20260922-121855-5cd956 | 94 | 8 (unfinished_turn x8) | 11912 | 3085 | 3427 | 4419 | 4373 | 4376 | 5405 [3939,6283] | 7361 |
+| reactive-20260922-130314-6a8b26 | 16 | 1 (turn_timeout x1) | 12821 | 4281 | 4603 | 5557 | 5776 | 5777 | 5576 [4533,6249] | 6732 |
+| reactive-20260923-155717-5fa1a8 | 32 | 0 | 1820 | 3733 | 3962 | 4803 | 4630 | 4630 | 3646 [3478,3925] | 4225 |
+| reactive-20261001-133232-0a4f19 | 16 | 0 | 1832 | 3890 | 4133 | 5038 | 4750 | 4752 | 3718 [3600,3949] | 4177 |
+| reactive-20261001-133522-28b694 | 20 | 0 | 3829 | 5603 | 5852 | 6462 | 6717 | 6718 | 3807 [3730,3900] | 4041 |
+| reactive-20261001-133850-60eec5 | 3 | 1 (unfinished_turn x1) | 3851 | 4278 | 4573 | 5211 | 5797 | 5798 | 2747 [1367,4127] | 3989 |
+| reactive-20261001-133918-c86109 | 16 | 1 (unfinished_turn x1) | 13569 | 15224 | 15435 | 16467 | 16021 | 16022 | 4248 [3974,4577] | 5737 |
+| reactive-20261001-134429-3347a9 | 16 | 0 | 1832 | 4068 | 4261 | 5163 | 4883 | 4883 | 3737 [3415,3954] | 4383 |
+| reactive-20261001-134642-6b7c5d | 20 | 0 | 3831 | 5566 | 5798 | 6411 | 6729 | 6730 | 3699 [3340,3824] | 3957 |
+| reactive-20261001-135008-775fb9 | 3 | 1 (unfinished_turn x1) | 3850 | 4234 | 4488 | 5323 | 5736 | 5743 | 2693 [1390,3995] | 3865 |
+| reactive-20261001-135037-ce0937 | 6 | 0 | 12601 | 15127 | 15327 | 15724 | 15887 | 15888 | 4153 [4002,4350] | 4419 |
+| reactive-20261001-135856-4c8175 | 16 | 0 | 1831 | 3779 | 3971 | 4866 | 4671 | 4672 | 3595 [3527,3721] | 3992 |
+| reactive-20261001-140103-5f8f0d | 20 | 0 | 3830 | 5570 | 5807 | 6420 | 6722 | 6723 | 3723 [3640,3836] | 3978 |
+| reactive-20261001-140429-48340b | 21 | 2 (unfinished_turn;vad_split x1, vad_split x1) | 4160 | 6042 | 6319 | 7165 | 7323 | 7324 | 3890 [3741,4074] | 4210 |
+| reactive-20261001-140805-f3bafc | 94 | 21 (unfinished_turn;vad_split x11, vad_split x10) | 14641 | 17332 | 17534 | 18603 | 18146 | 18147 | 4344 [4260,4455] | 6144 |
+| reactive-20261001-143936-138285 | 16 | 0 | 1832 | 3794 | 4012 | 4780 | 4677 | 4678 | 3583 [3527,3719] | 4063 |
+| reactive-20261001-144143-59f83f | 20 | 0 | 3831 | 5557 | 5802 | 6428 | 6673 | 6673 | 3712 [3520,3862] | 4057 |
+| reactive-20261001-144509-91261c | 21 | 2 (unfinished_turn;vad_split x1, vad_split x1) | 4160 | 6031 | 6258 | 7116 | 7100 | 7101 | 3872 [3701,4046] | 4190 |
+| reactive-20261001-144845-521874 | 94 | 21 (unfinished_turn;vad_split x11, vad_split x10) | 14640 | 17226 | 17429 | 18538 | 18119 | 18120 | 4383 [4269,4458] | 6321 |
+| reactive-20261001-152016-e39a27 | 16 | 0 | 1831 | 3747 | 4020 | 4839 | 4709 | 4710 | 3606 [3500,3735] | 4043 |
+| reactive-20261001-152239-3b6a33 | 20 | 0 | 3830 | 5659 | 5908 | 6519 | 6827 | 6827 | 3904 [3802,3999] | 4357 |
+| reactive-20261001-152607-b814f4 | 21 | 2 (unfinished_turn;vad_split x1, vad_split x1) | 4160 | 6035 | 6304 | 7084 | 7441 | 7442 | 3992 [3882,4116] | 4273 |
+| reactive-20261001-152945-09f625 | 94 | 21 (unfinished_turn;vad_split x11, vad_split x10) | 14639 | 17273 | 17495 | 18607 | 18180 | 18180 | 4427 [4333,4550] | 6201 |
+| reactive-20261001-163635-51ac10 | 24 | 6 (unfinished_turn;vad_split x3, vad_split x3) | 9911 | 12259 | 12546 | 13421 | 13244 | 13245 | 3910 [3787,3983] | 4208 |
+| reactive-20261001-164213-1d8be7 | 24 | 6 (unfinished_turn;vad_split x3, vad_split x3) | 9912 | 12303 | 12618 | 13096 | 13276 | 13277 | 3894 [3763,3928] | 4057 |
+| reactive-20261001-164736-f43dae | 24 | 6 (unfinished_turn;vad_split x3, vad_split x3) | 9910 | 12193 | 12479 | 12994 | 13163 | 13164 | 3821 [3726,3944] | 4098 |
+| reactive-20261002-103129-d917b8 | 16 | 0 | 1831 | 3513 | 3741 | 4565 | 4387 | 4388 | 3388 [3265,3499] | 3614 |
+| reactive-20261002-103332-b34440 | 20 | 0 | 3829 | 5592 | 5848 | 6482 | 6741 | 6742 | 3800 [3668,3908] | 4043 |
+| reactive-20261002-103659-426fbe | 21 | 2 (unfinished_turn;vad_split x1, vad_split x1) | 4159 | 6025 | 6224 | 6902 | 7231 | 7231 | 3845 [3692,3966] | 4341 |
+| reactive-20261002-104047-106290 | 94 | 21 (unfinished_turn;vad_split x11, vad_split x10) | 14641 | 17239 | 17438 | 18633 | 18091 | 18092 | 4328 [4205,4432] | 6108 |
+| reactive-20261002-111217-ca59d8 | 16 | 0 | 1831 | 3534 | 3731 | 4443 | 4351 | 4352 | 3330 [3207,3384] | 3628 |
+| reactive-20261002-111420-86da6c | 20 | 0 | 3801 | 5611 | 5883 | 6521 | 6780 | 6801 | 3779 [3736,3898] | 4013 |
+| reactive-20261002-111804-8a8ad0 | 21 | 2 (unfinished_turn;vad_split x1, vad_split x1) | 4159 | 6026 | 6278 | 7059 | 7278 | 7398 | 3870 [3692,4099] | 4279 |
+| reactive-20261002-112138-a6c31a | 94 | 21 (unfinished_turn;vad_split x11, vad_split x10) | 14640 | 17168 | 17393 | 18632 | 17989 | 17990 | 4378 [4267,4474] | 6182 |
+| reactive-20261002-115311-72786f | 16 | 0 | 1831 | 3543 | 3746 | 4607 | 4269 | 4270 | 3332 [3162,3415] | 3681 |
+| reactive-20261002-115514-ed6f32 | 20 | 0 | 3810 | 5626 | 5886 | 6545 | 6614 | 6614 | 3691 [3385,3836] | 3997 |
+| reactive-20261002-115855-7562bf | 21 | 2 (unfinished_turn;vad_split x1, vad_split x1) | 4161 | 6031 | 6233 | 7030 | 7421 | 7421 | 3949 [3799,4077] | 4267 |
+| reactive-20261002-120244-4be4d4 | 94 | 21 (unfinished_turn;vad_split x11, vad_split x10) | 14642 | 17051 | 17267 | 18543 | 17914 | 17915 | 4345 [4226,4438] | 5830 |
+| reactive-20261005-144439-089fb9 | 16 | 0 | 1831 | 3796 | 4006 | 4812 | 4623 | 4624 | 3692 [3536,4053] | 4212 |
+| reactive-20261005-144706-f049cb | 20 | 0 | 3831 | 5653 | 5891 | 6578 | 6744 | 6745 | 3775 [3716,3874] | 4405 |
+| reactive-20261005-145035-8ae463 | 21 | 2 (unfinished_turn;vad_split x1, vad_split x1) | 4195 | 6313 | 6376 | 7173 | 7551 | 7551 | 4022 [3885,4361] | 4722 |
+| reactive-20261005-145416-dac216 | 94 | 22 (unfinished_turn;vad_split x12, vad_split x10) | 14645 | 17325 | 17579 | 18775 | 18318 | 18318 | 4486 [4289,4705] | 6842 |
+| reactive-20261005-152547-ac8aac | 16 | 0 | 1831 | 3679 | 3915 | 4724 | 4634 | 4635 | 3656 [3445,4006] | 4218 |
+| reactive-20261005-152813-b26387 | 20 | 0 | 3831 | 5697 | 5901 | 6593 | 6940 | 6934 | 3838 [3805,4012] | 4827 |
+| reactive-20261005-153144-27ee84 | 21 | 2 (unfinished_turn;vad_split x1, vad_split x1) | 4200 | 6798 | 6714 | 7438 | 7867 | 7868 | 4184 [3861,4638] | 4810 |
+| reactive-20261005-153526-e45863 | 93 | 20 (unfinished_turn;vad_split x11, vad_split x9) | 14771 | 17585 | 17789 | 18728 | 18372 | 18392 | 4335 [3968,4572] | 6129 |
+| reactive-20261005-160652-523169 | 16 | 0 | 1832 | 3726 | 3960 | 4716 | 4623 | 4623 | 3599 [3471,3854] | 4193 |
+| reactive-20261005-160916-22433d | 20 | 0 | 3830 | 5664 | 5922 | 6577 | 6817 | 6818 | 3871 [3704,4251] | 4597 |
+| reactive-20261005-161247-ea3914 | 21 | 2 (unfinished_turn;vad_split x1, vad_split x1) | 4181 | 6237 | 6371 | 7454 | 7777 | 7777 | 4294 [3952,4571] | 4822 |
+| reactive-20261005-161631-1f1168 | 94 | 22 (unfinished_turn;vad_split x12, vad_split x10) | 14642 | 17427 | 17699 | 18987 | 18254 | 18255 | 4473 [4100,5068] | 7061 |
+| reactive-20261006-103658-98d000 | 29 | 14 (unfinished_turn;vad_split x6, unfinished_turn;vad_split;endpoint_after_final x1, vad_split x7) | 22630 | 24763 | 25088 | 26526 | 25842 | 25843 | 4957 [4121,5991] | 9749 |
+| reactive-20261006-104837-5e3a27 | 23 | 8 (unfinished_turn;vad_split x4, vad_split x4) | 22400 | 25625 | 25949 | 27189 | 26644 | 26645 | 5154 [4038,5617] | 7129 |
+| reactive-20261006-110228-2e8de2 | 29 | 14 (unfinished_turn;vad_split x7, vad_split x6, vad_split;endpoint_after_final x1) | 22630 | 25182 | 25308 | 26223 | 25862 | 25862 | 4305 [4108,4629] | 6457 |
+| reactive-20261006-111308-7a242e | 29 | 15 (unfinished_turn;vad_split x6, unfinished_turn;vad_split;endpoint_after_final x2, vad_split x6, vad_split;endpoint_after_final x1) | 22632 | 25602 | 25741 | 27076 | 26360 | 26361 | 4448 [3849,5138] | 5821 |
+| reactive-20261006-112336-e9ef9e | 29 | 14 (unfinished_turn;vad_split x7, vad_split x7) | 22632 | 26093 | 26227 | 27221 | 27006 | 27007 | 5136 [4343,5629] | 7184 |
+| reactive-20261006-113422-e83751 | 29 | 14 (unfinished_turn;vad_split x7, vad_split x6, vad_split;endpoint_after_final x1) | 22632 | 25088 | 25224 | 27051 | 25653 | 25654 | 3968 [3714,5484] | 7133 |
+| reactive-20261006-122533-90e1ca | 24 | 6 (unfinished_turn;vad_split x3, vad_split x2, vad_split;endpoint_after_final x1) | 9912 | 14050 | 14236 | 14758 | 14654 | 14655 | 5295 [5067,5479] | 5753 |
+| reactive-20261006-123127-3473c1 | 24 | 7 (endpoint_after_final x1, unfinished_turn;vad_split x3, vad_split x3) | 10020 | 12269 | 12391 | 12813 | 13007 | 13007 | 3588 [3359,3991] | 4988 |
+| reactive-20261006-123652-0ed456 | 24 | 6 (unfinished_turn;vad_split x3, vad_split x2, vad_split;endpoint_after_final x1) | 9911 | 14065 | 14244 | 14544 | 14693 | 14694 | 5320 [5000,5473] | 5855 |
+| reactive-20261006-124247-5f382b | 24 | 7 (endpoint_after_final x1, unfinished_turn;vad_split x3, vad_split x3) | 10020 | 12544 | 12308 | 12837 | 12875 | 12876 | 3536 [3267,3940] | 4255 |
+| reactive-20261006-124807-e2f290 | 24 | 7 (unfinished_turn;vad_split x3, unfinished_turn;vad_split;endpoint_after_final x1, vad_split x3) | 10020 | 14332 | 14513 | 14808 | 14934 | 14934 | 5214 [4930,5576] | 5948 |
+| reactive-20261006-125404-a6d9a6 | 24 | 6 (unfinished_turn;vad_split x3, vad_split x2, vad_split;endpoint_after_final x1) | 9911 | 12232 | 12325 | 12791 | 12766 | 12766 | 3686 [3176,3909] | 4209 |
+| reactive-20261006-135450-d5c7fa | 6 | 4 (unfinished_turn;vad_split x2, vad_split x2) | 12234 | 14152 | 14328 | 14821 | 14762 | 14762 | 3329 [3160,3497] | 3481 |
+| reactive-20261006-135724-e437b4 | 6 | 4 (unfinished_turn;vad_split x2, vad_split x2) | 12235 | 14439 | 14590 | 15099 | 15038 | 15038 | 3604 [3445,3763] | 3747 |
+| reactive-20261006-140054-ab1376 | 24 | 7 (endpoint_after_final x1, unfinished_turn;vad_split x3, vad_split x3) | 10021 | 11909 | 12162 | 12581 | 12647 | 12648 | 3174 [2947,3239] | 3540 |
+| reactive-20261006-140608-bb744a | 24 | 7 (endpoint_after_final x1, unfinished_turn;vad_split x3, vad_split x3) | 10021 | 12205 | 12330 | 12779 | 12815 | 12816 | 3708 [3499,3918] | 4195 |
+| reactive-20261006-141127-236c6f | 24 | 7 (endpoint_after_final x1, unfinished_turn;vad_split x3, vad_split x2, vad_split;endpoint_after_final x1) | 10019 | 11940 | 12208 | 12706 | 12696 | 12696 | 3185 [3054,3376] | 3541 |
+| reactive-20261006-141637-997d1f | 24 | 7 (endpoint_after_final x1, unfinished_turn;vad_split x3, vad_split x3) | 10028 | 12840 | 12966 | 13322 | 13487 | 13488 | 3504 [3383,3990] | 4608 |
+| reactive-20261006-142155-b1ac96 | 24 | 7 (endpoint_after_final x1, unfinished_turn;vad_split x3, vad_split x2, vad_split;endpoint_after_final x1) | 10021 | 11925 | 12144 | 12612 | 12648 | 12649 | 3228 [3057,3421] | 3519 |
+| reactive-20261006-142712-5b9791 | 24 | 6 (unfinished_turn;vad_split x3, vad_split x3) | 9912 | 12144 | 12116 | 13001 | 12563 | 12563 | 3516 [3241,3920] | 4937 |
+| reactive-20261006-151951-091fee | 24 | 7 (endpoint_after_final x1, unfinished_turn;vad_split x3, vad_split x2, vad_split;endpoint_after_final x1) | 10021 | 11824 | 12213 | 12504 | 12640 | 12641 | 3189 [3068,3315] | 3611 |
+| reactive-20261006-152501-4ef534 | 24 | 6 (unfinished_turn;vad_split x3, vad_split x3) | 9911 | 12037 | 12222 | 12801 | 12589 | 12589 | 3524 [3114,3768] | 4120 |
+| reactive-20261006-153020-d2ae66 | 24 | 7 (endpoint_after_final x1, unfinished_turn;vad_split x3, vad_split x2, vad_split;endpoint_after_final x1) | 10020 | 11956 | 12198 | 12642 | 12649 | 12650 | 3200 [3077,3364] | 3536 |
+| reactive-20261006-153531-fc84c0 | 24 | 7 (endpoint_after_final x1, unfinished_turn;vad_split x3, vad_split x3) | 10021 | 11946 | 12102 | 12736 | 12537 | 12537 | 3675 [3247,3754] | 4239 |
+| reactive-20261006-154048-40cce7 | 24 | 7 (endpoint_after_final x1, unfinished_turn;vad_split x3, vad_split x2, vad_split;endpoint_after_final x1) | 10022 | 11914 | 12240 | 12808 | 12669 | 12670 | 3116 [3040,3316] | 3636 |
+| reactive-20261006-154601-b5e948 | 24 | 7 (endpoint_after_final x1, unfinished_turn;vad_split x3, vad_split x3) | 10021 | 12394 | 12550 | 13133 | 12903 | 12903 | 3620 [3360,3951] | 4260 |
+| reactive-20261007-184012-8db855 | 0 | 0 | — | — | — | — | — | — | — | — |
+| reactive-20261007-184113-660b26 | 6 | 4 (unfinished_turn;vad_split x2, vad_split x2) | 12234 | 14200 | 14422 | 14920 | 14873 | 14873 | 3439 [3299,3580] | 3566 |
+| reactive-20261007-184248-33b737 | 6 | 4 (unfinished_turn;vad_split x2, vad_split x2) | 12232 | 14226 | 14408 | 14917 | 14880 | 14881 | 3449 [3401,3496] | 3491 |
+| reactive-20261007-184410-4c830a | 6 | 4 (unfinished_turn;vad_split x2, vad_split x2) | 12233 | 14377 | 14562 | 15057 | 15002 | 15002 | 3569 [3395,3744] | 3726 |
+| reactive-20261007-185947-4f614e | 6 | 4 (unfinished_turn;vad_split x2, vad_split x2) | 12232 | 14143 | 14291 | 14786 | 14722 | 14722 | 3290 [3165,3415] | 3402 |
+| reactive-20261007-190211-8058b3 | 24 | 7 (endpoint_after_final x1, unfinished_turn;vad_split x3, vad_split x2, vad_split;endpoint_after_final x1) | 10021 | 11899 | 12183 | 12652 | 12621 | 12622 | 3208 [3026,3319] | 3526 |
+| reactive-20261007-190807-fdf53c | 24 | 7 (endpoint_after_final x1, unfinished_turn;vad_split x3, vad_split x2, vad_split;endpoint_after_final x1) | 10021 | 12164 | 12345 | 12905 | 12726 | 12727 | 3603 [3349,3885] | 4188 |
+| reactive-20261007-191402-ee2912 | 24 | 7 (endpoint_after_final x1, unfinished_turn;vad_split x3, vad_split x2, vad_split;endpoint_after_final x1) | 10051 | 11873 | 12196 | 12731 | 12684 | 12684 | 3222 [3108,3306] | 3438 |
+| reactive-20261007-191955-5cd9f4 | 24 | 6 (unfinished_turn;vad_split x3, vad_split x3) | 9913 | 12256 | 12350 | 12945 | 12743 | 12744 | 3698 [3346,3941] | 4159 |
+| reactive-20261007-192552-827254 | 24 | 7 (endpoint_after_final x1, unfinished_turn;vad_split x3, vad_split x2, vad_split;endpoint_after_final x1) | 10020 | 11872 | 11994 | 12543 | 12578 | 12578 | 3114 [3073,3353] | 3520 |
+| reactive-20261007-193147-91df38 | 24 | 6 (unfinished_turn;vad_split x3, vad_split x2, vad_split;endpoint_after_final x1) | 9912 | 11885 | 12012 | 12679 | 12608 | 12608 | 3505 [3387,3884] | 4148 |
+| reactive-20261008-102834-b7c033 | 6 | 4 (unfinished_turn;vad_split x2, vad_split x2) | 12231 | 14166 | 14355 | 14851 | 14800 | 14800 | 3369 [3205,3533] | 3516 |
+| reactive-20261008-103119-17cc82 | 6 | 4 (unfinished_turn;vad_split x2, vad_split x2) | 12232 | 14186 | 14337 | 14848 | 14806 | 14806 | 3375 [3262,3488] | 3477 |
+| reactive-20261008-103300-abd218 | 93 | 20 (endpoint_after_final x1, unfinished_turn;vad_split x10, vad_split x7, vad_split;endpoint_after_final x2) | 14901 | 16635 | 16758 | 17871 | 17200 | 17201 | 3450 [3361,3626] | 4186 |
+| reactive-20261008-110545-1f7989 | 94 | 22 (endpoint_after_final x1, unfinished_turn;vad_split x11, vad_split x6, vad_split;endpoint_after_final x4) | 14771 | 16836 | 17045 | 18177 | 17527 | 17527 | 3762 [3706,3934] | 5334 |
+| reactive-20261008-113854-585574 | 16 | 0 | 1831 | 3363 | 3520 | 4164 | 3936 | 3937 | 2936 [2863,2990] | 3205 |
+| reactive-20261008-114121-6c121f | 16 | 0 | 1829 | 3320 | 3451 | 4195 | 3948 | 3948 | 2970 [2840,3000] | 3227 |
+| reactive-20261008-114351-9ae173 | 94 | 22 (endpoint_after_final x1, unfinished_turn;vad_split x11, vad_split x6, vad_split;endpoint_after_final x4) | 14771 | 16914 | 17050 | 18052 | 17683 | 17683 | 3804 [3692,3966] | 5413 |
+| reactive-20261008-121644-d2b5ad | 94 | 22 (endpoint_after_final x1, unfinished_turn;vad_split x10, unfinished_turn;vad_split;endpoint_after_final x1, vad_split x6, vad_split;endpoint_after_final x4) | 14770 | 16566 | 16742 | 17901 | 17253 | 17254 | 3487 [3414,3616] | 4470 |
+| reactive-20261008-124928-58fcc2 | 16 | 0 | 1831 | 3345 | 3492 | 4071 | 3975 | 3975 | 2940 [2867,3090] | 3223 |
+| reactive-20261008-125153-9aab0d | 16 | 0 | 1830 | 3325 | 3480 | 4205 | 3975 | 3976 | 2958 [2858,3034] | 3208 |
+| reactive-20261008-125425-f94b44 | 94 | 22 (endpoint_after_final x1, unfinished_turn;vad_split x10, unfinished_turn;vad_split;endpoint_after_final x1, vad_split x6, vad_split;endpoint_after_final x4) | 14769 | 16651 | 16782 | 17889 | 17508 | 17509 | 3406 [3336,3526] | 4467 |
+| reactive-20261008-132718-54285c | 94 | 22 (endpoint_after_final x1, unfinished_turn;vad_split x11, vad_split x6, vad_split;endpoint_after_final x4) | 14770 | 16919 | 17088 | 18179 | 17519 | 17520 | 3771 [3712,3873] | 5214 |
+| reactive-20261008-140024-eda306 | 16 | 0 | 1830 | 3333 | 3450 | 4090 | 3963 | 3964 | 2970 [2772,3010] | 3214 |
+| reactive-20261008-140252-12b836 | 16 | 0 | 1832 | 3344 | 3478 | 4093 | 3987 | 3992 | 2953 [2837,3047] | 3179 |
+| reactive-20261008-163854-13c7fe | 3 | 0 | 10320 | 12218 | 12433 | 12765 | 12950 | 12951 | 3458 [3430,3479] | 3477 |
+| reactive-20261008-164008-001211 | 6 | 4 (unfinished_turn;vad_split x2, vad_split x2) | 12231 | 14274 | 14465 | 14962 | 14925 | 14925 | 3495 [3277,3713] | 3691 |
+| reactive-20261009-105401-6ac01d | 94 | 23 (endpoint_after_final x1, unfinished_turn;vad_split x11, unfinished_turn;vad_split;endpoint_after_final x1, vad_split x8, vad_split;endpoint_after_final x2) | 14772 | 18470 | 18627 | 19578 | 19122 | 19122 | 4752 [4364,5195] | 7424 |
+| reactive-20261009-112837-d4ef5e | 94 | 23 (endpoint_after_final x1, unfinished_turn;vad_split x11, unfinished_turn;vad_split;endpoint_after_final x1, vad_split x8, vad_split;endpoint_after_final x2) | 14773 | 18574 | 18707 | 19521 | 19379 | 19380 | 4813 [4352,5245] | 7399 |
+| reactive-20261009-120309-a4f48d | 94 | 22 (endpoint_after_final x1, unfinished_turn;vad_split x11, vad_split x6, vad_split;endpoint_after_final x4) | 14771 | 16627 | 16801 | 17898 | 17237 | 17237 | 3416 [3368,3499] | 4249 |
+| reactive-20261009-141221-943340 | 240 | 61 (endpoint_after_final x3, unfinished_turn;vad_split x27, unfinished_turn;vad_split;endpoint_after_final x3, vad_split x22, vad_split;endpoint_after_final x6) | 15020 | 17032 | 17264 | 18347 | 17837 | 17862 | 3826 [3766,3867] | 5334 |
+| reactive-20261013-124828-eecf2d | 16 | 0 | 1830 | 3334 | 3451 | 4064 | 3916 | 3916 | 2899 [2806,2971] | 3151 |
+| reactive-20261013-125053-6884cf | 16 | 0 | 1831 | 3338 | 3457 | 4153 | 3898 | 3899 | 2898 [2772,3033] | 3199 |
+| reactive-20261013-125318-3e3ca7 | 16 | 0 | 1830 | 3308 | 3456 | 4197 | 3916 | 3916 | 2934 [2824,3030] | 3210 |
+| reactive-20261013-125544-291019 | 16 | 0 | 1831 | 3365 | 3499 | 4198 | 3941 | 3941 | 2968 [2867,3081] | 3170 |
+| reactive-20261013-125815-414699 | 16 | 0 | 1830 | 3329 | 3457 | 4125 | 3974 | 3975 | 2880 [2809,2971] | 3223 |
+| reactive-20261013-130040-def96a | 16 | 0 | 1831 | 3336 | 3463 | 4156 | 3950 | 3951 | 2961 [2761,3020] | 3168 |
 
 ## Playback-harness validation — validate-playback-20260915-153052-3a4a4b
 
@@ -233,14 +347,14 @@ turns: file=8 file2=8 mic=8; transcript mismatches (mic vs file): 0
 
 n=48, median 1357 ms [1311, 1373], p95 1448 ms
 
-## Memory over turns — reactive-20260915-193806-a0c23c (128 turns)
+## Memory over turns — reactive-20261009-141221-943340 (240 turns)
 
 | metric | turn 1 | mid | last | max |
 |---|---|---|---|---|
-| agent RSS MB | 610 | 665 | 686 | 698 |
-| llama-server RSS MB | 798 | 827 | 846 | 846 |
-| MemAvailable MB | 2702 | 2653 | 2559 | 2547 (min) |
-| swap total MB | 158.2 | 158.2 | 157.8 | 158.2 |
+| agent RSS MB | 820 | 1293 | 1323 | 1382 |
+| llama-server RSS MB | 2381 | 2467 | 2597 | 2597 |
+| MemAvailable MB | 1293 | 845 | 710 | 661 (min) |
+| swap total MB | 331.3 | 483.0 | 550.3 | 550.3 |
 
-invalid turns: 0 / 128
+invalid turns: 61 / 240
 

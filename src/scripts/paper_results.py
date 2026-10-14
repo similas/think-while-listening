@@ -482,6 +482,10 @@ NUMBERS: tuple[tuple[str, str, str], ...] = (
     ("SpecN", "spec_ttfa", r"n=(\d+)"),
     ("SpecItems", "spec_survival", r"n=(\d+) items"),
     ("SpecAccepted", "spec_survival", r"accepted/produced median ([0-9.]+)"),
+    ("GreedySeventyFiveK", "probe_greedy_075", r"(\d+/80)"),
+    ("TriggerPoints", "trigger_points", r"decision points: (\d+)"),
+    ("TriggerUtts", "trigger_points", r"utterances: (\d+)"),
+    ("LlmRate", "llm_rate", r"median ([0-9.]+) ms/token"),
     ("PtwoN", "pass2", r"n=(\d+)"),
     ("ResidencyMemRange", "residency_memory", r"range over run pairs (\+[0-9.]+ to \+[0-9.]+) MB"),
 )
@@ -489,6 +493,49 @@ NUMBERS: tuple[tuple[str, str, str], ...] = (
 
 # Numbers that need rounding: the groups are floats, formatted as given.
 FORMATTED: tuple[tuple[str, str, str, str], ...] = (
+    (
+        "GreedySeventyFive",
+        "probe_greedy_075",
+        r"= ([0-9.]+)\s+\[([0-9.]+), ([0-9.]+)\]",
+        "{0:.3f} [{1:.3f}, {2:.3f}]",
+    ),
+    (
+        "GreedyNinety",
+        "probe_greedy_090",
+        r"= ([0-9.]+)\s+\[([0-9.]+), ([0-9.]+)\]",
+        "{0:.3f} [{1:.3f}, {2:.3f}]",
+    ),
+    (
+        "GreedyFifty",
+        "probe_greedy_050",
+        r"= ([0-9.]+)\s+\[([0-9.]+), ([0-9.]+)\]",
+        "{0:.3f} [{1:.3f}, {2:.3f}]",
+    ),
+    (
+        "SampledSeventyFive",
+        "probe_sampled_075",
+        r"= ([0-9.]+)\s+\[([0-9.]+), ([0-9.]+)\]",
+        "{0:.3f} [{1:.3f}, {2:.3f}]",
+    ),
+    (
+        "GreedyGate",
+        "probe_greedy_gate",
+        r"\s([0-9.]+)\s+80\s+\[([0-9.]+), ([0-9.]+)\]",
+        "{0:.3f} [{1:.3f}, {2:.3f}]",
+    ),
+    (
+        "SampledGate",
+        "probe_sampled_gate",
+        r"\s([0-9.]+)\s+80\s+\[([0-9.]+), ([0-9.]+)\]",
+        "{0:.3f} [{1:.3f}, {2:.3f}]",
+    ),
+    (
+        "TsemAUC",
+        "trigger_tsem",
+        r"(0\.\d+)\s+\[([0-9.]+), ([0-9.]+)\]",
+        "{0:.3f} [{1:.3f}, {2:.3f}]",
+    ),
+    ("EpaAUC", "trigger_epa", r"(0\.\d+)\s+\[([0-9.]+), ([0-9.]+)\]", "{0:.3f} [{1:.3f}, {2:.3f}]"),
     (
         "PtwoCI",
         "pass2",
@@ -720,8 +767,14 @@ def main() -> None:
         print(f"  wrote results/tables/{name}")
     (REPO / "results/RESULTS.md").write_text(results_page())
     print("  wrote results/RESULTS.md")
-    gen = REPO / "paper/generated"
-    gen.mkdir(parents=True, exist_ok=True)
+    for gdir in ("paper/generated", "thesis/generated"):
+        gen = REPO / gdir
+        gen.mkdir(parents=True, exist_ok=True)
+        _write_generated(gen)
+    print("  wrote paper/generated and thesis/generated")
+
+
+def _write_generated(gen: Path) -> None:
     (gen / "numbers.tex").write_text(numbers_tex())
     for name, fn in (
         ("table1.tex", table1_tex),
@@ -730,7 +783,6 @@ def main() -> None:
         ("table3_summary.tex", table3_summary_tex),
     ):
         (gen / name).write_text(fn())
-    print("  wrote paper/generated/numbers.tex")
 
 
 if __name__ == "__main__":

@@ -56,6 +56,28 @@ SOURCES: dict[str, Source] = {
     "figs": Source("paper_figures.py", ("--only", "1,2", "--print-only")),
     "tax": Source("occupancy_tax.py"),
     "worker": Source("worker_memory.py"),
+    # Phase 3-4 value side (thesis chapter 5): the seeded replication, scored one
+    # file per source so every printed line is unique (NOTES 2026-09-22).
+    "probe_sampled": Source(
+        "score_prefix_probe.py",
+        (
+            "--probe",
+            "results/raw/spoken_mqa/prefix_probe_seedA.json",
+            "--items",
+            "results/raw/spoken_mqa/multi_step_reasoning-seed20260922.json",
+        ),
+    ),
+    "probe_greedy": Source(
+        "score_prefix_probe.py",
+        (
+            "--probe",
+            "results/raw/spoken_mqa/prefix_probe_seedB.json",
+            "--items",
+            "results/raw/spoken_mqa/multi_step_reasoning-seed20260922.json",
+        ),
+    ),
+    "trigger": Source("trigger_auc.py"),
+    "audit": Source("audit_gpu_offload.py"),
     # The calibrated planner simulation: fill p 0.1 is the only setting that
     # matches both measured commit fractions (NOTES, CORRECTION to "LEVEL-2
     # PLANNER, SIMULATED"). Writes the DP policy table, which fill does not change.
@@ -179,6 +201,77 @@ TAX_FULL = (
 )
 
 CLAIMS: tuple[Claim, ...] = (
+    Claim(
+        "probe_greedy_075",
+        "Greedy draft usable at three-quarters of the utterance (registered test vs break-even)",
+        "probe_greedy",
+        r"^\s+0\.75\s+\d+/80 = ",
+        "2026-09-22 — Replication and greedy on the seeded 80. The pre-registered test FALSIFIES",
+    ),
+    Claim(
+        "probe_greedy_090",
+        "Greedy draft usable at 0.90 of the utterance (exploratory)",
+        "probe_greedy",
+        r"^\s+0\.90\s+\d+/80 = ",
+        "2026-09-22 — Replication and greedy on the seeded 80. The pre-registered test FALSIFIES",
+    ),
+    Claim(
+        "probe_greedy_050",
+        "Greedy draft usable at half the utterance",
+        "probe_greedy",
+        r"^\s+0\.50\s+\d+/80 = ",
+        "2026-09-22 — Replication and greedy on the seeded 80. The pre-registered test FALSIFIES",
+    ),
+    Claim(
+        "probe_greedy_gate",
+        "Gold accuracy from the full transcript, greedy (the probe's gate)",
+        "probe_greedy",
+        r"<- GATE",
+        "2026-09-22 — Replication and greedy on the seeded 80. The pre-registered test FALSIFIES",
+    ),
+    Claim(
+        "probe_sampled_gate",
+        "Gold accuracy from the full transcript, T=0.5 (the probe's gate)",
+        "probe_sampled",
+        r"<- GATE",
+        "2026-09-22 — Replication and greedy on the seeded 80. The pre-registered test FALSIFIES",
+    ),
+    Claim(
+        "probe_sampled_075",
+        "T=0.5 draft usable at three-quarters of the utterance",
+        "probe_sampled",
+        r"^\s+0\.75\s+\d+/80 = ",
+        "2026-09-22 — Replication and greedy on the seeded 80. The pre-registered test FALSIFIES",
+    ),
+    Claim(
+        "trigger_tsem",
+        "Semantic trigger: AUC for more than 900 ms of speech remaining",
+        "trigger",
+        r"T-SEM \(semantic\)",
+        "CORRECTION (2026-09-21) to the EPA entry above. Original text left unedited",
+    ),
+    Claim(
+        "trigger_epa",
+        "Acoustic endpoint-anticipation trigger: AUC for the same",
+        "trigger",
+        r"EPA \(acoustic\)\s+0",
+        "CORRECTION (2026-09-21) to the EPA entry above. Original text left unedited",
+    ),
+    Claim(
+        "trigger_points",
+        "Trigger evaluation: decision points, utterances, runs",
+        "trigger",
+        r"^decision points:",
+        "CORRECTION (2026-09-21) to the EPA entry above. Original text left unedited",
+    ),
+    Claim(
+        "llm_rate",
+        "Language-model decode rate on the device, per token",
+        "audit",
+        r"with a rate: \d+ runs",
+        "CORRECTION (2026-09-21c) to the CPU-fallback audit above. Outcome holds, two of "
+        "its three legs do not",
+    ),
     Claim(
         "p4_ci",
         "dWER mean, multi_step, pass 2k: interval and worse/better counts",
