@@ -63,20 +63,23 @@ above the solo model of its own tail
 (\needsclaim{final over solo model, multi-step}{2026-10-06 --- PASS 2 SCORED}).
 On the short development set it was clearly slower
 (\needsclaim{dev-set TTFA regression}{same entry}), a property of the design
-at short durations. The registered prediction failed on this pass, and its two
-causes became the gate and the freeze.
+at short durations. The registered prediction failed on this pass. Two
+mechanisms were proposed for the failure, the orphaned decode at the endpoint
+and speculation on utterances too short to pay; the freeze and the gate are
+the responses to them, and only the first mechanism was tested directly.
 
 \section{Preemption}
 \label{sec:preemption}
 
 Three designs for stopping the orphaned hypothesis were tried, each
-pre-registered with the same bars.
+pre-registered before its run.
 \begin{itemize}
 \item \textbf{Kill and respawn.} Falsified as run
   (\needsclaim{final over solo model under KILL}{2026-10-06 --- P9 FALSIFIED
-  AS RUN}). By elimination, the respawn landed at every endpoint.
+  AS RUN}). The design respawned the worker at every endpoint, and by
+  elimination the respawn caused the slowdown.
 \item \textbf{Kill and promote a hot spare.} Not testable. Its validity check,
-  which voids a run whose spawn overlaps a scored endpoint-to-final window,
+  which voided a run in which a spawn overlapped any endpoint-to-final window,
   failed in every attempt. The first attempt's favourable result was withdrawn
   for that reason.
 \item \textbf{Freeze.} Against letting the orphan race the final, freezing it
@@ -117,8 +120,9 @@ hypothesis, at no detectable TTFA cost (\DevTTFA). On multi-step problems:
   be absent: mean \PfourMean{} \PfourCI, with \PfourWorse{} items worse and
   \PfourBetter{} better.
 \item \textbf{The final decode} runs at \PsixRatio{} of the solo model of its
-  tail, consistent with the freeze removing the overlap penalty that pass 2
-  paid.
+  tail. Pass 2's final ran above its solo model, but the two passes differ
+  in preemption, gate, quiet period and build, so this is not a paired
+  comparison.
 \item \textbf{Energy.} The listener costs \EnergyListenerr{} per turn, net of
   the idle floor, which is \SevenJms{} of time saved. Frozen decodes resumed
   and discarded after the reply cost a net mean of \StaleMean\,J each, and
@@ -175,10 +179,11 @@ boundaries.
 Boundaries that no logged run reached are filled synthetically, at a rate
 calibrated so that the simulated committed fractions match those measured with
 and without the gate. Run through the simulator, the gate reproduces its
-measured saving: \PlannerVal{} simulated, against \PthreeRed{} measured. The
-simulated interval does not contain the value measured on the same items, so
-the validation is approximate. The real check is the committed fraction, which
-the calibration matches.
+saving as \PlannerVal, against \PthreeRed{} measured; the value measured on
+the same items lies just outside the simulated interval. This is a weak
+check: the final's cost per second was fitted largely from the same contrast,
+and the fill rate was chosen to match the measured committed fractions, so
+those fractions are a calibration target rather than a test.
 
 \textbf{Result.} At the gate's duty bound, the median paired per-item TTFA
 reduction of the planner over the gate is \PlannerDP. Without the bound it is
@@ -191,10 +196,11 @@ elapsed speech might capture it; that is a hypothesis, not simulated here.
 
 \section{Summary}
 
-The allocator spends the listening window on the listener. With a feasibility
+The listening window goes to the listener: the allocator never spends it on
+the thinker, and the listener's gate spends it where commits can pay. With the
 gate and a freeze at the endpoint, the listener cuts the median paired TTFA on
 long utterances by \PthreeRed{}, abstains on short ones, and costs
 \EnergyListenerr{} per turn. On this task the allocator never spends the
-window on the thinker, and its log shows why. A planner that reasons about
-the endpoint's hazard does not beat the gate by more than \PlannerDP{} at the
-median.
+window on the thinker, and its log shows why. In simulation, a planner that
+reasons about the endpoint's hazard beats the gate by a median of
+\PlannerDP{}.

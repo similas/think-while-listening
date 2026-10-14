@@ -8180,3 +8180,20 @@ Recorded as given.
    labelled post hoc.
 5. NEXT: Limitations, the abstract and the generative-AI-use disclosure from
    RESULTS.md, then pass 9 when Ali is home.
+
+## 2026-10-14 — CORRECTION: trigger_auc.py counted the "no utterance" sentinel as an utterance
+
+Found by the reviewer while building the thesis's chapter 5. The trigger
+decision points (results/raw/triggers/decision_points.json) hold 16 real
+dev-set utterances plus 6 points with utterance = -1, the sentinel for "no
+utterance index". The scorer printed "utterances: 17". It now prints 16, with
+the 6 unindexed points counted separately. The registered intervals
+(T-SEM 0.557 [0.309, 0.820], EPA 0.523 [0.321, 0.734]) are UNCHANGED and not
+re-fitted. Their bootstrap resampled the 6 unindexed points as one cluster,
+which is how they were registered; that is recorded here rather than
+corrected after the fact. The thesis reports 16 utterances plus 6 unindexed
+points.
+
+The thesis also cites the full-pass residency figure (pass 1r, with rep U1)
+as a registered claim: the p1r_full source, "PAIRED TTFA" line. It was
+already a sensitivity line in "CORRECTION to PASS 1r SCORED".

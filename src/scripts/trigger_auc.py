@@ -146,9 +146,14 @@ def main() -> None:
     rows = [r for r in json.loads(args.points.read_text()) if "epa" in r and "tsem" in r]
     labels = [int(r["remaining_ms"] > HORIZON_MS) for r in rows]
     base = sum(labels) / len(labels)
+    # utterance -1 is the "no utterance index" sentinel, not an utterance. It is
+    # counted separately; the bootstrap still resamples those points as one
+    # cluster, as it did when the registered intervals were computed.
+    unindexed = sum(1 for r in rows if r["utterance"] == -1)
     print(
-        f"decision points: {len(rows)}   utterances: {len({r['utterance'] for r in rows})}   "
-        f"runs: {len({r['run'] for r in rows})}"
+        f"decision points: {len(rows)}   utterances: "
+        f"{len({r['utterance'] for r in rows if r['utterance'] != -1})}   "
+        f"points with no utterance index: {unindexed}   runs: {len({r['run'] for r in rows})}"
     )
     print(f"remaining speech: median {median([r['remaining_ms'] for r in rows]):.0f} ms")
     print(

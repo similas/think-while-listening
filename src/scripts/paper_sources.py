@@ -202,6 +202,13 @@ TAX_FULL = (
 
 CLAIMS: tuple[Claim, ...] = (
     Claim(
+        "residency_full",
+        "Residency, full pass including the repetition run during the fence breach (sensitivity)",
+        "p1r_full",
+        r"^PAIRED TTFA",
+        '2026-10-13 — CORRECTION to "PASS 1r SCORED" (reviewer, 4 findings)',
+    ),
+    Claim(
         "probe_greedy_075",
         "Greedy draft usable at three-quarters of the utterance (registered test vs break-even)",
         "probe_greedy",

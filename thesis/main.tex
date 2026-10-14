@@ -25,7 +25,7 @@
 % --- Verify with the graduate program assistant (brief v1 §9) -------------
 \newcommand{\thesistitle}{The Window Belongs to the Listener: Allocating
 Think-While-Listening Compute on a Device That Pays for It}
-\newcommand{\degreename}{Master of Computer Science}            % VERIFY
+\newcommand{\degreename}{Master of Computer Science}            % VERIFY: exact wording
 \newcommand{\departmentname}{Department of Computer Science and Software
 Engineering}                                                    % VERIFY
 \newcommand{\depositdate}{TODO Month Year}                       % VERIFY
@@ -47,7 +47,7 @@ in the\\
 \departmentname\par
 \vspace{0.5in}
 Presented in Partial Fulfillment of the Requirements\\
-for the Degree of \degreename\ (Computer Science) at\\
+for the Degree of \degreename\ at\\
 Concordia University\\
 Montreal, Quebec, Canada\par
 \vspace{0.5in}
@@ -68,7 +68,7 @@ School of Graduate Studies
 By: Ali Salimi Sadr\\
 Entitled: \thesistitle\\[1ex]
 and submitted in partial fulfillment of the requirements for the degree of
-\degreename\ (Computer Science) complies with the regulations of the
+\degreename\ complies with the regulations of the
 University and meets the accepted standards with respect to originality and
 quality.\\[2ex]
 Signed by the final examining committee:\\[3ex]
@@ -100,6 +100,7 @@ TODO: acknowledgements.
 \addcontentsline{toc}{chapter}{Contribution of Authors}
 TODO: contribution of authors, consistent with the generative-AI disclosure.
 
+\renewcommand{\contentsname}{Table of Contents}
 \tableofcontents
 \listoffigures
 \listoftables
@@ -128,7 +129,9 @@ VAD & voice-activity detection \\
 \clearpage
 \pagenumbering{arabic}
 
-% Chapters 1, 2, 7, 8 and the appendices follow.
+% Chapters 1, 2, 7, 8 and the appendices follow. Until chapters 1-2 exist, the
+% counter is set so chapter 3 numbers as 3; remove when they are added.
+\setcounter{chapter}{2}
 \include{chapters/ch3_methods}
 \include{chapters/ch4_cost}
 \include{chapters/ch5_value}

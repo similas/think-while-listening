@@ -5,8 +5,9 @@
 Chapter~\ref{ch:cost} priced the thinker's speculation. This chapter asks what
 it buys. The answer is a negative, and the aim is to state it precisely: on
 this task a reply draft is rarely usable at any point where it can still
-finish. When it is usable, it is too late. No trigger available to the
-pipeline can tell the two cases apart in advance.
+finish, and when it becomes usable, little time is left. The two triggers we
+evaluated could not be shown to tell the cases apart; whether any trigger
+could remains open.
 
 \section{What a usable draft is}
 \label{sec:usable}
@@ -14,7 +15,7 @@ pipeline can tell the two cases apart in advance.
 A draft saves time only if what it would say first is what the final reply
 says first. We call a draft usable if its first synthesized chunk is a word
 prefix of the first chunk of the reply generated from the full transcript.
-Matches that share no digit and no content word with the problem are
+Matches that contain no digit and share no content word with the problem are
 reported separately. The break-even usability follows from the measured costs: a draft
 is worth issuing only if the probability that it is usable exceeds
 $p^\ast = c / (c + s)$. Here $c$ is the overlap cost of a draft still running
@@ -32,8 +33,9 @@ seeded items were run twice: once sampling at temperature 0.5, once greedy.
 \textbf{The gate.} The probe is meaningful only if the model can answer the
 full problem. From the full transcript, its final answer is correct on
 \SampledGate{} of items when sampling, which fails the registered 30\% gate.
-Greedy, it is correct on \GreedyGate, which passes. Accuracy-scored live runs
-therefore decode greedily.
+Greedy, it is correct on \GreedyGate, which passes. The usability curve below
+is therefore the greedy one; the live pipeline itself replies at temperature
+0.5.
 
 \textbf{The curve.} Greedy usability is \GreedyFifty{} at half the utterance,
 \GreedySeventyFive{} at three-quarters (\GreedySeventyFiveK{} items) and
@@ -75,7 +77,7 @@ At $f^\ast$, greedy usability on the probe's curve is \FstarUsable, within
 sampling error of the break-even \BreakEven. This is the crux of the negative.
 Where a draft fits, it is rarely worth issuing. Where it would be worth
 issuing, it has stopped fitting. The two curves meet at the edge of
-break-even, not above it.
+break-even; that usability there is above break-even is not shown.
 
 \section{Could a trigger tell?}
 \label{sec:triggers}
@@ -84,16 +86,22 @@ A trigger that predicted the remaining speech could time drafts better than a
 fixed fraction. Two were evaluated against whether more than 900\,ms of speech
 remained: a semantic trigger on the partial transcript, and an acoustic
 endpoint-anticipation model. Over \TriggerPoints{} decision points from
-\TriggerUtts{} utterances, their AUCs are \TsemAUC{} and \EpaAUC. Neither is
-distinguishable from chance on this set, and the intervals are too wide to
-call either useless. The acoustic model is also disqualified on time alone: it
-runs slower than real time on this device.
+\TriggerUtts{} utterances of the development set (and \TriggerUnindexed{}
+points with no utterance index), their AUCs are \TsemAUC{} and \EpaAUC. Neither
+is distinguishable from chance on this set, and the intervals are too wide to
+call either useless. The question is open beyond ``not detectable''. Reading
+the triggers on the multi-step set was registered not to happen once the
+probe closed the value side, and it was not done. The acoustic model is also
+disqualified on time alone: it runs slower than real time on this device
+(\needsclaim{acoustic trigger, seconds per second of audio}{CORRECTION
+(2026-09-21) to the EPA entry above}).
 
 \section{Drafts in the live pipeline}
 \label{sec:live-thinker}
 
-Live, the drafts confirm the probe. In the first live comparison, drafts that
-restarted on every new partial matched the final reply's first sentence in
+Live drafts were no better. In the first live comparison, on the development
+set and before the probe existed, drafts that restarted on every new partial
+matched the final reply's first sentence in
 none of the turns where one existed
 (\needsclaim{first-sentence matches}{SPEC-ALWAYS-PG vs SPEC-CONTINUE: the
 prediction scored}). Successive drafts shared few of their tokens
@@ -115,7 +123,8 @@ On this task, with this model, the thinker's speculation has a measured cost
 (Chapter~\ref{ch:cost}) and no measured value. The negative is specific. A
 draft becomes usable only near the end of the utterance, after the question
 has been heard. By then the window to finish it has closed or nearly closed,
-and nothing the pipeline can observe predicts the end well enough to time it.
-The result would change on a task with short questions and long answers, and
-the allocator in Chapter~\ref{ch:allocator} would then issue drafts, because it
-reads the measured usability curve rather than assuming one.
+and neither trigger we evaluated could be shown to predict the end. The
+result may differ on tasks whose questions come early. The allocator in
+Chapter~\ref{ch:allocator} reads the measured usability curve, so on such a
+task its rule would admit drafts wherever the curve clears break-even within
+the window.

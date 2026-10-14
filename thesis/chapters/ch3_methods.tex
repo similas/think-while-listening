@@ -19,9 +19,9 @@ mode and software versions are recorded in every run's header.
 The board's six CPU cores are split in two. The language-model server runs on
 three cores with every layer offloaded to the GPU. The agent, the voice-activity
 detector and both speech recognizers share the other three. Offloading was
-audited: every run that called the language model ran in a server segment that
-reported GPU decoding. The decode rate across those runs had a median of
-\LlmRate\,ms per token.
+audited over the runs made after the server's offload guard was added: none
+ran in a server segment that warned of a missing GPU, and the segments' decode
+rates had a median of \LlmRate\,ms per token.
 
 \section{Pipeline}
 \label{sec:pipeline}
@@ -92,7 +92,9 @@ repetition, and the headline uses the run without it
 
 \textbf{Pre-registration.} Every prediction, its bar and its scoring rule were
 committed to the lab notebook before the run that tests it. A correction is
-appended, never edited in. Each prediction is scored once. The full ledger
+appended, never edited in. Each pass is scored once, by the rule registered
+for it; a prediction tested in more than one pass has one ledger entry per
+pass, and a re-scoring or a reconciliation is recorded as such. The full ledger
 is in Appendix~\ref{app:prereg}. It records where a prediction was stated
 informally, where a bar moved before its data, and where a scorer was written
 after the data.
@@ -113,12 +115,14 @@ it.
 differently sized audio once suggested a large pipeline overhead in the
 recognizer. Paired per segment on fixed audio, the overhead disappeared
 (\needsclaim{pipeline minus isolation, paired per segment}{2026-09-16 --- STT
-inflation attributed}). Every comparison since pairs on the item, within run.
+inflation attributed}). Every claim-bearing comparison since pairs on the
+item; where a design pairs across runs or resamples runs, the result says so.
 
 \textbf{No underpowered null is reported as a null.} The triggers evaluated
 in Chapter~\ref{ch:value} have AUCs of \TsemAUC{} (semantic) and \EpaAUC{}
-(acoustic) over \TriggerPoints{} decision points from \TriggerUtts{}
-utterances. Intervals that wide support ``not detectable on this set'', not
+(acoustic) over \TriggerPoints{} decision points from \TriggerUtts{} utterances
+of the development set, and \TriggerUnindexed{} points with no utterance index.
+Intervals that wide support ``not detectable on this set'', not
 ``does not predict'', and that is how they are reported.
 
 \textbf{Report marginal rates.} An agreement statistic between two
@@ -130,8 +134,8 @@ flagged as degenerate.
 \textbf{Compare on common support.} When one configuration covers items that
 another does not, paired deltas are reported on the items both cover and on
 the newly covered items separately. Pooled, one comparison changed sign
-(\needsclaim{anticipation lead, pooled vs common support}{CLAUDE.md §2,
-2026-09-17}).
+(\needsclaim{anticipation lead, pooled vs common support}{Two-engine STT,
+live (B1)}).
 
 \textbf{A controller has to vary.} A controller whose output is constant is
 reported with its inputs and its decision log, not as a policy. The
@@ -141,8 +145,9 @@ that way, with the reason for each decision (Chapter~\ref{ch:allocator}).
 \textbf{Derive corpus-dependent constants.} A constant that depends on the
 corpus is derived at run time or asserted at start. The feasibility gate's
 duration prior is derived at run start as the median duration of the set's
-files and recorded in the run header. The break-even usability \BreakEven{}
-is derived from the measured overlap cost and the measured saving.
+files and recorded in the run header. Constants fixed at registration, such as
+the break-even usability in Chapter~\ref{ch:value}, are stated as registered
+and are not re-derived per corpus.
 
 \textbf{Wait for the event, not a proxy.} Three runs on one day were voided by
 a harness that waited for a count, a silence or a clock instead of the event

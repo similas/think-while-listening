@@ -61,15 +61,16 @@ condition is one run made after its baseline, so time order is confounded
 with condition. The two sessions disagree on the size and on the order of
 conditions, and only the second was instrumented for huge pages.
 
-The mechanism the counters point to is transparent-huge-page fallback in the
-decoder's own allocations. The decoder allocates and frees working buffers on
-every call, and a co-resident footprint keeps the pool fragmented, so each new
-allocation falls back to small pages. Two mitigations were tried: loading the
-recognizer before the language model, and advising huge pages on its buffers.
-Neither recovered the huge pages
+The counters point to transparent-huge-page fallback in the decoder's own
+allocations. One explanation, offered after the fact and not tested, is that
+the decoder allocates and frees working buffers on every call while a
+co-resident footprint keeps the pool fragmented. Two per-process mitigations
+were tried: loading the recognizer before the language model, and advising
+huge pages on its buffers. Neither recovered the huge pages
 (\needsclaim{huge pages and decode time under each mitigation}{2026-09-16 ---
-THP mitigation: both levers fail}). The tax is a property of the platform,
-not of this pipeline.
+THP mitigation: both levers fail}). The system-wide huge-page policy was left
+untouched, so the tax could not be removed with the levers one process
+controls; whether a system-level change would remove it is open.
 
 \section{The thinker's overlap penalty}
 \label{sec:thinker-penalty}
@@ -92,10 +93,11 @@ $n=\ThinkerFinishedN$). The penalty depends on device state. Under a
 contended memory system it was larger
 (\needsclaim{contended overlap penalty}{Onset prediction test: PARTIALLY
 confirmed}). In one contended condition, drafts that had finished before the
-endpoint were penalised too. The cost also carries over: speculation in one
-turn delays the next
-(\needsclaim{carry-over onto the following turn}{SPEC-ALWAYS-PG vs
-SPEC-CONTINUE: the prediction scored}), which is why every comparison since
+endpoint were penalised too (\needsclaim{finished-draft penalty, B=64
+contended}{same entry}). The cost also carries over: speculation in one turn
+delays the next
+(\needsclaim{carry-over onto the following turn}{Policy carry-over is REAL:
+speculation costs the turn that FOLLOWS it}), which is why every comparison since
 uses a same-arm washout.
 
 These costs are the thinker's whether or not the draft is useful. Its value is
@@ -127,8 +129,8 @@ and what the first attempts got wrong.
 
 Keeping the second recognizer resident costs no detectable TTFA: \ResidencyTTFA,
 against the same pipeline with the partial engine never built. That headline
-drops one repetition run during a breach of the fence. With it, the result is
-the same. An idle resident engine adds +\ResidencyMem\,MB of agent memory at
+drops one repetition run during a breach of the fence. With it, the full pass
+gives \ResidencyFull, the same reading. An idle resident engine adds +\ResidencyMem\,MB of agent memory at
 run level (range \ResidencyMemRange\,MB over run pairs). The decoding
 hypothesis worker, a separate process, holds \WorkerPSS\,MB at spawn.
 
