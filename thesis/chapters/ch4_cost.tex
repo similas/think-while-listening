@@ -1,4 +1,4 @@
-% Chapter 4. Every number is a macro (generated/numbers.tex) or a \needsclaim box.
+% Chapter 4. Every number is a macro (generated/numbers.tex).
 \chapter{The Cost of Thinking While Listening}
 \label{ch:cost}
 
@@ -66,10 +66,10 @@ allocations. One explanation, offered after the fact and not tested, is that
 the decoder allocates and frees working buffers on every call while a
 co-resident footprint keeps the pool fragmented. Two per-process mitigations
 were tried: loading the recognizer before the language model, and advising
-huge pages on its buffers. Neither recovered the huge pages
-(\ThpMOne\,MB and \ThpMTwo\,MB of huge pages kept, and \ThpMThree\,MB with both, against \ThpMZero\,MB in the control). The system-wide huge-page policy was left
-untouched, so the tax could not be removed with the levers one process
-controls; whether a system-level change would remove it is open.
+huge pages on its buffers. Neither restored the recognizer's huge pages to the \AloneHuge\,MB it keeps
+alone: it kept \ThpMOne\,MB and \ThpMTwo\,MB, and \ThpMThree\,MB with both,
+against \ThpMZero\,MB in the control. The system-wide huge-page policy was
+left untouched; whether a system-level change would remove the tax is open.
 
 \section{The thinker's overlap penalty}
 \label{sec:thinker-penalty}
@@ -90,11 +90,12 @@ the same run, a draft still running at the endpoint delays the first audio by
 shows no detectable penalty in these runs (\ThinkerFinished,
 $n=\ThinkerFinishedN$). The penalty depends on device state. Under a
 contended memory system it was larger
-(\OnsetNinetySixRun{} for a draft still running at budget 96, $n=\OnsetNinetySixRunN$, timed in that test from speech onset). In one contended condition, drafts that had finished before the
-endpoint were penalised too (\OnsetSixtyFourFin, $n=\OnsetSixtyFourFinN$). The cost also carries over: speculation in one turn
-delays the next
-(\Carry{} on the following turn, $n=\CarryN$ turns, two interleaved runs), which is why every comparison since
-uses a same-arm washout.
+(\OnsetNinetySixRun\,ms \OnsetNinetySixRunCI{} for a draft still running at budget 96, $n=\OnsetNinetySixRunN$, timed in that test from speech onset). In some conditions, drafts that had finished before the endpoint were
+penalised too (\OnsetSixtyFourFin\,ms \OnsetSixtyFourFinCI, $n=\OnsetSixtyFourFinN$, at budget 64). Whether the cost carries over to the next turn is not established: the turn
+after a continuing draft took \Carry{} longer than the turn after a reactive
+one ($n=\CarryN$ turns, two interleaved runs), an interval that spans zero.
+The same-arm washout used in every comparison since is a precaution, not a
+response to a measured effect.
 
 These costs are the thinker's whether or not the draft is useful. Its value is
 the subject of Chapter~\ref{ch:value}.

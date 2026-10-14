@@ -4,7 +4,7 @@
 
 \section{The silence after the user stops}
 
-People taking turns in conversation leave gaps of a few hundred milliseconds
+People taking turns in conversation leave short gaps between them
 \cite{stivers2009universals}. A voice agent built as a cascade, with a speech
 recognizer, a language model and a speech synthesizer, answers much later,
 and later still when the whole cascade runs on a small device. On the device
@@ -16,9 +16,9 @@ language model before the user has finished, so that part of the reply is
 ready when the endpoint arrives
 \cite{predgen2025,ltsvoiceagent2026,epa2026,livemind2024}. Spoken language
 models pursue the same idea inside one model
-\cite{shanks2025,stitch2026,shih2025thinklisten}. These designs come from
-settings where compute is idle while the user speaks: a server whose reasoner
-waits for input, and a recognizer that runs somewhere else.
+\cite{shanks2025,stitch2026,shih2025thinklisten}. Whatever the design, the
+benefit depends on the compute spent while the user speaks being otherwise
+idle.
 
 \section{A device that pays for it}
 
@@ -68,7 +68,7 @@ is measured.
   the largest stage at every length.
 \item \textbf{The costs of speculation, priced on one axis.}
   \begin{itemize}
-  \item A co-residence tax on the recognizer, through huge-page fallback.
+  \item An occupancy tax on the recognizer, through huge-page fallback.
   \item A reply draft still decoding at the endpoint costs \ThinkerOverlap{}.
   \item A partial hypothesis still decoding at the endpoint costs the final
     \ListenerC\,ms per second of overlap.
@@ -94,9 +94,10 @@ is measured.
 \section{Method in brief}
 
 All measurements were made on one Jetson Orin Nano Super, with recorded and
-synthesized speech played into the pipeline in real time. Each experiment was
-pre-registered in a lab notebook before it ran, with its predictions, bars and
-scoring rule, and scored once. Corrections are appended, never edited in. A
+synthesized speech played into the pipeline in real time. Experiments were
+pre-registered in a lab notebook before they ran, with their predictions,
+bars and scoring rules. Where a pass was descriptive, or a scorer was written
+after the data, the ledger says so. Corrections are appended, never edited in. A
 claim registry ties every number in this thesis to the script and the runs
 that produce it (Chapter~\ref{ch:methods}).
 

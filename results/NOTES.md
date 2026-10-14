@@ -8271,3 +8271,33 @@ ARCHIVED, THEN REPRODUCED, WITH A CORRECTION
 
 The decode-rate audit is now pinned to runs started up to the measurement
 freeze (--until 2026-10-13T13:04-04:00), so pass 9 cannot move it.
+
+## 2026-10-14 — CORRECTION to "PROVENANCE GAPS CLOSED": carry-over not established
+
+Appended, not edited. From the reviewer's pass over 4c51f39 to 74caf9a.
+
+1. THE CARRY-OVER IS NOT ESTABLISHED. arm_compare.py's carry-over interval
+   held the after-REACTIVE median fixed and resampled only the other group,
+   which understates the uncertainty. Resampling both groups (now printed by
+   arm_compare.py as "two-sample bootstrap") gives +169 ms [-580, +1218],
+   n=12/14, on the same two runs. The interval spans zero. "Policy carry-over
+   is REAL" (2026-09-18) does not hold as stated. The same-arm washout it
+   motivated stays in the design as a precaution, not as a response to a
+   measured effect. The registered line is unchanged, and the thesis cites
+   the two-sample line.
+2. Under the registered onset_grid_penalties.py, the uncontended B=96
+   finished-draft interval is [+0.5, +179.3]: it now excludes zero, where
+   NOTES had [-9.3, +179.3]. The entry above called the bound differences
+   "a few ms" without flagging that this one crosses zero.
+3. The two-engine paired figure, +801 ms, is over n=6 UTTERANCES, not
+   n=12/12/18 turns. Those counts belong to the pooled, common-support and
+   newly covered leads.
+4. The registry's claims for the corrected figures (pipeline minus isolation,
+   the common-support leads, the EPA wall clock) now point to the correction
+   entry, not to the entries that hold the superseded numbers. The thesis-only
+   claims are now listed in RESULTS.md. trigger_auc.py no longer prints the
+   withdrawn "4.8x".
+5. Pass 2's baseline (NOPARTIAL, 2026-10-02) and treatment (COMMIT-WL,
+   2026-10-05) ran on different days. Its results carry the cross-date caveat
+   the thesis now states. The "every claim-bearing comparison has a same-day
+   baseline" rule holds from pass 1n onward.

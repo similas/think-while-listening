@@ -195,8 +195,8 @@ def main() -> None:
             f"  {name:>6}: precision {prec:.3f} = {k}/{n_fired}  "
             f"Wilson 95% [{lo:.3f}, {hi:.3f}]  threshold {thr:.4f}"
         )
-    print("  EPA is retained for completeness ONLY: at 11.5 s per 2.4 s segment")
-    print("  (4.8x real time) it is disqualified on wall clock whatever its")
+    print("  EPA is retained for completeness ONLY: it runs slower than real time")
+    print("  (src/scripts/epa_wallclock.py) and is disqualified on wall clock whatever its")
     print("  precision, and could not gate anything live on this device.")
 
     prec, thr, n_fired = chosen["tsem"]

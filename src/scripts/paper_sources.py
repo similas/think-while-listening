@@ -260,6 +260,10 @@ TAX_FULL = (
     "recognizer alone, paired per turn"
 )
 
+H_GAPS = (
+    "2026-10-14 — PROVENANCE GAPS CLOSED for the thesis: thirteen numbers, scripted or corrected"
+)
+H_GAPS2 = '2026-10-14 — CORRECTION to "PROVENANCE GAPS CLOSED": carry-over not established'
 H_ATTR09 = "2026-09-16 — STT inflation attributed: page reclaim, not GPU, not storage"
 H_THPMIT = "2026-09-16 — THP mitigation: both levers fail. The tax is a platform property."
 H_PG = "SPEC-ALWAYS-PG vs SPEC-CONTINUE: the prediction scored (2026-09-18)"
@@ -277,7 +281,7 @@ CLAIMS: tuple[Claim, ...] = (
         "Recognizer final decode, pipeline minus isolation, paired per segment",
         "attr",
         r"^paired pipeline - isolation: median",
-        H_ATTR09,
+        H_GAPS,
     ),
     Claim(
         "thp_m0",
@@ -330,10 +334,11 @@ CLAIMS: tuple[Claim, ...] = (
     ),
     Claim(
         "carry",
-        "Carry-over: TTFA of the turn after a SPEC-CONTINUE turn vs after REACTIVE",
+        "Carry-over: TTFA of the turn after a SPEC-CONTINUE turn vs after REACTIVE "
+        "(two-sample bootstrap)",
         "carry",
-        r"after\s+spec_continue:",
-        H_CARRY,
+        r"two-sample bootstrap, after spec_continue",
+        H_GAPS2,
     ),
     Claim(
         "p6_pass2",
@@ -389,28 +394,28 @@ CLAIMS: tuple[Claim, ...] = (
         "Anticipation lead, two engines, on the utterances both configurations covered",
         "twoeng",
         r"COMMON SUPPORT lead, shared",
-        H_TWO,
+        H_GAPS,
     ),
     Claim(
         "lead_new",
         "Anticipation lead, two engines, on the newly covered utterances",
         "twoeng",
         r"NEWLY COVERED lead, shared",
-        H_TWO,
+        H_GAPS,
     ),
     Claim(
         "epa_wall",
         "Acoustic trigger: wall clock per segment (logged mean)",
         "epa",
         r"logged mean over all",
-        H_EPA0,
+        H_GAPS,
     ),
     Claim(
         "epa_rtf",
         "Acoustic trigger: real-time factor, ratio of totals",
         "epa",
         r"ratio of totals, mean wall / mean audio",
-        H_EPA0,
+        H_GAPS,
     ),
     Claim(
         "residency_full",

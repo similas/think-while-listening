@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import collections
 import itertools
+import random
 from pathlib import Path
 from typing import Any
 
@@ -137,6 +138,21 @@ def main() -> None:
             flag = "  <-- CARRY-OVER" if (lo > 0 or hi < 0) else ""
             line += f"   delta {median(v) - median(ref):+6.0f} [{lo:+.0f}, {hi:+.0f}]{flag}"
         print(line)
+        if a != args.baseline and ref and v:
+            # CORRECTION 2026-10-14: the interval above holds the reference
+            # median fixed, so it ignores the reference group's own sampling
+            # error. Both groups are resampled here; this is the interval to cite.
+            rng = random.Random(0)
+            ds = sorted(
+                median([v[rng.randrange(len(v))] for _ in v])
+                - median([ref[rng.randrange(len(ref))] for _ in ref])
+                for _ in range(4000)
+            )
+            print(
+                f"    two-sample bootstrap, after {a} - after {args.baseline}: "
+                f"{median(v) - median(ref):+.0f} ms [{ds[100]:+.0f}, {ds[3899]:+.0f}] "
+                f"n={len(v)}/{len(ref)}"
+            )
     print("\n  A delta whose CI excludes zero means the preceding arm changed this")
     print("  turn: per-turn interleaving is then invalid and the design must use")
     print("  randomized blocks with a washout turn.")

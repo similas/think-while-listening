@@ -32,12 +32,10 @@ benchmarks evaluate voice agents and their turn-taking
 \section{Speech recognition while the user speaks}
 \label{sec:streaming-asr}
 
-Whisper \cite{radford2023whisper} is an encoder-decoder recognizer trained on
-a large weakly supervised corpus. It decodes fixed windows of audio, not a
-stream. Streaming uses of it decode the growing buffer repeatedly. Local
-agreement commits the prefix that consecutive hypotheses agree on, and later
-hypotheses decode only the audio after the committed point
-\cite{machacek2023whisperstreaming}. Simul-Whisper streams Whisper with
+Whisper \cite{radford2023whisper} is a recognizer trained with large-scale
+weak supervision. Turning it into a real-time transcription system
+\cite{machacek2023whisperstreaming} rests on local agreement: committing the
+prefix that consecutive hypotheses agree on. Simul-Whisper streams Whisper with
 attention-guided chunk decoding and detects words truncated at chunk
 boundaries \cite{wang2024simulwhisper}. Other work decides when a streaming
 recognizer should emit \cite{x2streaming2026}.
@@ -70,8 +68,8 @@ Full-duplex models remove the turn boundary altogether
 \cite{moshi2024,lws2026}. Reasoning models spend more compute at test time
 \cite{s1_2025}, which raises the stakes of when that compute can start.
 
-\textbf{The premise.} These designs share an assumption, usually unstated:
-the compute spent while the user speaks is otherwise idle. On a server
+\textbf{The premise.} Whatever the design, its benefit depends on the compute
+spent while the user speaks being otherwise idle. On a server
 running a reasoner that waits for input, it largely is. On a device where the
 recognizer and the reasoner share the hardware, it is not. That is the
 setting of this thesis.
@@ -115,7 +113,7 @@ Local agreement makes Whisper stream. &
 Committing while listening as a way to shorten the final decode, against
 reply speculation, on shared hardware. \\
 Co-running models interfere on shared SoCs. &
-A residency tax through huge-page fallback, from a process that does not
+An occupancy tax through huge-page fallback, from a process that does not
 run. \\
 Speculation needs a trigger. &
 A per-turn feasibility rule, its decision log, and a planner showing how
