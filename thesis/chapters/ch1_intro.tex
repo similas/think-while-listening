@@ -1,0 +1,113 @@
+% Chapter 1. Every number is a macro (generated/numbers.tex).
+\chapter{Introduction}
+\label{ch:intro}
+
+\section{The silence after the user stops}
+
+People taking turns in conversation leave gaps of a few hundred milliseconds
+\cite{stivers2009universals}. A voice agent built as a cascade, with a speech
+recognizer, a language model and a speech synthesizer, answers much later,
+and later still when the whole cascade runs on a small device. On the device
+studied here, a reactive pipeline answering spoken multi-step math problems
+starts speaking a median of \TTFAMulti\,ms after the user stops.
+
+The field's best-known remedy is to \emph{think while listening}: start the
+language model before the user has finished, so that part of the reply is
+ready when the endpoint arrives
+\cite{predgen2025,ltsvoiceagent2026,epa2026,livemind2024}. Spoken language
+models pursue the same idea inside one model
+\cite{shanks2025,stitch2026,shih2025thinklisten}. These designs come from
+settings where compute is idle while the user speaks: a server whose reasoner
+waits for input, and a recognizer that runs somewhere else.
+
+\section{A device that pays for it}
+
+On an edge system-on-chip with unified memory, the recognizer, the reasoner
+and the synthesizer share one memory system and one set of cores. Nothing
+waits for free. A speculative decode competes with whatever runs next to it,
+and co-residence alone can slow a neighbour before any decode runs. Whether
+thinking while listening helps on such a device is an empirical question, and
+the answer depends on what the silence is made of.
+
+On our device, the silence is mostly the recognizer's. Its final decode is the
+largest stage after speech on every utterance length we measure:
+\SttShareMulti\% of the stage sum on multi-step problems, against
+\LlmShareMulti\% for the language model's first token. Speculating the reply
+attacks a small stage. Speculating the \emph{transcript}, by committing what
+the recognizer has already agreed on while the user is still speaking, attacks
+the largest.
+
+\section{Thesis statement}
+
+\begin{quote}
+On a unified-memory edge device the silence after the user stops belongs
+mostly to the recognizer, not the language model. A rule that allocates the
+listening window from measured costs spends it on the listener, and the gain
+is measured.
+\end{quote}
+
+\section{Research questions}
+
+\begin{description}
+\item[RQ1] Where does the time between the end of speech and the first reply
+  audio go on a unified-memory edge device? (Chapter~\ref{ch:cost})
+\item[RQ2] What does speculation cost on shared silicon, for each consumer of
+  the listening window? (Chapter~\ref{ch:cost})
+\item[RQ3] What is reply speculation worth on a realistic spoken task, and
+  could the pipeline tell when it would be? (Chapter~\ref{ch:value})
+\item[RQ4] Can a per-turn rule allocate the window, what does it gain, and how
+  close is it to a planner that reasons about the endpoint?
+  (Chapter~\ref{ch:allocator})
+\end{description}
+
+\section{Contributions}
+
+\begin{enumerate}
+\item \textbf{A decomposition of the silence} on a unified-memory device, by
+  stage and utterance length, showing that the recognizer's final decode is
+  the largest stage at every length.
+\item \textbf{The costs of speculation, priced on one axis.}
+  \begin{itemize}
+  \item A co-residence tax on the recognizer, through huge-page fallback.
+  \item A reply draft still decoding at the endpoint costs \ThinkerOverlap{}.
+  \item A partial hypothesis still decoding at the endpoint costs the final
+    \ListenerC\,ms per second of overlap.
+  \end{itemize}
+\item \textbf{A precise negative on the thinker's side.} On spoken multi-step
+  problems a reply draft becomes usable only near the end of the utterance,
+  where it no longer fits before the endpoint. The registered test closed the
+  value side.
+\item \textbf{A rule that allocates the window, and its measured gain.} A
+  feasibility gate and a freeze of the orphaned hypothesis let the listener cut
+  the median paired time to first audio on multi-step problems by \PthreeRed{}
+  ($n=\PthreeN$ items). The interval's lower end lies below the bar we
+  registered. On short utterances the gate abstains at no detectable TTFA
+  cost.
+\item \textbf{A formalisation} of the allocation problem as a finite-horizon
+  planner over the endpoint hazard. In simulation, calibrated from the logs,
+  the gate is within \PlannerDP{} of the planner's optimum at the median.
+\item \textbf{A methods record.} Every prediction was registered before its
+  data and every correction is kept in place. Every number is produced by a
+  script from the logs.
+\end{enumerate}
+
+\section{Method in brief}
+
+All measurements were made on one Jetson Orin Nano Super, with recorded and
+synthesized speech played into the pipeline in real time. Each experiment was
+pre-registered in a lab notebook before it ran, with its predictions, bars and
+scoring rule, and scored once. Corrections are appended, never edited in. A
+claim registry ties every number in this thesis to the script and the runs
+that produce it (Chapter~\ref{ch:methods}).
+
+\section{Outline}
+
+Chapter~\ref{ch:background} reviews cascaded voice agents, streaming
+recognition, thinking while listening, and interference on shared hardware.
+Chapter~\ref{ch:methods} describes the testbed and the methodology, including
+the methods results. Chapter~\ref{ch:cost} measures the cost of thinking while
+listening, and Chapter~\ref{ch:value} its value. Chapter~\ref{ch:allocator}
+builds and measures the window allocator. Chapter~\ref{ch:discussion}
+discusses the results and their limitations, and Chapter~\ref{ch:conclusion}
+concludes. The appendices hold the capture-path hazards, the retractions log
+and the full pre-registration ledger.

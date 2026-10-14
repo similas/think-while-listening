@@ -1,0 +1,59 @@
+% Chapter 8. Every number is a macro (generated/numbers.tex).
+\chapter{Conclusion and Future Work}
+\label{ch:conclusion}
+
+\section{Conclusion}
+
+A cascaded voice agent on a unified-memory edge device goes quiet for
+seconds after the user stops. This thesis measured what that silence is made
+of, priced the two ways of spending the listening window against each other,
+and built a rule that chooses between them.
+
+The silence belongs mostly to the recognizer. Speculating the reply, the
+field's usual remedy, attacks a small stage, costs \ThinkerOverlap{} whenever
+a draft overlaps the endpoint, and on spoken multi-step problems is rarely
+usable early enough to finish. Speculating the transcript attacks the largest
+stage. Its own overlap penalty can be removed by freezing the orphaned
+decode, and a feasibility gate keeps it off utterances too short to pay. With
+both, the listener cuts the median paired time to first audio on long
+utterances by \PthreeRed{} ($n=\PthreeN$ items) and abstains on short ones.
+A planner that reasons about when the user will stop does little better in
+simulation, \PlannerDP{} at the median. On this device, the window belongs to
+the listener, and a simple rule is enough to give it.
+
+\section{Future work}
+
+\begin{itemize}
+\item \textbf{An adaptive prior.} The gate stops early on utterances longer
+  than its prior. A prior conditioned on the speech heard so far might
+  capture what the planner's simulation finds there.
+\item \textbf{Other tasks.} The thinker's negative rests on questions coming
+  last. Tasks with early questions and long answers could reverse it, and the
+  allocator's rule would then admit drafts.
+\item \textbf{Other devices.} A GPU recognizer, a larger memory, or a
+  different huge-page policy would change the stage shares and the tax. The
+  method transfers; the numbers have to be re-measured.
+\item \textbf{The system huge-page policy.} Only per-process levers were tried
+  against the occupancy tax. A system-level policy change is untested.
+\item \textbf{Live speakers.} The measurements use speech played in at real
+  time. More speakers and spontaneous speech would test how far the
+  endpointing and the gate carry.
+\end{itemize}
+
+\section{Generative-AI use}
+\label{sec:genai-thesis}
+
+Claude Code, Anthropic's agentic coding tool, was used throughout this work
+under the author's direction. It ran Claude Fable~5 (2026-09-15), Claude
+Opus~5 (2026-09-15 to 2026-10-06) and Claude Opus~5.5 (from 2026-10-06). It:
+\begin{itemize}
+\item wrote most of the software and analysis scripts;
+\item executed the measurement runs the author approved;
+\item drafted the pre-registrations, the lab-notebook entries, and the text of
+  this thesis and of the related paper;
+\item reviewed its own work through separate reviewer instances.
+\end{itemize}
+The author designed the study, approved every pre-registered prediction, made
+every decision, approved each run, and verified the text. Every measured or
+simulated value in this thesis is produced by a script from the logs;
+registered bars and set sizes are stated as designed.

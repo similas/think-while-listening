@@ -1,0 +1,130 @@
+% Chapter 2. Background and related work. No measured values.
+\chapter{Background and Related Work}
+\label{ch:background}
+
+\section{Cascaded voice agents}
+\label{sec:cascade}
+
+A cascaded voice agent turns speech into a reply in stages:
+\begin{enumerate}
+\item a voice-activity detector decides when the user has started and stopped
+  speaking;
+\item a speech recognizer transcribes what was said;
+\item a language model writes the reply;
+\item a synthesizer speaks it.
+\end{enumerate}
+Each stage waits for the previous one at the turn boundary, so the delay the
+user hears is a sum. The endpoint is itself a design choice: a detector waits
+for a stretch of silence before declaring the turn over, trading a later
+endpoint against cutting the user off. Turn-taking can instead be predicted,
+for example by projecting voice activity forward \cite{vap2022}. Human gaps
+between turns are short \cite{stivers2009universals}, which is why latency to
+the first reply audio, rather than total generation time, is the measure
+that matters in conversation.
+
+Cascades remain common on devices because each stage can be chosen, replaced
+and run within a small memory budget. Low-latency agent designs, both cascaded
+and speech-to-speech, are described in
+\cite{ilava2025,chipchat2025,kame2026,streamrag2025,moshirag2026}, and
+benchmarks evaluate voice agents and their turn-taking
+\cite{fullduplexbench2025,fullduplexbenchv3_2026,voicebench2026,voiceagentbench2025,evabench2026,provoicebench2026,sid2026}.
+
+\section{Speech recognition while the user speaks}
+\label{sec:streaming-asr}
+
+Whisper \cite{radford2023whisper} is an encoder-decoder recognizer trained on
+a large weakly supervised corpus. It decodes fixed windows of audio, not a
+stream. Streaming uses of it decode the growing buffer repeatedly. Local
+agreement commits the prefix that consecutive hypotheses agree on, and later
+hypotheses decode only the audio after the committed point
+\cite{machacek2023whisperstreaming}. Simul-Whisper streams Whisper with
+attention-guided chunk decoding and detects words truncated at chunk
+boundaries \cite{wang2024simulwhisper}. Other work decides when a streaming
+recognizer should emit \cite{x2streaming2026}.
+
+These methods aim at a live transcript. This thesis uses local agreement for a
+different end. What it commits before the endpoint is audio that the final
+decode no longer has to process, and that shortens the silence after the user
+stops.
+
+\section{Thinking while listening}
+\label{sec:twl}
+
+\textbf{Speculating the reply in a cascade.} Several systems start the
+language model on partial input, through:
+\begin{itemize}
+\item input-time speculation \cite{predgen2025};
+\item semantic triggering with incremental reasoning \cite{ltsvoiceagent2026};
+\item endpoint anticipation \cite{epa2026};
+\item simultaneous inference \cite{livemind2024};
+\item a dual-track streaming response \cite{ddtsr2026}.
+\end{itemize}
+They differ in when they start, what they draft and how they reconcile the
+draft with the final input. All of them spend compute before the endpoint in
+the hope that it shortens the time after it.
+
+\textbf{Spoken language models.} Models that take speech in directly
+interleave hearing, thinking and speaking
+\cite{shanks2025,stitch2026,miniomnireasoner2025,chronothink2026,shih2025thinklisten}.
+Full-duplex models remove the turn boundary altogether
+\cite{moshi2024,lws2026}. Reasoning models spend more compute at test time
+\cite{s1_2025}, which raises the stakes of when that compute can start.
+
+\textbf{The premise.} These designs share an assumption, usually unstated:
+the compute spent while the user speaks is otherwise idle. On a server
+running a reasoner that waits for input, it largely is. On a device where the
+recognizer and the reasoner share the hardware, it is not. That is the
+setting of this thesis.
+
+\section{Sharing a unified-memory device}
+\label{sec:shared}
+
+On an edge system-on-chip, the CPU cores, the GPU and the accelerators share
+one physical memory. Workloads that run concurrently interfere through memory
+bandwidth, caches, the memory controller's clock and the accelerators
+themselves. Interference-aware scheduling and resource control for
+concurrent neural networks address this on heterogeneous SoCs and on GPUs
+\cite{haxconn2024,aliyun2018bwlock,kim2024interference,kang2026emcgovernor,sgdrc2025,quilt2026},
+and in the datacenter \cite{prophet2017,igniter2022}.
+
+\textbf{Transparent huge pages.} Linux can back a process's anonymous memory
+with huge pages, which cover more memory per translation entry and so reduce
+translation misses. Huge pages need physically contiguous free memory. When
+none is available at fault time, the fault falls back to base pages, and the
+kernel counts the fallback. Whether the kernel compacts memory to make a huge
+page available on demand depends on the system's defragmentation policy. A
+process that holds much memory without using it can therefore still affect a
+neighbour: it occupies and fragments the pool from which the neighbour's huge
+pages come. Chapter~\ref{ch:cost} measures this effect on the recognizer.
+
+\section{Positioning}
+\label{sec:positioning}
+
+\begin{table}[t]
+\centering\small
+\caption{What is known, and what this thesis adds.}
+\label{tab:positioning}
+\begin{tabular}{p{0.42\textwidth}p{0.48\textwidth}}
+\toprule
+Known & Added here \\
+\midrule
+Reply speculation can cut latency when compute is otherwise idle. &
+Its cost and value measured on a device where it is not, under one overlap
+penalty. \\
+Local agreement makes Whisper stream. &
+Committing while listening as a way to shorten the final decode, against
+reply speculation, on shared hardware. \\
+Co-running models interfere on shared SoCs. &
+A residency tax through huge-page fallback, from a process that does not
+run. \\
+Speculation needs a trigger. &
+A per-turn feasibility rule, its decision log, and a planner showing how
+close the rule comes to optimal. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:positioning} summarises the position. The mechanisms used here
+are not new. What is new is to measure them against each other on hardware
+they share, and to give a rule that decides between them from measured
+costs.

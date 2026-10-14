@@ -1,0 +1,128 @@
+% Chapter 7. Every number is a macro (generated/numbers.tex).
+\chapter{Discussion and Limitations}
+\label{ch:discussion}
+
+\section{What the results say}
+\label{sec:what}
+
+\textbf{The silence belongs mostly to the recognizer.} On every utterance
+length we measured, the final decode is the largest stage between the end of
+speech and the first reply audio. The language model's first token is a small
+stage. This answers RQ1. It also explains why the field's remedy, speculating
+the reply, attacks the smaller target on this device. Our prediction that the
+final's share would rise with length did not hold. The share is not monotone
+in length and falls below half on two sets, so the claim stands as ``largest
+stage everywhere'', not as a law of length.
+
+\textbf{On shared silicon, speculation is never free.} RQ2's answer has three
+parts:
+\begin{itemize}
+\item Co-residence alone slows the recognizer's final decode, through
+  huge-page fallback (\TaxBallastA{} and \TaxBallastB{} in two sessions).
+\item A reply draft still decoding at the endpoint costs \ThinkerOverlap.
+\item A partial hypothesis still decoding at the endpoint costs \ListenerC\,ms
+  of final decode per second of overlap.
+\end{itemize}
+The listener's penalty differs from the thinker's in one respect: it can be
+removed at its source, by freezing the orphaned decode.
+
+\textbf{The thinker's value is a timing problem.} RQ3's answer is a precise
+negative. On spoken multi-step problems the question comes last, so a reply
+draft becomes usable only near the end of the utterance. There, usability is
+\FstarUsable{} at the last fraction where a draft still fits, within sampling
+error of the break-even \BreakEven. The registered test at three-quarters of
+the utterance closed the value side. Neither trigger evaluated could be shown
+to predict the end. The negative is about this task's structure, not about
+reply speculation in general.
+
+\textbf{A simple rule is enough here.} RQ4's answer: with a feasibility gate
+and a freeze, the listener cuts the median paired TTFA on long utterances by
+\PthreeRed{} and abstains on short ones. The allocator never spends the window
+on the thinker, and its decision log shows why. In simulation, a planner that
+reasons about the endpoint's hazard improves on the gate's median by only
+\PlannerDP. The rule is simple because, under the measured costs, little is
+left to optimise at the median.
+
+\section{Limitations}
+\label{sec:limitations}
+
+\textbf{One device, one model of each kind.} Every number comes from one
+board class with CPU-bound recognition. A GPU recognizer would move the stage
+shares, and possibly the balance between the consumers. The language model is
+one small 4-bit model and the synthesizer one voice.
+
+\textbf{Audio.} The benchmark audio is synthesized speech played in through
+the capture path at real time; the development set is short assistant queries.
+Live speech, from a single speaker, will be one descriptive pass that supports
+no claim.
+
+\textbf{The gate's prior is the set's own median.} The feasibility gate uses a
+point prior derived from the set it runs on. A deployment would have to learn
+the prior. On items longer than the prior the gate stops early, which is where
+the planner's remaining gain sits. A prior that adapts to elapsed speech is an
+untested hypothesis.
+
+\textbf{The headline's interval.} The gated listener met its pre-registered
+prediction, but the interval's lower end lies below the registered bar. The
+ungated version failed the same prediction. The listener's overlap cost per
+second lies below its registered band, and its scorer was written after the
+data.
+
+\textbf{Costs of the freeze.} Frozen decodes are resumed after the reply and
+discarded, at a net mean of \StaleMean\,J each over \StaleN{} decodes. Some
+drew far more power than their length explains, for reasons we have not
+found. A turn that opens while the worker is frozen gets no hypotheses. The
+freeze's result also depends on a quiet period after each reply.
+
+\textbf{The occupancy tax.} The tax was measured in two attribution sessions,
+with one run per condition made after its baseline, so time order is
+confounded with condition. The sessions disagree on its size, and only the
+second was instrumented for huge pages. The mechanism's explanation (buffer
+churn against a fragmented pool) was offered after the fact. Only
+per-process levers were tried against it.
+
+\textbf{The thinker side.} Draft usability comes from an offline probe of 80
+items per fraction, with no interval carried on the curve. The live
+comparison of a continuing draft is descriptive: its interleaved design broke
+at the first voice-activity split, and its scorer was written after the run.
+The trigger evaluation is on the development set and is underpowered. Reading
+the triggers on the multi-step set was registered not to happen once the
+probe closed the value side.
+
+\textbf{The planner is simulated.} It is calibrated from logs. Its
+validation is weak: the final's cost per second was fitted largely from the
+contrast the validation predicts, and the fill rate for unobserved commit
+boundaries was chosen to match the measured committed fractions. Richer fills
+raise the planner's median gain.
+
+\textbf{Drift across dates.} Part of a cross-date difference in baseline TTFA
+remains unattributed. Residency is ruled out. Every claim-bearing comparison
+therefore has a same-day baseline.
+
+\section{Threats to validity}
+\label{sec:threats}
+
+\textbf{Internal.} Arms are paired on the item within a day, interleaved or
+blocked with a same-arm washout. Runs are checked against the file's ground
+truth and voided by rules fixed before scoring. Runs on one day were voided
+because the harness waited for a proxy instead of the event; those runs carry
+no claim. One fence breach is on record, and its run is reported with and
+without the affected repetition. Several scorers were written after the
+data; each is marked in the ledger.
+
+\textbf{Construct.} TTFA is measured from the true end of speech, known to the
+audio source, so a late endpoint counts as latency. The onset-grid penalties
+of the thinker are timed from speech onset, and are cited as differences
+between arms on the same utterance. Usability is a word-prefix match of the
+first synthesized chunk; a draft whose first chunk does not match counts as
+unusable.
+
+\textbf{External.} One device, one language model, one benchmark family.
+The thinker's negative depends on questions coming last. The listener's gain
+depends on long utterances and on a recognizer whose final decode dominates.
+Both are stated as conditions, not as general results.
+
+\textbf{Statistical.} Intervals are percentile bootstraps over items unless
+stated. Some analyses resample turns or runs, and say so. Nulls are reported
+with the effect sizes they exclude, and an underpowered null is reported as
+``not detectable'', never as ``no effect''.

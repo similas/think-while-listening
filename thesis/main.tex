@@ -13,6 +13,7 @@
 \usepackage{amsmath}
 \usepackage{graphicx}
 \usepackage{booktabs}
+\usepackage{longtable}
 \usepackage{xcolor}
 \usepackage[nottoc]{tocbibind}
 \graphicspath{{figures/}}
@@ -129,15 +130,19 @@ VAD & voice-activity detection \\
 \clearpage
 \pagenumbering{arabic}
 
-% Chapters 1, 2, 7, 8 and the appendices follow. Until chapters 1-2 exist, the
-% counter is set so chapter 3 numbers as 3; remove when they are added.
-\setcounter{chapter}{2}
+\include{chapters/ch1_intro}
+\include{chapters/ch2_background}
 \include{chapters/ch3_methods}
 \include{chapters/ch4_cost}
 \include{chapters/ch5_value}
 \include{chapters/ch6_allocator}
+\include{chapters/ch7_discussion}
+\include{chapters/ch8_conclusion}
 
 \bibliographystyle{IEEEtran}
 \bibliography{../paper/refs}
+
+% Appendices follow the single bibliography and continue its page numbering.
+\include{chapters/appendices}
 
 \end{document}
