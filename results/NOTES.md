@@ -8301,3 +8301,60 @@ Appended, not edited. From the reviewer's pass over 4c51f39 to 74caf9a.
    2026-10-05) ran on different days. Its results carry the cross-date caveat
    the thesis now states. The "every claim-bearing comparison has a same-day
    baseline" rule holds from pass 1n onward.
+
+## 2026-11-16 — PASS 9 RUN 1 VOID (the system answered itself); AMENDMENT: half-duplex live input, before any further pass 9 run
+
+Ali was at the box with the room quiet. The noise floor was logged once at
+18:54, with nobody speaking, on the pipeline's own capture channel:
+noise_floor-20261116-185409.json, -46.1 dBFS RMS, peak -20.8 dBFS.
+
+RUN 1 (NOPARTIAL, block A), reactive-20261116-185503-6ca93d, build 313ddfe,
+IS VOID. The replies play on the room speaker. The microphone array hears
+them and has no echo reference for that speaker (capture-path hazards,
+2026-09-15). The pipeline transcribed its own replies as user turns:
+- turn 3 holds the end of item 1 plus the start of its reply;
+- turns 4 and 6 are the reply itself;
+- turn 7 is Ali ("What are you talking about?").
+After 9 turns (8 invalid, 5 VAD splits) the turn-integrity invariant aborted
+the run at 18:56:27. Ali's reading of item 2 came after the abort. No number
+from this run enters any analysis. The run dir stays in results/raw, labelled
+void here. File-playback passes never met this, because their replies went to
+a null sink.
+
+AMENDMENT, registered before the next run (Ali approved, 2026-11-16):
+- HALF-DUPLEX LIVE INPUT. From the start of the first reply write, before any
+  sound leaves, until the reply has played plus a 500 ms tail, the microphone
+  source substitutes silence of equal length for the captured audio. After
+  every reply write, the output transport extends a "muted until" instant: the
+  write's end, plus the output stream's latency as PortAudio reports it at
+  open, plus the frame's play time, plus the tail. The tail must also cover
+  the sound server's and the speaker's own delay, which PortAudio does not
+  report; the TEST run checks that. The mute intervals, the muted chunk count
+  and the assumed latency are written to the run dir (half_duplex.json).
+- WIRING IS CHECKED. A run refuses to start unless the mic and the output
+  share one half-duplex object. A run in which replies played but nothing was
+  ever muted prints RUN INVALID.
+- SCOPE: twl.transport.HalfDuplex, audio.half_duplex_tail_ms = 500 in the two
+  live configs only. Every other config leaves it at the 0 default, which a
+  test asserts, so no file-playback run's behaviour or earlier result changes.
+  The one schema change: run_meta.harness gains half_duplex_tail_ms (0.0 for
+  file runs).
+- EFFECT ON THE CONDITION: the user cannot interrupt a reply. The protocol
+  never asks for that: the speaker waits about 3 s after each reply. TTFA is
+  unaffected, since it ends at the first reply audio, before any muting
+  matters.
+- AUDIT (the pass 9 scorer implements it; intervals and turn times share one
+  clock). The VAD cannot start a turn inside zeroed audio, so masking is
+  detected by overlap:
+  - a turn is FLAGGED MASKED, reported, and excluded from TTFA if
+    [origin - start_secs, vad_user_stopped] overlaps a mute interval;
+  - it is also flagged if its origin lies within start_secs + 100 ms after an
+    interval ends, because its first words may have been zeroed.
+  Speech that falls entirely inside a mute window leaves no trace and cannot
+  be detected; that limitation is stated with the results.
+- ONE UNSCORED TEST RUN before the sequence resumes. Ali reads one sentence
+  that is not on the sheet; it must produce exactly one turn and no turn made
+  of the reply. It is labelled TEST and enters no analysis.
+- The sequence restarts at run 1 (NOPARTIAL, block A). Ali has already read
+  items 1 and 2 once, in the void run; that is noted, and it does not matter
+  for a descriptive pass.

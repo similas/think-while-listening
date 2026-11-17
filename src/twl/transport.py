@@ -38,6 +38,64 @@ from twl.clock import now_ns
 CHUNK_MS = 20
 
 
+class HalfDuplex:
+    """Mute the live microphone while a reply plays, and for a tail after it.
+
+    Live replies come out of a room speaker the microphone array also hears,
+    and the array's echo canceller has no reference for a separate USB speaker
+    (capture-path hazards, 2026-09-15). Without this, the pipeline transcribes
+    its own reply as the next user turn and answers itself (pass 9 run 1,
+    2026-11-16, voided). The output transport extends a "muted until" instant
+    after every reply write: the write's end, plus the stream's output latency,
+    plus the frame's own play time, plus ``tail_ms`` for the room. The mic
+    substitutes silence until then. It substitutes, never drops, so the input
+    clock and the VAD's timing stay continuous.
+
+    Invariant: with ``tail_ms`` <= 0 the object is never constructed, and file
+    playback never uses it; only live runs whose config sets a tail change.
+    """
+
+    def __init__(self, tail_ms: float) -> None:
+        if tail_ms <= 0:
+            raise ValueError("HalfDuplex needs a positive tail_ms")
+        self.tail_ms = tail_ms
+        self._tail_ns = int(tail_ms * 1e6)
+        self._until_ns = 0
+        self.muted_chunks = 0
+        # The output stream's own latency (s), as PortAudio reports it at open.
+        # It does not include the sound server's or the speaker's delay, which
+        # the tail must cover; recorded so the run shows what was assumed.
+        self.output_latency_s = -1.0
+        # Mute intervals as [start_ns, end_ns], merged, for the run's audit:
+        # a user turn that starts inside one was masked.
+        self.intervals: list[list[int]] = []
+
+    def note_output(self, start_ns: int, play_end_ns: int) -> None:
+        """A reply frame was written at ``start_ns`` and plays out by ``play_end_ns``."""
+        until = play_end_ns + self._tail_ns
+        if self.intervals and start_ns <= self.intervals[-1][1]:
+            self.intervals[-1][1] = max(self.intervals[-1][1], until)
+        else:
+            self.intervals.append([start_ns, until])
+        self._until_ns = max(self._until_ns, until)
+
+    def muted(self, at_ns: int) -> bool:
+        return at_ns < self._until_ns
+
+
+def slice_and_mute(
+    in_data: bytes, n_dev: int, idx: int, half_duplex: HalfDuplex | None, at_ns: int
+) -> bytes:
+    """One capture chunk: the chosen channel, or silence of equal length if muted."""
+    if n_dev > 1:
+        interleaved = np.frombuffer(in_data, dtype=np.int16)
+        in_data = interleaved[idx::n_dev].tobytes()
+    if half_duplex is not None and half_duplex.muted(at_ns):
+        half_duplex.muted_chunks += 1
+        return bytes(len(in_data))
+    return in_data
+
+
 class FrameSource(Protocol):
     """Delivers 20 ms PCM chunks to a transport-owned callback."""
 
@@ -97,6 +155,7 @@ class MicFrameSource:
         *,
         device_channels: int = 1,
         capture_channel: int = 0,
+        half_duplex: HalfDuplex | None = None,
     ) -> None:
         if capture_channel >= device_channels:
             raise ValueError(
@@ -107,6 +166,7 @@ class MicFrameSource:
         self._channels = channels
         self._device_channels = device_channels
         self._capture_channel = capture_channel
+        self.half_duplex = half_duplex
         self._stream: pyaudio.Stream | None = None
 
     async def start(self, sample_rate: int, deliver: DeliverFn) -> None:
@@ -119,15 +179,14 @@ class MicFrameSource:
         frames = int(sample_rate * CHUNK_MS / 1000)
         n_dev = self._device_channels
         idx = self._capture_channel
+        hd = self.half_duplex
 
         def callback(
             in_data: bytes | None, frame_count: int, time_info: object, status: int
         ) -> tuple[None, int]:
             if in_data is not None:
-                if n_dev > 1:
-                    interleaved = np.frombuffer(in_data, dtype=np.int16)
-                    in_data = interleaved[idx::n_dev].tobytes()
-                deliver(in_data, now_ns())
+                at = now_ns()
+                deliver(slice_and_mute(in_data, n_dev, idx, hd, at), at)
             return (None, pyaudio.paContinue)
 
         self._stream = self._py_audio.open(
@@ -296,10 +355,18 @@ class TwlAudioInputTransport(BaseInputTransport):
 class TwlAudioOutputTransport(BaseOutputTransport):
     """PyAudio playback to a device chosen by name substring (or discard)."""
 
-    def __init__(self, py_audio: pyaudio.PyAudio, device_substr: str, params: TransportParams):
+    def __init__(
+        self,
+        py_audio: pyaudio.PyAudio,
+        device_substr: str,
+        params: TransportParams,
+        half_duplex: HalfDuplex | None = None,
+    ):
         super().__init__(params)
         self._py_audio = py_audio
         self._device_substr = device_substr
+        self._half_duplex = half_duplex
+        self._out_rate = 0
         self._out_stream: pyaudio.Stream | None = None
         # One dedicated worker: concurrent writes — or a write racing the
         # close during teardown — corrupt PortAudio's ALSA state (double free,
@@ -313,6 +380,7 @@ class TwlAudioOutputTransport(BaseOutputTransport):
             return
         rate = self._params.audio_out_sample_rate or frame.audio_out_sample_rate
         device = find_device_index(self._py_audio, self._device_substr, output=True)
+        self._out_rate = rate
         self._out_stream = self._py_audio.open(
             format=self._py_audio.get_format_from_width(2),
             channels=self._params.audio_out_channels,
@@ -321,6 +389,8 @@ class TwlAudioOutputTransport(BaseOutputTransport):
             output_device_index=device,
         )
         self._out_stream.start_stream()
+        if self._half_duplex is not None:
+            self._half_duplex.output_latency_s = float(self._out_stream.get_output_latency())
         await self.set_transport_ready(frame)
 
     async def cleanup(self) -> None:
@@ -337,25 +407,51 @@ class TwlAudioOutputTransport(BaseOutputTransport):
         stream = self._out_stream
         if stream is None:
             return False
+        start = now_ns()
         if self.first_audio_out_ns == 0:
-            self.first_audio_out_ns = now_ns()
+            self.first_audio_out_ns = start
+        hd = self._half_duplex
+        if hd is not None:
+            # Mute from the moment the write begins, before any sound leaves.
+            hd.note_output(start, start)
         # Blocking write on the dedicated worker keeps playback paced without
         # stalling the loop, and serializes against teardown.
         await self.get_event_loop().run_in_executor(self._executor, stream.write, frame.audio)
+        if hd is not None and self._out_rate:
+            # The write returned once the frame was buffered: it finishes
+            # playing within the stream's output latency plus its own length.
+            play_s = len(frame.audio) / (2 * self._params.audio_out_channels * self._out_rate)
+            hd.note_output(start, now_ns() + int((hd.output_latency_s + play_s) * 1e9))
         return True
 
 
 class TwlAudioTransport(BaseTransport):
     """Transport pair: FrameSource-driven input + PyAudio output."""
 
-    def __init__(self, source: FrameSource, output_device_substr: str, params: TransportParams):
+    def __init__(
+        self,
+        source: FrameSource,
+        output_device_substr: str,
+        params: TransportParams,
+        half_duplex: HalfDuplex | None = None,
+    ):
         super().__init__()
         self._params = params
         self._source = source
+        self._half_duplex = half_duplex
         self._output_device_substr = output_device_substr
         self._py_audio = pyaudio.PyAudio()
         self._input: TwlAudioInputTransport | None = None
         self._output: TwlAudioOutputTransport | None = None
+
+    @property
+    def half_duplex(self) -> HalfDuplex | None:
+        return self._half_duplex
+
+    @property
+    def played_audio(self) -> bool:
+        """Whether any reply audio reached the output stream."""
+        return self._output is not None and self._output.first_audio_out_ns > 0
 
     def input(self) -> FrameProcessor:
         if not self._input:
@@ -365,6 +461,6 @@ class TwlAudioTransport(BaseTransport):
     def output(self) -> FrameProcessor:
         if not self._output:
             self._output = TwlAudioOutputTransport(
-                self._py_audio, self._output_device_substr, self._params
+                self._py_audio, self._output_device_substr, self._params, self._half_duplex
             )
         return self._output

@@ -53,6 +53,10 @@ class AudioConfig:
     # other players are untouched).
     output_device_substr: str = "pulse"
     pulse_sink: str = "twl_null"
+    # Live runs only: mute the mic while a reply plays plus this tail (ms), so
+    # an audible room speaker is not transcribed as the next user turn. 0 is
+    # off, and file playback ignores it (twl.transport.HalfDuplex).
+    half_duplex_tail_ms: float = 0.0
 
 
 @dataclass(frozen=True)

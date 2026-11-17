@@ -116,7 +116,13 @@ def build_pipeline(
         audio_out_channels=1,
         vad_analyzer=vad,
     )
-    transport = TwlAudioTransport(source, cfg.audio.output_device_substr, params)
+    # Live half-duplex: the mic source carries it; the output feeds it.
+    transport = TwlAudioTransport(
+        source,
+        cfg.audio.output_device_substr,
+        params,
+        half_duplex=getattr(source, "half_duplex", None),
+    )
 
     stt = StreamingWhisperSTT(
         cfg.stt, turns, sample_rate=cfg.audio.sample_rate, segment_dir=segment_dir

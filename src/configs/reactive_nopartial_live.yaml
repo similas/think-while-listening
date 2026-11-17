@@ -15,6 +15,9 @@ audio:
   # "alsa_output.usb-Jieli..." to hear replies on the room speaker.
   output_device_substr: "pulse"
   pulse_sink: "alsa_output.usb-Jieli_Technology_UACDemoV1.0_4150353131363404-00.analog-stereo"  # live: replies audible
+  # The array hears the room speaker and has no reference for it: mute the mic
+  # while a reply plays plus 500 ms (pass 9 run 1 answered itself, 2026-11-16).
+  half_duplex_tail_ms: 500
 
 vad:
   confidence: 0.7

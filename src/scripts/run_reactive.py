@@ -47,7 +47,7 @@ from twl.records import read_jsonl
 from twl.schedule import PlannedTurn, build_block_schedule, build_schedule
 from twl.speculation import SpeculationDriver
 from twl.telemetry import TegrastatsSampler
-from twl.transport import FileFrameSource, MicFrameSource
+from twl.transport import FileFrameSource, HalfDuplex, MicFrameSource
 from twl.trigger import IsotonicCalibration, SemanticTrigger
 from twl.turns import ENDPOINT_DRIFT_MS
 
@@ -375,6 +375,7 @@ async def run(args: argparse.Namespace) -> None:
                 "block_size": args.block_size,
                 "warmup_turns": args.warmup_turns,
                 "duration_prior_source": prior_source,
+                "half_duplex_tail_ms": cfg.audio.half_duplex_tail_ms if args.live else 0.0,
             },
             notes=(
                 f"REACTIVE {'live-mic' if args.live else 'file-playback'} run; "
@@ -450,6 +451,11 @@ async def run(args: argparse.Namespace) -> None:
                 cfg.audio.channels,
                 device_channels=cfg.audio.device_channels,
                 capture_channel=cfg.audio.capture_channel,
+                half_duplex=(
+                    HalfDuplex(cfg.audio.half_duplex_tail_ms)
+                    if cfg.audio.half_duplex_tail_ms > 0
+                    else None
+                ),
             )
             expected_turns = 0
         else:
@@ -558,6 +564,10 @@ async def run(args: argparse.Namespace) -> None:
             answer_system_prompt=policy.system_prompt,
             speculation=speculation,
         )
+        # The mic and the speaker must share ONE half-duplex object, or the
+        # live run hears its own replies again (pass 9 run 1, 2026-11-16).
+        if getattr(source, "half_duplex", None) is not built.transport.half_duplex:
+            raise SystemExit("half-duplex wiring: mic and output do not share one object")
         # The runner needs the TurnManager build_pipeline just created, so it
         # is attached after construction rather than passed in.
         if args.policy != "reactive" or arms:
@@ -840,6 +850,31 @@ async def run(args: argparse.Namespace) -> None:
             # attribution script two runs, since it parses the run dir from it.
             if isinstance(source, FileFrameSource):
                 (run_dir / "playback_timeline.json").write_text(json.dumps(source.timeline))
+            if isinstance(source, MicFrameSource) and source.half_duplex is not None:
+                hd = source.half_duplex
+                (run_dir / "half_duplex.json").write_text(
+                    json.dumps(
+                        {
+                            "tail_ms": hd.tail_ms,
+                            "output_latency_s": hd.output_latency_s,
+                            "muted_chunks": hd.muted_chunks,
+                            "intervals_ns": hd.intervals,
+                        }
+                    )
+                )
+                print(
+                    f"half-duplex: {hd.muted_chunks} capture chunks muted "
+                    f"({hd.muted_chunks * 0.02:.1f} s) in {len(hd.intervals)} reply interval(s), "
+                    f"output latency {hd.output_latency_s:.3f} s"
+                )
+                # Replies played but nothing was ever muted: the wiring broke and
+                # the run heard its own speaker again.
+                if built.transport.played_audio and not hd.intervals:
+                    print(
+                        "RUN INVALID: half-duplex configured but never engaged while "
+                        "replies played",
+                        file=sys.stderr,
+                    )
             print(
                 f"device state: {state}; swap threshold "
                 f"{built.turns.swap_threshold_mb:.3f} MB ({built.turns.swap_threshold_source})"
