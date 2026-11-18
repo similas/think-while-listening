@@ -46,7 +46,7 @@ in the kit. Nothing here is a claim about the 2027 kit; it is a checklist.
    Tables 1 and 2 are generated as `table*`; the six-row ledger summary is
    generated as `table*`. Check the kit's float placement rules and caption
    style (caption above or below tables).
-9. Section numbering and `\subsection` depth: the Results section has nine
+9. Section numbering and `\subsection` depth: the Results section has ten
    subsections. Check whether the kit numbers subsections and how deep.
 10. The two `\pendingpassnine` boxes, in Results ("Live speech") and in
     Limitations ("Audio"), must be replaced before submission.
@@ -78,6 +78,9 @@ in the kit. Nothing here is a claim about the 2027 kit; it is a checklist.
     supplementary material, if any, is anonymized the same way.
 
 ## Extended build (`\extendedtrue`)
+
+`\anonymoustrue` together with `\extendedtrue` stops the build with an error:
+the extended appendix quotes the notebook, which names the author.
 
 17. It adds the planner's formulation and calibration to "Is the gate enough?",
     and a one-column appendix holding the full ledger (longtable), the

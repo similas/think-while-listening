@@ -32,6 +32,24 @@
 \newcommand{\pendingpassnine}[1]{\noindent\fbox{\parbox{0.95\linewidth}{%
   \textcolor{red}{\footnotesize PASS 9 PENDING: #1}}}}
 
+% Wording that would reveal a single author or point to the public extended
+% version is switched with the build.
+\ifanonymous
+  \newcommand{\theauthor}{the authors}
+  \newcommand{\theauthors}{the authors'}
+  \newcommand{\Theauthor}{The authors}
+  \newcommand{\fullledgerwhere}{will be released with the paper}
+\else
+  \newcommand{\theauthor}{the author}
+  \newcommand{\theauthors}{the author's}
+  \newcommand{\Theauthor}{The author}
+  \newcommand{\fullledgerwhere}{is in the extended version}
+\fi
+% The extended build is never anonymous: its appendix quotes the notebook.
+\ifanonymous\ifextended
+  \errmessage{anonymous + extended is not a supported build}
+\fi\fi
+
 \ifanonymous
   \hypersetup{pdfauthor={}}
 \else
@@ -136,7 +154,7 @@ Contributions:
 \item \textbf{The record.} A ledger lists every prediction with its
   registration commit and its verdict, the failed and the untestable included,
   and with the cases where a scorer or a registration was written late
-  (Table~\ref{tab:ledger}\ifextended\else; in full in the extended version\fi).
+  (Table~\ref{tab:ledger}\ifextended\else; the full ledger \fullledgerwhere\fi).
 \end{enumerate}
 
 \begin{figure}[t]
@@ -283,7 +301,8 @@ Every decision is logged with its inputs and its reason
 \label{sec:setup}
 
 \textbf{Device.} NVIDIA Jetson Orin Nano Super, 8\,GB of unified memory, in
-power mode MAXN\_SUPER with clocks pinned, run headless.
+power mode MAXN\_SUPER with clocks pinned. Whether the desktop session was
+running is recorded per run and held equal across the arms of a comparison.
 
 \textbf{Sets.} A development set of 16 short spoken assistant queries, and
 splits of Spoken-MQA \cite{wei2025towards}:
@@ -321,7 +340,7 @@ net of the idle floor, and the fraction of words committed at the endpoint.
 
 \textbf{Pre-registration.} Predictions, bars and scoring rules were committed
 to the lab notebook before the runs that test them. Corrections are appended,
-never edited in. The full ledger\ifextended\else, in the extended version,\fi{}
+never edited in. The full ledger\ifextended\else, which \fullledgerwhere,\fi{}
 lists every prediction with its registration commit and its verdict. Where a
 prediction was stated informally, a bar moved before its data, or a scorer was
 written after the data, the ledger says so.
@@ -388,7 +407,8 @@ partial decodes from the reactive pipeline cuts TTFA on the development set by
 
 \textbf{Freezing the orphan.} Freezing a hypothesis still running at the
 endpoint, against racing it, cuts paired TTFA by \PnineTTFA{} ($n=\PnineN$
-items). The final runs at \PnineRatio{} of the solo model of its tail. The
+items). The final runs at \PnineRatio{} of the solo model of its tail
+($n=\PnineRatioN$ items). The
 interval's lower end lies below the registered 150\,ms bar. The result holds
 under an amendment made before the run; under the original validity rule it
 would not be testable. It also depends on a 3\,s quiet period after each
@@ -499,7 +519,7 @@ logs:
 Boundaries no logged run reached are filled synthetically, at the one rate
 that matches the measured committed fractions with and without the gate. Run
 through the simulator, the gate's saving is \PlannerVal, against \PthreeRed{}
-measured. The value measured on the same items lies just outside the simulated
+measured (whose interval's lower end lies below the registered 300\,ms bar). The value measured on the same items lies just outside the simulated
 interval. This is a weak check: the final's slope was fitted largely from the
 same contrast, and the fill rate was chosen to match the committed fractions.
 Richer fills and a steeper final slope both raise the planner's median gain.
@@ -508,7 +528,8 @@ Richer fills and a steeper final slope both raise the planner's median gain.
 \subsection{Live speech}
 \pendingpassnine{One descriptive paragraph from pass 9: the speaker read 16
 multi-step items into the microphone, four runs (reactive without partials,
-gated listener, gated listener, reactive), half-duplex input. Report turns and
+gated listener, gated listener, reactive without partials), half-duplex
+input. Report turns and
 splits per run, stage shares, TTFA and the committed fraction per arm, masked
 turns by the registered overlap rule, and whether the stage shares of
 Fig.~\ref{fig:stages} hold on a person. No claim.}
@@ -523,7 +544,7 @@ corrections; Appendix~\ref{app:retractions} lists every correction.
 \else
 Table~\ref{tab:ledger} gives six predictions with their verdicts and one
 qualifier each. The full ledger, with every registration and scoring commit,
-is in the extended version.
+\fullledgerwhere.
 \fi
 
 \section{Limitations}
@@ -577,13 +598,14 @@ fill whose rate is calibrated on the measured commit fractions. Richer fills
 raise the planner's median gain, and so would a steeper final-decode slope.
 
 \textbf{Drift across dates.} Part of a cross-date difference in baseline TTFA
-remains unattributed. Every claim-bearing comparison from the reactive
-baseline without partials onward has a same-day baseline; the earlier
-ungated listener pass does not, and is read with that caveat.
+remains unattributed. Every claim-bearing comparison has a same-day
+baseline except the ungated listener pass, whose baseline ran three days
+before its treatment; it is read with that caveat.
 
 \ifanonymous\else
 \section*{Acknowledgments}
-% TODO(Ali). Stripped from the anonymous build.
+% Stripped from the anonymous build.
+\textcolor{red}{TODO (Ali): acknowledgments.}
 \fi
 
 \bibliographystyle{IEEEtran}
@@ -594,17 +616,18 @@ ungated listener pass does not, and is read with that caveat.
 \section*{Reproducibility}
 \label{sec:repro}
 Every number in this paper is produced by a script from the logged runs, and a
-claim registry pins each number to its scorer and its run identifiers.
+claim registry pins each number to its scorer and to the run identifiers or
+input files it reads.
 \ifanonymous
 The code, the logs without audio, and a manifest mapping every claim to its
-scorer and runs will be released on publication.
+scorer and inputs will be released on publication.
 \else
 The code is at \repourl. The logs without audio, their checksums, and a
-manifest mapping every claim to its scorer and runs are deposited at Zenodo
+manifest mapping every claim to its scorer and inputs are deposited at Zenodo
 (doi:\releasedoi).
 \fi
-Third-party audio is not redistributed; the scripts fetch it from its
-source.
+The benchmark's audio and item files are not redistributed; the scripts
+fetch them from their source.
 
 \section*{Generative-AI use}
 \label{sec:genai}
@@ -612,16 +635,16 @@ source.
 % Model list verified from the session logs on the development device
 % (2026-10-13); Ali confirms it.
 Claude Code, Anthropic's agentic coding tool, was used throughout this work
-under the author's direction, running Claude Fable~5 (2026-09-15), Claude
+under \theauthors{} direction, running Claude Fable~5 (2026-09-15), Claude
 Opus~5 (2026-09-15 to 2026-10-06) and Claude Opus~5.5 (from 2026-10-06). It:
 \begin{itemize}
 \item wrote most of the software and analysis scripts;
-\item executed the measurement runs the author approved;
+\item executed the measurement runs \theauthor{} approved;
 \item drafted the pre-registrations, the lab-notebook entries and the text of
   this paper;
 \item reviewed its own work through separate reviewer instances.
 \end{itemize}
-The author designed the study, approved every pre-registered prediction,
+\Theauthor{} designed the study, approved every pre-registered prediction,
 made every decision, approved each run, and verified the text. Every measured or
 simulated value in this paper is produced by a script from the logs;
 registered bars and set sizes are stated as designed.

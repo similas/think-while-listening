@@ -241,6 +241,16 @@ P8 LISTENER, WORD fraction committed before the endpoint: median 0.409 [0.340, 0
 - NOTES: "2026-10-09 — CORRECTION to "PASS 8 (f*), PASS 6, P8": pass 8's f* was on mixed clocks. Corrected, it lands on the prediction" (067ec31 2026-10-09)
 - caveat: Expectation >= 0.60 not met. The thinker half is a curve value, greedy p_usable ~0.15 at the corrected f* (expectation <= 0.10).
 
+### The allocator's decisions in one multi-step run, by reason, with its break-even
+
+```
+ALLOCATOR decisions 576 over 81 turns; below_break_even 537; infeasible 39; spends 0; drafts issued 0; break_even 0.1412; ms_per_token [34.0]; run reactive-20261009-120309-a4f48d
+```
+
+- command: `src/scripts/allocator_decisions.py results/raw/reactive/reactive-20261009-120309-a4f48d`
+- runs: reactive-20261009-120309-a4f48d
+- NOTES: "2026-10-09 — PASS 8 (f*), PASS 6 (ALLOCATOR), P8. Scored once, as registered in 71d1612 + amendments" (c7410d4 2026-10-09)
+
 ## Listener speculation, gated (Fig 5)
 
 ### Listener speculation (COMMIT-WL-STOP + feasibility gate): median paired per-item TTFA reduction on multi_step against REACTIVE-NOPARTIAL
@@ -772,17 +782,3 @@ DP (no duty bound)     +46 ms [+25, +71] n=70; [report] mean +139 ms, Q3 +125 ms
 - runs: see the scorer's run list
 - NOTES: "2026-10-13 — CORRECTION to "LEVEL-2 PLANNER, SIMULATED" (reviewer, 6 findings)" (8b6bbca 2026-10-13)
 - caveat: Decoding back to back, not planning; the duty bound is a harness constant equal across arms.
-
-## The allocator's decisions (Table 2)
-
-Computed by this script from the decision records of reactive-20261009-120309-a4f48d (pass 6), not quoted from a scorer line; the values below are what the paper's macros carry.
-
-```
-AllocDecisions = 576
-AllocBelow = 537
-AllocInfeasible = 39
-AllocSpends = 0
-BreakEven = 0.1412
-```
-
-- NOTES: "2026-10-09 — PASS 8 (f*), PASS 6 (ALLOCATOR), P8. Scored once, as registered in 71d1612 + amendments"

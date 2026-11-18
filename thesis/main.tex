@@ -98,24 +98,24 @@ Ali Salimi Sadr
 % At most 250 words. Written last, from results/RESULTS.md.
 A cascaded voice agent on an edge device answers seconds after the user
 stops speaking. The usual remedy, starting the language model on partial
-transcripts, assumes that compute spent while the user speaks would
+transcripts, assumes compute spent while the user speaks would
 otherwise sit idle. On a unified-memory system-on-chip it does not. On a
 Jetson Orin Nano, this thesis measures what that silence is made of, prices
 the two ways of spending the listening window, and builds a rule that
 allocates it. The recognizer's final decode is the largest stage after speech
-at every utterance length tested: \SttShareMulti\% of the stage sum on spoken
+at every length tested: \SttShareMulti\% of the stage sum on spoken
 multi-step math problems, against \LlmShareMulti\% for the language model's
 first token. Co-residence alone slows the recognizer, through huge-page
 fallback. A reply draft still decoding at the endpoint costs
 \ThinkerOverlap. On this task a draft becomes usable only near the end of the
 utterance, where it no longer fits, and a pre-registered test closed that
 line. Committing agreed recognizer hypotheses while the user speaks attacks
-the largest stage instead. With a feasibility gate and a freeze of the
+the largest stage. With a feasibility gate and a freeze of the
 orphaned hypothesis at the endpoint, it cuts the median paired time to first
 audio on long utterances by \PthreeRed{} ($n=\PthreeN$; the interval's lower
-end lies below the registered bar), and abstains on short ones. A simulated
-planner over the endpoint hazard improves on the gate by \PlannerDP{} at the
-median. Predictions were registered before their data; every number comes
+end lies below the registered bar), and abstains on short ones. At the gate's duty bound,
+a simulated planner over the endpoint hazard improves on the gate's median by
+\PlannerDP. Predictions were registered before their data; every number comes
 from a script over the logs.
 
 \chapter*{Acknowledgements}
@@ -125,12 +125,14 @@ TODO: acknowledgements.
 \chapter*{Contribution of Authors}
 \addcontentsline{toc}{chapter}{Contribution of Authors}
 This is a chapter-based thesis with a single author. Ali Salimi Sadr
-designed the study, built the testbed, set and approved every pre-registered
-prediction, made every analysis decision, approved each measured run, and
-wrote this thesis. \supervisorname{} supervised the work. A conference paper
-drawn from Chapters~4 to~6 is in preparation, with Ali Salimi Sadr as its
-author. A generative-AI coding tool was used under the author's direction;
-its role is stated in Section~\ref{sec:genai-thesis}.
+designed the study, directed the building of the testbed and its analysis,
+approved every pre-registered prediction, made every decision, approved each
+measured run, and directed and verified the text of this thesis.
+\supervisorname{} supervised the work. A conference paper drawn from
+Chapters~4 to~6 is in preparation, with Ali Salimi Sadr as its author.
+Most of the software, the analysis scripts and the draft text were written by
+a generative-AI coding tool under the author's direction; Section~\ref{sec:genai-thesis}
+names it and states its role.
 
 \renewcommand{\contentsname}{Table of Contents}
 \tableofcontents

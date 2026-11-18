@@ -73,7 +73,7 @@
     \item The gated, freezing listener cuts the median paired TTFA by
       \PthreeRed{} ($n=\PthreeN$ items); the CI's lower end lies below the
       registered 300\,ms bar.
-    \item Told as it happened: every prediction is shown with its
+    \item Told as it happened: six predictions are shown with their
       registration, the failed ones included.
     \end{itemize}
   }
@@ -113,7 +113,7 @@
 \begin{frame}{Testbed}
   \begin{itemize}
   \item \textbf{Device.} Jetson Orin Nano Super, 8\,GB unified memory,
-    MAXN\_SUPER with clocks pinned, headless.
+    MAXN\_SUPER with clocks pinned; desktop state recorded per run.
   \item \textbf{Pipeline.} Silero VAD; Whisper \texttt{tiny} (hypotheses) and
     \texttt{base} (final), int8, on three shared CPU cores; a 4-bit
     Gemma~4~E2B in llama.cpp, all layers on the GPU, one slot; Piper.
@@ -497,7 +497,7 @@
 \end{frame}
 
 % ---------------------------------------------------------------- 15
-\begin{frame}{The gain: gate and freeze turn a regression into a saving}
+\begin{frame}{The gain: ungated, no saving detected; gated and frozen, a saving}
   {\centering
   \includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{paper_fig5_pass2k.pdf}\par}
   \small
@@ -653,8 +653,8 @@
       broke at the first VAD split, and its scorer was written after the
       run.
     \item Drift across dates: part of a cross-date difference in baseline
-      TTFA is unattributed. Every claim-bearing comparison from the reactive
-      baseline without partials onward has a same-day baseline; pass 2 does
+      TTFA is unattributed. Every claim-bearing comparison has a same-day baseline except
+      pass 2, which does
       not.
     \item The freeze: some stale decodes drew unexplained power; a turn that
       opens while the worker is frozen gets no hypotheses.

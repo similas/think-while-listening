@@ -68,28 +68,37 @@ make release    # archive, SHA256SUMS, MANIFEST.json
 PYTHONPATH=src python src/scripts/release_bundle.py --dry-run
 ```
 
-The manifest maps every claim in the registry to its scorer command, its run
-ids and the checksums of the files it reads. Audio and third-party dataset
-copies are excluded. The Spoken-MQA audio is fetched from its source with
-`src/scripts/fetch_spoken_mqa.py`.
+The manifest maps every claim in the registry to its scorer command, the run
+ids or input files it reads, and their checksums. Left out:
+- all audio;
+- the nightly backup's repository;
+- the Spoken-MQA copy: its audio, its item files and the prefix-probe
+  generations made from them. The items are fetched from the source with
+  `src/scripts/fetch_spoken_mqa.py`. The probe claims cannot be checked from
+  the deposit alone while their inputs are withheld.
+The archived run logs do contain the recognizer's transcripts of the
+Spoken-MQA items and the replies to them. Whether that text may be
+redistributed, and the deposit's licence, are decided before upload.
 
 ## Hardware and software pins
 
 | | |
 |---|---|
 | device | NVIDIA Jetson Orin Nano Super developer kit, 8 GB unified memory |
-| OS | JetPack 6.2.1 (L4T R36.4.4), power mode MAXN_SUPER, clocks pinned per run, headless |
-| huge pages | THP enabled `always`, defrag `madvise` (recorded in every run header) |
+| OS | JetPack 6.2.1 (L4T R36.4.4), power mode MAXN_SUPER, clocks pinned per run; desktop session usually running (the board is driven remotely), recorded per run and held equal across the arms of a comparison |
+| huge pages | THP enabled `always`, defrag `madvise` (recorded in run headers from 2026-09-16 11:52 onward) |
 | Python | 3.10.12; `pipecat-ai` 0.0.108, `faster-whisper` 1.2.1, `ctranslate2` 4.8.1, `onnxruntime` 1.23.2, `piper-tts` 1.6.0, `numpy` 2.2.6, `PyAudio` 0.2.14 |
 | recognizer | Whisper `tiny` (hypotheses) and `base` (final), int8, 3 shared CPU cores |
-| language model | Gemma 4 E2B, 4-bit (`gemma-4-E2B-q4_0.gguf`, sha256 `fa401b55b07ee70a54c6dae3903c783a6e65064312529ea57175cb5f8dec6634`), llama.cpp server build `b4d6c7d8f`, `--ctx-size 2048 --n-gpu-layers 99 --threads 3 --parallel 1 --cache-reuse 0`, 3 CPU cores |
+| language model | Gemma 4 E2B, 4-bit (`gemma-4-E2B-q4_0.gguf`, sha256 `fa401b55b07ee70a54c6dae3903c783a6e65064312529ea57175cb5f8dec6634`), llama.cpp server build `b4d6c7d8f`, `--ctx-size 2048 --n-gpu-layers 99 --threads 3 --parallel 1 --cache-reuse 0 --reasoning off --reasoning-budget 0`, 3 CPU cores |
 | synthesizer | Piper `en_US-lessac-medium` (onnx sha256 `5efe09e69902187827af646e1a6e9d269dee769f9877d17b16b1b46eeaaf019f`) |
 | VAD | Silero, through Pipecat; confidence 0.7, start 0.2 s, stop 0.8 s |
 | audio | reSpeaker XVF3800 array, channel 1 of 2 (see the capture-path hazards); live replies on a USB speaker, half-duplex input |
 
 Every run's `run_meta` record carries the git commit, the config and its hash,
-the clocks, the power mode, the huge-page policy, the capture path and the
-software versions above.
+the clocks, the power mode, the capture path, the Python package versions and
+the language-model server's command line. The huge-page policy is recorded
+from 2026-09-16 11:52 onward. The llama.cpp build, PyAudio's version and
+the model checksums are not in the run headers; they are pinned here.
 
 ## Layout
 

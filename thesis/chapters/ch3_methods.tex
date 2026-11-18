@@ -13,8 +13,10 @@ because each one changed a number.
 
 All measurements were made on one NVIDIA Jetson Orin Nano Super developer kit
 with 8\,GB of memory shared by the CPU and the GPU. The board ran in power mode
-MAXN\_SUPER with clocks pinned and was operated headless. Clock state, power
-mode and software versions are recorded in every run's header.
+MAXN\_SUPER with clocks pinned. The board is driven remotely, so the desktop
+session usually ran; whether it did is recorded in every run and held equal
+across the arms of a comparison. Clock state, power mode and software versions
+are recorded in every run's header too.
 
 The board's six CPU cores are split in two. The language-model server runs on
 three cores with every layer offloaded to the GPU. The agent, the voice-activity

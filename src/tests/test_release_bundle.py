@@ -293,3 +293,21 @@ def test_git_state_sees_the_commit_and_an_untracked_file(tmp_path: Path) -> None
     assert clean.commit == git("rev-parse", "HEAD") and clean.dirty == ()
     _write(tmp_path / "new.txt")
     assert git_state(tmp_path).dirty == ("?? new.txt",)
+
+
+def test_refuses_while_a_run_holds_the_lock(repo: Path, tmp_path: Path) -> None:
+    import fcntl
+    import os
+
+    from scripts.release_bundle import run_in_progress
+
+    raw = repo / "results/raw"
+    lock = raw / ".run.lock"
+    assert not run_in_progress(raw)
+    fd = os.open(str(lock), os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert run_in_progress(raw)
+    finally:
+        os.close(fd)
+    assert not run_in_progress(raw)

@@ -558,7 +558,7 @@ def fig5(out: Path) -> None:
         ax.set_title(titles[metric], fontsize=8)
     axes[0].legend(fontsize=7, frameon=False)
     fig.suptitle(
-        "Fig 5. Freezing the orphan and gating short turns turns a regression into a "
+        "Fig 5. Ungated, no saving is detected; gated, with the orphan frozen, a "
         f"{res['pass 2k']['multi_step']['ttfa'][0]:.0f} ms saving",
         fontsize=9,
     )

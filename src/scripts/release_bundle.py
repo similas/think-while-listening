@@ -71,6 +71,7 @@ import argparse
 import ast
 import bisect
 import datetime as dt
+import fcntl
 import gzip
 import hashlib
 import json
@@ -109,8 +110,11 @@ class Dataset:
 DATASETS: tuple[Dataset, ...] = (
     Dataset(
         f"{RAW_ARC}/spoken_mqa",
-        "Spoken-MQA subset (amao0o0/spoken-mqa): its audio and item text, and the "
-        "prefix-probe generations made from that text",
+        "Spoken-MQA subset (amao0o0/spoken-mqa): its audio, its item files, and the "
+        "prefix-probe generations made from them. NOTE: the run logs that ARE archived "
+        "carry the recognizer's transcript of each item and the reply, so item text "
+        "reaches the deposit through them; whether that may be redistributed waits on "
+        "the dataset's licence",
         "not redistributed; regenerate the items with src/scripts/fetch_spoken_mqa.py "
         "(--split, --seed and --n as each item file's name and length record); the "
         "prefix-probe generations were made by src/scripts/prefix_probe.py, and a rerun "
@@ -118,7 +122,25 @@ DATASETS: tuple[Dataset, ...] = (
     ),
 )
 
-AUDIO_SUFFIXES = frozenset({".wav", ".flac", ".mp3", ".ogg", ".opus"})
+AUDIO_SUFFIXES = frozenset(
+    {
+        ".wav",
+        ".flac",
+        ".mp3",
+        ".ogg",
+        ".opus",
+        ".pcm",
+        ".raw",
+        ".m4a",
+        ".aac",
+        ".aif",
+        ".aiff",
+        ".au",
+        ".webm",
+        ".wma",
+        ".amr",
+    }
+)
 WEIGHT_SUFFIXES = frozenset(
     {".gguf", ".ggml", ".onnx", ".pt", ".pth", ".ckpt", ".safetensors", ".bin"}
 )
@@ -627,6 +649,24 @@ def archive_name(provenance: Provenance) -> str:
     return f"twl-results-{provenance.commit[:12]}{'-dirty' if provenance.dirty else ''}.tar.gz"
 
 
+RUN_LOCK = ".run.lock"
+
+
+def run_in_progress(raw: Path) -> bool:
+    """Whether run_reactive.py holds its singleton flock on raw/.run.lock."""
+    lock = raw / RUN_LOCK
+    if not lock.exists():
+        return False
+    fd = os.open(str(lock), os.O_RDONLY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+    except OSError:
+        return True
+    finally:
+        os.close(fd)
+    return False
+
+
 def preflight(
     repo: Path,
     raw: Path,
@@ -653,6 +693,11 @@ def preflight(
         problems.append(f"--out {out} lies inside --raw {raw}")
     if out.exists() and (not out.is_dir() or any(out.iterdir())):
         problems.append(f"--out {out} exists and is not an empty directory")
+    if run_in_progress(raw):
+        problems.append(
+            f"a measured run holds {raw / RUN_LOCK}; a deposit built now would catch it "
+            "half-written. Wait for it to finish."
+        )
     plan = make_plan(repo, raw)
     resolution = resolve(repo, plan, claims, sources)
     problems.extend(resolution.problems)
@@ -832,6 +877,13 @@ def make_manifest(
             "dirty": list(provenance.dirty),
             "allow_dirty": allow_dirty,
         },
+        # Chosen by the author before upload; the deposit is not published without it.
+        "license": "TODO: the deposit's licence (author's decision)",
+        "dataset_text": (
+            "Run logs include recognizer transcripts of Spoken-MQA items and the replies to "
+            "them; redistribution waits on the dataset's licence (NOTES 2026-10-13, "
+            "decision 2)."
+        ),
         "builder": {
             "script": "src/scripts/release_bundle.py",
             "python": sys.version.split()[0],

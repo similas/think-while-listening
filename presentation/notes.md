@@ -28,11 +28,7 @@ sizes, config constants, labels (pass and prediction names).
 `src/scripts/paper_results.py`, regenerate, and replace the marker. Never type
 the value.
 
-Open markers (`grep -n NoMacro main.tex`): the n of `\PnineKill`,
-`\PnineRatio`, `\DevTTFA`, `\PfourMean`/`\PfourCI`, `\PsixRatio`,
-`\EnergyListener`/`\EnergyListenerr`, `\SevenJms`, `\SpecEnergyr`,
-`\PlannerDP`/`\PlannerNoDuty`/`\PlannerVal`, `\WorkerPSS`, `\ResidencyTTFA`,
-`\ResidencyMem`.
+Open markers: none. Every n the notes cite now has a macro (2026-11-18).
 
 Left out because no macro carries them (each is described in words, or read
 off a figure, instead): the turn counts and per-set TTFA of Fig 1; the

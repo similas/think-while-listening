@@ -56,6 +56,7 @@ SOURCES: dict[str, Source] = {
     "figs": Source("paper_figures.py", ("--only", "1,2", "--print-only")),
     "tax": Source("occupancy_tax.py"),
     "worker": Source("worker_memory.py"),
+    "alloc": Source("allocator_decisions.py", PASS6),
     # Phase 3-4 value side (thesis chapter 5): the seeded replication, scored one
     # file per source so every printed line is unique (NOTES 2026-09-22).
     "probe_sampled": Source(
@@ -276,6 +277,14 @@ H_TWO = "Two-engine STT, live (B1). Shared cores PASS the T-EPA standard; split 
 H_EPA0 = "EPA (acoustic trigger): AUC 0.531. Neither trigger predicts the window"
 
 CLAIMS: tuple[Claim, ...] = (
+    Claim(
+        "alloc_counts",
+        "The allocator's decisions in one multi-step run, by reason, with its break-even",
+        "alloc",
+        r"^ALLOCATOR decisions",
+        "2026-10-09 — PASS 8 (f*), PASS 6 (ALLOCATOR), P8. Scored once, as registered in "
+        "71d1612 + amendments",
+    ),
     Claim(
         "p9_items",
         "Kill and respawn (P9): items scored per arm",

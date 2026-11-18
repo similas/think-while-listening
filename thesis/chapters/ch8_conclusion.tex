@@ -16,9 +16,10 @@ usable early enough to finish. Speculating the transcript attacks the largest
 stage. Its own overlap penalty can be removed by freezing the orphaned
 decode, and a feasibility gate keeps it off utterances too short to pay. With
 both, the listener cuts the median paired time to first audio on long
-utterances by \PthreeRed{} ($n=\PthreeN$ items) and abstains on short ones.
+utterances by \PthreeRed{} ($n=\PthreeN$ items; the interval's lower end lies
+below the registered 300\,ms bar) and abstains on short ones.
 A planner that reasons about when the user will stop does little better in
-simulation, \PlannerDP{} at the median. On this device, the window belongs to
+simulation, \PlannerDP{} at the median at the gate's duty bound. On this device, the window belongs to
 the listener, and a simple rule is enough to give it.
 
 \section{Future work}
