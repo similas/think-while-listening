@@ -9,7 +9,7 @@ VENV ?= $(HOME)/.venvs/twl
 BIN  := $(VENV)/bin
 LATEX_HOST ?= mac
 
-.PHONY: check results figures paper thesis slides
+.PHONY: check results figures paper thesis slides release
 
 check:
 	$(BIN)/ruff check src
@@ -34,7 +34,15 @@ figures:
 	PYTHONPATH=src $(BIN)/python src/scripts/make_figures.py
 	PYTHONPATH=src $(BIN)/python src/scripts/paper_figures.py
 
+# LaTeX targets run on LATEX_HOST only. Each builds from its own directory, so
+# the generated/ inputs and the figures symlink resolve.
+LATEXMK = latexmk -pdf -interaction=nonstopmode -halt-on-error
+
 paper thesis slides:
 	@command -v latexmk >/dev/null 2>&1 || { \
 	  echo "error: latexmk not found — '$@' compiles on $(LATEX_HOST), never on the Jetson" >&2; exit 2; }
-	@echo "error: $@/ sources not written yet — introduced in Phase 6/7" >&2; exit 2
+	cd $(if $(filter slides,$@),presentation,$@) && $(LATEXMK) main.tex
+
+# The data deposit (logs without audio, checksums, claim manifest). Run at submission.
+release:
+	PYTHONPATH=src $(BIN)/python src/scripts/release_bundle.py

@@ -1,39 +1,109 @@
 # think-while-listening
 
-Resource-budgeted think-while-listening for on-device cascaded voice agents.
+Measurements, code and the pre-registration record for *The Window Belongs to
+the Listener: Allocating Think-While-Listening Compute on a Device That Pays
+for It* (paper) and the M.Sc. thesis of the same title.
 
-Cascaded voice agents (STT → LLM → TTS) waste the time during which the user is
-still speaking; recent systems remove that dead time by reasoning speculatively on
-partial transcripts — but all of them run on servers, where the background thinker
-is free. On a unified-memory edge device the thinker and the listener share the
-same silicon: speculative decode inflates the latency and word error rate of the
-speech recognizer that is still transcribing the user, delays endpoint detection,
-and can lengthen the very response it was meant to accelerate. This project
-(i) characterizes that contention paradox on an NVIDIA Jetson Orin Nano Super,
-(ii) introduces a controller that chooses, from live device state, *how much* to
-think — a reasoning token budget — rather than merely *when*, and (iii) reports
-the first latency–accuracy–energy Pareto for think-while-listening on a device
-the user owns. When to think is largely solved; how much to think, on a device
-that pays for it, is not.
+A cascaded voice agent (speech recognizer → language model → synthesizer) on
+an edge device answers seconds after the user stops speaking. The usual
+remedy is to start the language model on partial transcripts. That assumes
+the compute spent while the user speaks would otherwise sit idle. On a
+unified-memory system-on-chip it does not. This repository measures, on an
+NVIDIA Jetson Orin Nano Super, what that silence is made of. It prices the two
+ways of spending the listening window, drafting the reply or committing the
+transcript, and builds and measures a rule that allocates the window between
+them. Every number in the paper and the thesis is produced by a script in
+`src/` from a log in `results/raw/`. The results page,
+[`results/RESULTS.md`](results/RESULTS.md), quotes each one with its scorer,
+its runs and its notebook entry.
 
-## Reproducibility
+## Regenerating every table, figure and number
 
-Every number in `results/`, `paper/`, `thesis/`, `presentation/`, and this README
-is produced by a script in `src/` from a log in `results/raw/`, and is rebuilt by
-`make results` / `make figures`. Every results artifact records the git commit
-hash, config hash, timestamp, device power mode, `jetson_clocks` status, and
-software versions that produced it. Runs with any swap activity, OOM, or thermal
-throttle event are recorded and flagged invalid, never silently dropped.
+On the measurement device, with the logs in `results/raw/`:
 
-| target | builds |
+```sh
+make check      # ruff, mypy --strict, pytest
+make figures    # results/figures/*.pdf (paper_fig1..5 are the paper's figures)
+make results    # results/tables/*, results/RESULTS.md,
+                # paper/generated/*.tex and thesis/generated/*.tex
+```
+
+`make results` runs every scorer the claim registry names
+(`src/scripts/paper_sources.py`) with the run ids recorded in the notebook.
+It writes `results/RESULTS.md`, which quotes each claim's output line verbatim.
+It also writes the LaTeX macros (`paper/generated/numbers.tex`) and the
+tables. A claim whose output line has moved, or that matches more than once,
+stops the build. The paper and the thesis type no measured value: they read
+every number from those macros.
+
+LaTeX is never compiled on the measurement device. On a machine with TeX Live:
+
+```sh
+make paper      # paper/main.tex   (switches: \anonymous, \extended; see the file's header)
+make thesis     # thesis/main.tex  (Concordia format, PDF/A-2b)
+make slides     # presentation/main.tex (Beamer, metropolis, 16:9)
+```
+
+## The record
+
+- **Lab notebook:** [`results/NOTES.md`](results/NOTES.md). Every
+  pre-registration, scoring, correction and decision, appended in order;
+  nothing is edited after the fact.
+- **Pre-registration ledger:** [`src/scripts/paper_ledger.json`](src/scripts/paper_ledger.json).
+  Every prediction, with the notebook headings that registered and scored it
+  and its verdict as it stands. Commits are resolved from git by those
+  headings into [`results/tables/paper_table3_ledger.md`](results/tables/paper_table3_ledger.md)
+  and the thesis's Appendix C.
+- **Retractions log:** the thesis's Appendix B lists every correction with
+  its commit.
+
+## Data release
+
+`results/raw/` is not in git: it holds recorded audio. At submission the logs
+are deposited without audio:
+
+```sh
+make release    # archive, SHA256SUMS, MANIFEST.json
+# or, to see what goes in and what stays out without writing anything:
+PYTHONPATH=src python src/scripts/release_bundle.py --dry-run
+```
+
+The manifest maps every claim in the registry to its scorer command, its run
+ids and the checksums of the files it reads. Audio and third-party dataset
+copies are excluded. The Spoken-MQA audio is fetched from its source with
+`src/scripts/fetch_spoken_mqa.py`.
+
+## Hardware and software pins
+
+| | |
 |---|---|
-| `make check` | ruff + mypy --strict + pytest (gate for every commit touching `src/`) |
-| `make results` | all tables from `results/raw/` logs |
-| `make figures` | all figures (vector PDF) from results |
-| `make paper` | Interspeech paper (latexmk) |
-| `make thesis` | Concordia M.Sc. thesis (PDF/A) |
-| `make slides` | Beamer presentation |
+| device | NVIDIA Jetson Orin Nano Super developer kit, 8 GB unified memory |
+| OS | JetPack 6.2.1 (L4T R36.4.4), power mode MAXN_SUPER, clocks pinned per run, headless |
+| huge pages | THP enabled `always`, defrag `madvise` (recorded in every run header) |
+| Python | 3.10.12; `pipecat-ai` 0.0.108, `faster-whisper` 1.2.1, `ctranslate2` 4.8.1, `onnxruntime` 1.23.2, `piper-tts` 1.6.0, `numpy` 2.2.6, `PyAudio` 0.2.14 |
+| recognizer | Whisper `tiny` (hypotheses) and `base` (final), int8, 3 shared CPU cores |
+| language model | Gemma 4 E2B, 4-bit (`gemma-4-E2B-q4_0.gguf`, sha256 `fa401b55b07ee70a54c6dae3903c783a6e65064312529ea57175cb5f8dec6634`), llama.cpp server build `b4d6c7d8f`, `--ctx-size 2048 --n-gpu-layers 99 --threads 3 --parallel 1 --cache-reuse 0`, 3 CPU cores |
+| synthesizer | Piper `en_US-lessac-medium` (onnx sha256 `5efe09e69902187827af646e1a6e9d269dee769f9877d17b16b1b46eeaaf019f`) |
+| VAD | Silero, through Pipecat; confidence 0.7, start 0.2 s, stop 0.8 s |
+| audio | reSpeaker XVF3800 array, channel 1 of 2 (see the capture-path hazards); live replies on a USB speaker, half-duplex input |
 
-See `CLAUDE.md` (project constitution), `RESEARCH_BRIEF_v2.md` (positioning,
-metrics, hypotheses, protocol; wins where v1 disagrees), and `RESEARCH_BRIEF.md`
-(v1; thesis format and presentation).
+Every run's `run_meta` record carries the git commit, the config and its hash,
+the clocks, the power mode, the huge-page policy, the capture path and the
+software versions above.
+
+## Layout
+
+| path | what |
+|---|---|
+| `src/twl/` | the pipeline, the committer, the issuer and gate, the allocator, the harness |
+| `src/scripts/` | run drivers, scorers, the claim registry, the generators |
+| `src/configs/` | one YAML per arm; the configs are part of the record |
+| `results/` | the notebook, the results page, tables and figures; `raw/` is local |
+| `paper/`, `thesis/`, `presentation/` | LaTeX sources only |
+
+`RESEARCH_BRIEF_v3.md` is the design brief the work followed; where it and
+the notebook disagree, the notebook's corrections stand.
+
+## License
+
+See [`LICENSE`](LICENSE).
