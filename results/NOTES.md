@@ -8358,3 +8358,22 @@ AMENDMENT, registered before the next run (Ali approved, 2026-11-16):
 - The sequence restarts at run 1 (NOPARTIAL, block A). Ali has already read
   items 1 and 2 once, in the void run; that is noted, and it does not matter
   for a descriptive pass.
+
+## 2026-11-16 — Half-duplex TEST runs (unscored): the second passes; pass 9 paused before run 1
+
+TEST 1, reactive-20261116-191345-f45b03 (75 s): 0 turns, nothing muted.
+The log shows no VAD onset at all between pipeline-ready and teardown. Ali's
+"start" reached him after the window had closed, so this tests nothing.
+TEST 2, reactive-20261116-192626-98e4de (120 s), build 24df427:
+- 1 turn, valid; heard "What is 12 times 8?", replied "12 times 8 is 96.";
+- 121 capture chunks muted (2.4 s) in 1 interval, which runs from the first
+  reply write to about 1.5 s after the playback_done mark;
+- output latency as PortAudio reports it: 0.009 s;
+- NO TURN MADE OF THE REPLY.
+The amendment's test condition (exactly one turn, no echo turn) is met.
+Neither test run enters any analysis.
+
+Pass 9 is paused at Ali's instruction (2026-11-18), after the noise floor and
+before the restarted run 1. When it resumes, the sequence starts at run 1
+(NOPARTIAL, block A). The 2026-11-16 noise floor stands unless the room
+changes.
