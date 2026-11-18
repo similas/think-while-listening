@@ -26,6 +26,7 @@
 % Release pointers, filled at submission. Never printed in the anonymous build.
 \newcommand{\releasedoi}{TODO-zenodo-doi}     % VERIFY at deposit
 \newcommand{\repourl}{\url{TODO-repository-url}}  % VERIFY at release
+\newcommand{\anonmirror}{\url{TODO-anonymous-mirror-url}}  % VERIFY at submission
 
 % Pass 9 (live speech) is pending: these boxes mark where its paragraph and its
 % Limitations line go. The build is not final while any remains.
@@ -69,28 +70,22 @@ Compute on a Device That Pays for It}
 \maketitle
 
 \begin{abstract}
-A cascaded voice agent on an edge device answers seconds after the user stops
-speaking. The usual remedy, starting the language model on partial
-transcripts, assumes the reasoner is idle while the user speaks. On a
-unified-memory system-on-chip it is not: the recognizer, the reasoner and the
-synthesizer share one memory system and one set of cores. We measure what the
-silence is made of on such a device, a Jetson Orin Nano. The recognizer's
-final decode is the largest stage on every set we test: \SttShareMulti\% of
-the stages after speech on spoken multi-step math problems, against
-\LlmShareMulti\% for the language model's first token. We price both kinds of speculation on one axis.
-Reply drafts become usable only near the end of the utterance, when little
-time is left to finish them, and a draft still decoding at the endpoint costs
-\ThinkerOverlap{}. A gated listener, which
-commits agreed hypotheses while the user speaks and freezes an orphaned one at
-the endpoint, cuts the median paired time to first audio by \PthreeRed{}
-($n=\PthreeN$ items). That is our pre-registered prediction, although the
-interval's lower end lies below the registered bar. On short utterances the
-gate abstains at no detectable TTFA cost. A simulated finite-horizon planner,
-calibrated from the logs, beats the gate by a median paired \PlannerDP{} per
-item at the gate's duty bound (\PlannerNoDuty{} without it, from decoding back
-to back). At the median, the gate is within that of the planner's optimum
-under the measured costs. Every prediction, including
-those that failed, is reported with its registration.
+% Interspeech 2027: at most 1,000 characters including spaces, as rendered.
+% paper_results.py checks it on every `make results`.
+Cascaded voice agents on edge devices answer seconds after the user stops.
+Starting the language model on partial transcripts assumes idle compute, but
+on a unified-memory system-on-chip the recognizer and the reasoner share memory
+and cores. On a Jetson Orin Nano the silence is mostly the recognizer's: its
+final decode is \SttShareMulti\% of the stages after speech on spoken math
+problems, the language model's first token \LlmShareMulti\%. Reply drafts
+become usable only late, and one still decoding at the endpoint costs
+\ThinkerOverlap. Committing agreed recognizer hypotheses while the user
+speaks, with a feasibility gate and the orphaned hypothesis frozen at the
+endpoint, cuts median paired time to first audio by \PthreeRed{}
+($n=\PthreeN$; lower end below the registered 300\,ms bar) and abstains on
+short utterances. At the gate's duty bound, a simulated planner over the
+endpoint hazard gains only \PlannerDP{} at the median. Predictions were
+pre-registered.
 \end{abstract}
 
 \section{Introduction}
@@ -619,15 +614,16 @@ Every number in this paper is produced by a script from the logged runs, and a
 claim registry pins each number to its scorer and to the run identifiers or
 input files it reads.
 \ifanonymous
-The code, the logs without audio, and a manifest mapping every claim to its
-scorer and inputs will be released on publication.
+An anonymized mirror of the code and the generated results is at
+\anonmirror. The logs without audio, and a manifest mapping every claim to
+its scorer and inputs, will be deposited on publication.
 \else
 The code is at \repourl. The logs without audio, their checksums, and a
 manifest mapping every claim to its scorer and inputs are deposited at Zenodo
-(doi:\releasedoi).
+(doi:\releasedoi) under CC BY 4.0; the code is under the MIT licence.
 \fi
-The benchmark's audio and item files are not redistributed; the scripts
-fetch them from their source.
+Only audio is withheld. The benchmark's item text, derived from GSM8K
+\cite{cobbe2021gsm8k} through Spoken-MQA \cite{wei2025towards}, is included.
 
 \section*{Generative-AI use}
 \label{sec:genai}

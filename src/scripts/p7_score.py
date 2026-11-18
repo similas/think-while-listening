@@ -95,6 +95,12 @@ def main() -> None:
     ]
     turns = sorted((r for r in lines if r["kind"] == "turn_record"), key=lambda t: t["turn"])
     base = sorted(a.set_dir.glob("*.wav"))
+    if not base:
+        # The data deposit withholds audio; the item file names the same wavs.
+        base = sorted(
+            a.set_dir / Path(i["wav"]).name
+            for i in json.loads(a.set_dir.with_suffix(".json").read_text())
+        )
     plan = build_block_schedule(len(base), len(ARMS), block_size=4, seed=20260916, warmup=0)
     played = [
         Path(e[0]).name for e in json.loads((a.run_dir / "playback_timeline.json").read_text())

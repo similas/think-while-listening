@@ -77,6 +77,20 @@ in the kit. Nothing here is a claim about the 2027 kit; it is a checklist.
     (c) that `refs.bib`'s header comment does not reach the PDF; (d) that the
     supplementary material, if any, is anonymized the same way.
 
+## Repository, mirror and arXiv timing (Ali, 2026-11-18)
+
+- The GitHub repository goes private from 2027-02-01 until the decision on
+  2027-06-02.
+- The submission cites an anonymized mirror (anonymous.4open.science) through
+  `\anonmirror`. Before creating it, set its term list so that no tracked file
+  shows an identifying string. A count over tracked files on 2026-11-18 found:
+  - `Ali` in 33 files, `Salimi` and `Sadr` in 9, `Concordia` in 9;
+  - `/home/ali` in 20 files, `voice-companion` (paths) in 26;
+  - `Montreal` in 4, the GitHub account name in 1.
+  The mirror carries no git history, so commit authorship does not show.
+  Check the mirror's rendered README and NOTES by eye before submitting.
+- The arXiv extended version goes up after notification, not before.
+
 ## Extended build (`\extendedtrue`)
 
 `\anonymoustrue` together with `\extendedtrue` stops the build with an error:

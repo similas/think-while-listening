@@ -69,16 +69,23 @@ PYTHONPATH=src python src/scripts/release_bundle.py --dry-run
 ```
 
 The manifest maps every claim in the registry to its scorer command, the run
-ids or input files it reads, and their checksums. Left out:
-- all audio;
-- the nightly backup's repository;
-- the Spoken-MQA copy: its audio, its item files and the prefix-probe
-  generations made from them. The items are fetched from the source with
-  `src/scripts/fetch_spoken_mqa.py`. The probe claims cannot be checked from
-  the deposit alone while their inputs are withheld.
-The archived run logs do contain the recognizer's transcripts of the
-Spoken-MQA items and the replies to them. Whether that text may be
-redistributed, and the deposit's licence, are decided before upload.
+ids or input files it reads, and their checksums.
+
+Only audio is withheld; the nightly backup's own repository is left out too.
+Everything else is included:
+- the recognizer's transcripts and the replies, which are the system's own
+  output;
+- the Spoken-MQA item files, and the prefix-probe generations made from them.
+
+The multi-step items derive from GSM8K (Cobbe et al. 2021, MIT licence)
+through Spoken-MQA (Wei et al. 2025, arXiv:2505.15000), and both are cited. A
+licence request to the Spoken-MQA authors is open; if they answer otherwise,
+the deposit is revised. The scorers read a set's order from its item file
+when the audio is absent, so every claim can be checked from the deposit
+alone.
+
+Licences: the logs and data are CC BY 4.0; the code is MIT
+([`LICENSE`](LICENSE)).
 
 ## Hardware and software pins
 

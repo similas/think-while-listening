@@ -999,6 +999,25 @@ def md_to_tex(md: str) -> str:
     return "\n".join(out) + "\n"
 
 
+ABSTRACT_MAX_CHARS = 1000  # Interspeech 2027 (Ali, 2026-11-18)
+
+
+def abstract_chars(numbers_tex_text: str) -> int:
+    """The paper abstract's length as rendered: macros expanded, LaTeX markup removed."""
+    vals = {
+        m.group(1): m.group(2).replace("\\%", "%")
+        for m in re.finditer(r"\\newcommand\{\\(\w+)\}\{(.*)\}  %", numbers_tex_text)
+    }
+    tex = (REPO / "paper/main.tex").read_text()
+    body = tex[
+        tex.index(r"\begin{abstract}") + len(r"\begin{abstract}") : tex.index(r"\end{abstract}")
+    ]
+    body = "\n".join(ln for ln in body.splitlines() if not ln.lstrip().startswith("%"))
+    t = re.sub(r"\\([A-Za-z]+)(\{\})?", lambda m: vals.get(m.group(1), m.group(0)), body)
+    t = t.replace("\\%", "%").replace("$", "").replace("\\,", " ").replace("~", " ")
+    return len(" ".join(t.split()))
+
+
 def main() -> None:
     TABLES.mkdir(parents=True, exist_ok=True)
     for name, fn in (
@@ -1025,6 +1044,10 @@ def main() -> None:
         for name, body in appendices.items():
             (REPO / gdir / name).write_text(body)
     print("  wrote the appendix tables to thesis/generated and paper/generated")
+    n = abstract_chars((REPO / "paper/generated/numbers.tex").read_text())
+    print(f"  paper abstract: {n} characters as rendered (limit {ABSTRACT_MAX_CHARS})")
+    if n > ABSTRACT_MAX_CHARS:
+        raise SystemExit(f"paper abstract is {n} characters; the limit is {ABSTRACT_MAX_CHARS}")
 
 
 def _write_generated(gen: Path) -> None:

@@ -8377,3 +8377,34 @@ Pass 9 is paused at Ali's instruction (2026-11-18), after the noise floor and
 before the restarted run 1. When it resumes, the sequence starts at run 1
 (NOPARTIAL, block A). The 2026-11-16 noise floor stands unless the room
 changes.
+
+## 2026-11-18 — DECISIONS on 98f41c5 (Ali): deposit contents, licence, repository, abstract
+
+Recorded as given.
+
+1. DEPOSIT CONTENTS. Only audio is withheld. The multi-step transcripts are
+   the system's own output over GSM8K-derived text (MIT). They are included,
+   with the Spoken-MQA item files and the prefix-probe outputs, citing GSM8K
+   and Spoken-MQA. If the Spoken-MQA authors answer the licence request
+   otherwise, the deposit is revised. IMPLEMENTED:
+   - release_bundle.py withholds no dataset copy. The mechanism is kept and
+     tested, in case a licence answer reinstates it.
+   - A set directory that held only audio is reported as "audio_withheld".
+   - p2k_score.py and p7_score.py read a set's order from its item file when
+     the wavs are absent. For every set the claims read, the item file names
+     exactly the same wavs, so the order is unchanged.
+   - The dry run builds with no problems: 73 claims, every input archived or
+     audio-withheld.
+2. DEPOSIT LICENCE. CC BY 4.0 for logs and data; MIT stays on the code. It is
+   in MANIFEST.json, the README and the paper's reproducibility statement.
+3. REPOSITORY. Private from 2027-02-01 until the 2027-06-02 decision. The
+   submission cites an anonymized mirror (anonymous.4open.science; \anonmirror
+   in the paper). The arXiv extended version goes up after notification, not
+   before. The mirror's term list and checks are in
+   paper/INTERSPEECH_KIT_NOTES.md.
+4. ABSTRACT. Interspeech 2027 limits the abstract to 1,000 characters
+   including spaces. The paper abstract is rewritten to 959 characters as
+   rendered. paper_results.py now checks this on every `make results` and
+   stops the build above 1,000. The thesis abstract stays at 249 words.
+The remaining placeholders (supervisor, degree and department wording, dates,
+acknowledgments, DOI, repository and mirror URLs) are Ali's.

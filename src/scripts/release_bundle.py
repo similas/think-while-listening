@@ -25,11 +25,10 @@ drops the whole subtree.
 
     vcs                   any .git directory or file. results/raw holds the
                           nightly backup's repository: history, not data
-    third_party_dataset   results/raw/spoken_mqa/, not redistributed;
-                          MANIFEST.json says how it regenerates. results/raw/audio/
-                          is the author's own dev set: its audio goes by the
-                          audio rule, its manifest.csv (the transcripts the
-                          dev-set scorers read) is archived
+    third_party_dataset   a dataset copy listed in DATASETS (none since
+                          2026-11-18: only audio is withheld). Spoken-MQA's and
+                          the dev set's audio go by the audio rule; their text
+                          is archived
     audio_segments        any segments/ directory
     audio                 *.wav *.flac *.mp3 *.ogg *.opus: audio stays on this machine
     model_weights         *.gguf *.ggml *.onnx *.pt *.pth *.ckpt *.safetensors
@@ -107,20 +106,14 @@ class Dataset:
     regenerate: str
 
 
-DATASETS: tuple[Dataset, ...] = (
-    Dataset(
-        f"{RAW_ARC}/spoken_mqa",
-        "Spoken-MQA subset (amao0o0/spoken-mqa): its audio, its item files, and the "
-        "prefix-probe generations made from them. NOTE: the run logs that ARE archived "
-        "carry the recognizer's transcript of each item and the reply, so item text "
-        "reaches the deposit through them; whether that may be redistributed waits on "
-        "the dataset's licence",
-        "not redistributed; regenerate the items with src/scripts/fetch_spoken_mqa.py "
-        "(--split, --seed and --n as each item file's name and length record); the "
-        "prefix-probe generations were made by src/scripts/prefix_probe.py, and a rerun "
-        "at a nonzero temperature is a new sample, not a copy",
-    ),
-)
+# Dataset copies withheld from the deposit. EMPTY by the author's decision of
+# 2026-11-18: only audio is withheld. The multi-step items derive from GSM8K
+# (MIT) through Spoken-MQA; the recognizer's transcripts and the replies are the
+# system's own output; the item files and the prefix-probe generations are
+# included and cited. If the Spoken-MQA authors answer the open licence request
+# otherwise, a Dataset entry here withholds the copy again, and the manifest
+# then says how it regenerates.
+DATASETS: tuple[Dataset, ...] = ()
 
 AUDIO_SUFFIXES = frozenset(
     {
@@ -227,7 +220,7 @@ class SecretHit:
 
 @dataclass(frozen=True)
 class Status:
-    state: str  # archived | not_redistributed | excluded | missing
+    state: str  # archived | not_redistributed | audio_withheld | excluded | missing
     files: tuple[str, ...] = ()
     detail: str = ""  # the dataset path, or the exclusion category
 
@@ -492,6 +485,12 @@ class _Index:
         return self.arcnames[lo:hi]
 
     def _left_out(self, path: str) -> Status:
+        prefix = path + "/"
+        under = [c for k, c in self.excluded_roots.items() if k.startswith(prefix)]
+        if under and all(c == "audio" for c in under):
+            # A set directory that held only audio: the scorers read its item file
+            # (<dir>.json or manifest.csv), which is archived.
+            return Status("audio_withheld")
         pure = PurePosixPath(path)
         for anc in (pure, *pure.parents):
             key = str(anc)
@@ -597,7 +596,7 @@ def resolve(
                 warnings.append(f"{who}: {what}; it is named in src/scripts/{sources[key].script}")
         for path in (*r.inputs, *r.scanned_paths):
             inputs[path] = st = index.status(path)
-            if st.state in ("archived", "not_redistributed"):
+            if st.state in ("archived", "not_redistributed", "audio_withheld"):
                 continue
             what = f"{path} is {st.state} {st.detail}".rstrip()
             if path in r.inputs:
@@ -844,6 +843,12 @@ def make_manifest(
             return {"path": path, "status": st.state, "dataset": d.path, "regenerate": d.regenerate}
         if st.state == "excluded":
             return {"path": path, "status": st.state, "category": st.detail}
+        if st.state == "audio_withheld":
+            return {
+                "path": path,
+                "status": st.state,
+                "note": "the directory held only audio; its item text is archived beside it",
+            }
         return {"path": path, "status": st.state}
 
     raw_members = [m for m in plan.members if m.arcname.startswith(f"{RAW_ARC}/")]
@@ -878,11 +883,17 @@ def make_manifest(
             "allow_dirty": allow_dirty,
         },
         # Chosen by the author before upload; the deposit is not published without it.
-        "license": "TODO: the deposit's licence (author's decision)",
+        "license": (
+            "Logs and data: CC BY 4.0. Code: MIT (the repository's LICENSE). "
+            "Author's decision, 2026-11-18."
+        ),
         "dataset_text": (
-            "Run logs include recognizer transcripts of Spoken-MQA items and the replies to "
-            "them; redistribution waits on the dataset's licence (NOTES 2026-10-13, "
-            "decision 2)."
+            "Withheld: all audio, nothing else. Included: the recognizer's transcripts and "
+            "the replies, which are the system's own output; the Spoken-MQA item files and "
+            "the prefix-probe generations made from them. The multi-step items derive from "
+            "GSM8K (Cobbe et al. 2021, MIT licence) through Spoken-MQA (Wei et al. 2025, "
+            "arXiv:2505.15000); both are cited. A licence request to the Spoken-MQA authors "
+            "is open; if they answer otherwise, the deposit is revised."
         ),
         "builder": {
             "script": "src/scripts/release_bundle.py",

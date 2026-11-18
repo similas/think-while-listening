@@ -110,6 +110,7 @@ def test_plan_keeps_the_logs_and_leaves_out_every_excluded_kind(repo: Path) -> N
         f"results/raw/reactive/{RUN}/telemetry.jsonl",
         f"results/raw/reactive/{RUN}/turns.jsonl",
         f"results/raw/reactive/{OTHER}/turns.jsonl",
+        DATASET_ITEMS,
         "results/raw/triggers/decision_points.json",
         "results/tables/t1.md",
         "src/scripts/paper_ledger.json",
@@ -117,7 +118,7 @@ def test_plan_keeps_the_logs_and_leaves_out_every_excluded_kind(repo: Path) -> N
     assert {e.arcname: (e.category, e.files) for e in plan.excluded} == {
         "results/raw/.git": ("vcs", 2),
         "results/raw/stt_isolation/.git": ("vcs", 1),
-        "results/raw/spoken_mqa": ("third_party_dataset", 2),
+        "results/raw/spoken_mqa/multi_step_reasoning-seed1/00001.wav": ("audio", 1),
         # index.json is not audio, but the whole segments/ directory goes.
         f"results/raw/reactive/{RUN}/segments": ("audio_segments", 2),
         "results/raw/capture_channels/probe.WAV": ("audio", 1),
@@ -233,8 +234,8 @@ def test_manifest_maps_each_claim_to_its_runs_files_and_checksums(
     for f in files:
         assert f["sha256"] == sha256(repo / f["path"])
     items = manifest["inputs_index"][DATASET_ITEMS]
-    assert items["status"] == "not_redistributed"
-    assert "src/scripts/fetch_spoken_mqa.py" in items["regenerate"]
+    assert items["status"] == "archived"
+    assert manifest["license"].startswith("Logs and data: CC BY 4.0")
     assert manifest["excluded"]["audio_segments"]["files"] == 2
     assert manifest["excluded"]["vcs"]["paths"] == [
         "results/raw/.git",
@@ -272,7 +273,7 @@ def test_dry_run_reports_bytes_and_writes_nothing(repo: Path, tmp_path: Path) ->
     pf = preflight(repo, raw, out, PROV, claims, sources, allow_dirty=False)
     text = render_dry_run(pf, PROV, raw, out, claims)
     assert pf.problems == ()
-    assert "INCLUDED      10 files" in text
+    assert "INCLUDED      11 files" in text
     assert "audio_segments (1 directories)" in text
     assert "would build: no problems" in text
     assert not out.exists()
@@ -311,3 +312,20 @@ def test_refuses_while_a_run_holds_the_lock(repo: Path, tmp_path: Path) -> None:
     finally:
         os.close(fd)
     assert not run_in_progress(raw)
+
+
+def test_a_listed_dataset_is_withheld_and_says_how_it_regenerates(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The mechanism kept for a licence answer that withholds the copy again."""
+    from scripts import release_bundle as rb
+
+    monkeypatch.setattr(
+        rb,
+        "DATASETS",
+        (rb.Dataset("results/raw/spoken_mqa", "Spoken-MQA copy", "fetch_spoken_mqa.py"),),
+    )
+    plan = make_plan(repo, repo / "results/raw")
+    excluded = {e.arcname: e.category for e in plan.excluded}
+    assert excluded["results/raw/spoken_mqa"] == "third_party_dataset"
+    assert DATASET_ITEMS not in [m.arcname for m in plan.members]

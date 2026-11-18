@@ -47,6 +47,11 @@ def references(set_dir: Path) -> list[str]:
     else:
         with open(set_dir / "manifest.csv", encoding="utf-8") as fh:
             by = {r["file"]: r["transcript"] for r in csv.DictReader(fh)}
+    if not wavs:
+        # The data deposit withholds audio; the item file names exactly the same
+        # wavs (checked 2026-11-18 for every set the claims read), so the order
+        # is unchanged.
+        wavs = sorted(by)
     return [by[w] for w in wavs]
 
 
