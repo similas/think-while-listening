@@ -103,13 +103,21 @@ def journal_starts(unit: str, cache: Path) -> list[tuple[dt.datetime, int]]:
     if cache.exists():
         cached = json.loads(cache.read_text()).get("starts", {})
     cmd = ["journalctl", "--user", "-u", unit, "--no-pager", "-o", "short-iso"]
-    out = subprocess.run(cmd, capture_output=True, text=True, check=False).stdout
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, check=False).stdout
+    except FileNotFoundError:
+        out = ""  # no systemd (e.g. checking the data deposit elsewhere): the cache stands
     fresh = {m.group(1): int(m.group(2)) for m in map(STARTED.search, out.splitlines()) if m}
     covers = bool(fresh) and (not cached or min(fresh) <= min(cached))
     starts = dict(cached)
     starts.update(fresh)
     if not starts:
         raise SystemExit(f"no starts in the journal and none cached in {cache}")
+    if starts == cached:
+        # Nothing new: leave the file (and its checksum in the deposit) untouched.
+        return sorted(
+            (dt.datetime.fromisoformat(f"{k[:-2]}:{k[-2:]}"), v) for k, v in starts.items()
+        )
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_text(
         json.dumps(

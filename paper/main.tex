@@ -23,7 +23,8 @@
 \anonymousfalse
 \graphicspath{{figures/}}
 
-% Release pointers, filled at submission. Never printed in the anonymous build.
+% Release pointers, filled at submission. \repourl and \releasedoi print only in
+% the named builds; \anonmirror prints only in the anonymous one.
 \newcommand{\releasedoi}{TODO-zenodo-doi}     % VERIFY at deposit
 \newcommand{\repourl}{\url{TODO-repository-url}}  % VERIFY at release
 \newcommand{\anonmirror}{\url{TODO-anonymous-mirror-url}}  % VERIFY at submission
@@ -75,16 +76,16 @@ Compute on a Device That Pays for It}
 Cascaded voice agents on edge devices answer seconds after the user stops.
 Starting the language model on partial transcripts assumes idle compute, but
 on a unified-memory system-on-chip the recognizer and the reasoner share memory
-and cores. On a Jetson Orin Nano the silence is mostly the recognizer's: its
-final decode is \SttShareMulti\% of the stages after speech on spoken math
-problems, the language model's first token \LlmShareMulti\%. Reply drafts
+and cores. On a Jetson Orin Nano the recognizer's final decode is the largest
+stage after speech: \SttShareMulti\% on spoken math problems, against
+\LlmShareMulti\% for the language model's first token. Reply drafts
 become usable only late, and one still decoding at the endpoint costs
 \ThinkerOverlap. Committing agreed recognizer hypotheses while the user
 speaks, with a feasibility gate and the orphaned hypothesis frozen at the
 endpoint, cuts median paired time to first audio by \PthreeRed{}
 ($n=\PthreeN$; lower end below the registered 300\,ms bar) and abstains on
 short utterances. At the gate's duty bound, a simulated planner over the
-endpoint hazard gains only \PlannerDP{} at the median. Predictions were
+endpoint hazard beats the gate by \PlannerDP{} at the median. Predictions were
 pre-registered.
 \end{abstract}
 
@@ -303,7 +304,8 @@ running is recorded per run and held equal across the arms of a comparison.
 splits of Spoken-MQA \cite{wei2025towards}:
 \begin{itemize}
 \item two digit splits;
-\item the multi-step split, derived from GSM8K \cite{cobbe2021gsm8k}. We use 80
+\item the multi-step split, whose problems come from SVAMP
+  \cite{patel2021svamp} and GSM8K \cite{cobbe2021gsm8k}. We use 80
   items drawn with a fixed seed and, as a fifth length, the 20 longest of
   them.
 \end{itemize}
@@ -622,8 +624,8 @@ The code is at \repourl. The logs without audio, their checksums, and a
 manifest mapping every claim to its scorer and inputs are deposited at Zenodo
 (doi:\releasedoi) under CC BY 4.0; the code is under the MIT licence.
 \fi
-Only audio is withheld. The benchmark's item text, derived from GSM8K
-\cite{cobbe2021gsm8k} through Spoken-MQA \cite{wei2025towards}, is included.
+Only audio is withheld. The benchmark's item text, from Spoken-MQA
+\cite{wei2025towards}, is included and cited with its sources.
 
 \section*{Generative-AI use}
 \label{sec:genai}

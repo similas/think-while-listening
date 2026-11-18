@@ -329,3 +329,14 @@ def test_a_listed_dataset_is_withheld_and_says_how_it_regenerates(
     excluded = {e.arcname: e.category for e in plan.excluded}
     assert excluded["results/raw/spoken_mqa"] == "third_party_dataset"
     assert DATASET_ITEMS not in [m.arcname for m in plan.members]
+
+
+def test_audio_withheld_needs_the_item_file_and_never_covers_a_glob() -> None:
+    from scripts.release_bundle import _Index
+
+    raw = "results/raw"
+    excluded = {f"{raw}/s/a.wav": "audio", f"{raw}/t/a.wav": "audio"}
+    idx = _Index(arcnames=(f"{raw}/s.json",), excluded_roots=excluded)
+    assert idx.status(f"{raw}/s").state == "audio_withheld"  # item file archived
+    assert idx.status(f"{raw}/t").state == "missing"  # audio only, no item file
+    assert idx.status(f"{raw}/s/*.json").state == "missing"  # a glob is never "withheld"

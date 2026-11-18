@@ -8408,3 +8408,41 @@ Recorded as given.
    stops the build above 1,000. The thesis abstract stays at 249 words.
 The remaining placeholders (supervisor, degree and department wording, dates,
 acknowledgments, DOI, repository and mirror URLs) are Ali's.
+
+## 2026-11-18 — CORRECTION to "DECISIONS on 98f41c5": the item text is not GSM8K-only
+
+Appended, not edited. From the reviewer's pass over 830b03b.
+
+1. PROVENANCE WAS MISSTATED, AND THE LICENCE DECISION RESTED ON IT. Spoken-MQA
+   (Wei et al. 2025, §3.1 and Table 1) takes its items from several sources:
+   - multi-step: SVAMP and GSM8K;
+   - single-step: AddSub, SingleOp and SVAMP;
+   - arithmetic: Timers and Such.
+   Our seeded multi-step set holds SVAMP items: the first items are SVAMP
+   problems, and the item files carry no source field. Decision 1's reasoning
+   ("GSM8K-derived text, MIT") covers only part of what the deposit would
+   ship. The paper, thesis, README, manifest and release_bundle.py now state
+   the sources accurately; SVAMP is added to the bibliography. THE LICENCE
+   BASIS FOR REDISTRIBUTING THE ITEM TEXT GOES BACK TO ALI. The deposit is not
+   built or published until he decides; the code still withholds only audio.
+2. "Every claim can be checked from the deposit alone" was false on two
+   counts, both now fixed:
+   - epa_wallclock.py needed the segment wavs. Their durations are now kept
+     in results/raw/triggers/epa_wallclock/segment_durations.json, written
+     from the wavs on 2026-11-18. The script checks the file against the wavs
+     whenever both exist, and reads it when they do not. Its output is
+     unchanged: 11.53 s/segment, 4.16x.
+   - audit_gpu_offload.py now tolerates a machine without systemd, and no
+     longer rewrites its cached start list when nothing changed, so a rerun
+     leaves the deposited file's checksum intact.
+3. The abstract said the silence is "mostly" the recognizer's, which is false
+   on two of five sets. It now says the final decode is the largest stage. The
+   planner sentence now names its comparator ("beats the gate by") and drops
+   "only". The abstract is 956 characters as rendered, and the checker now
+   stops on any macro it cannot expand.
+4. release_bundle.py's "audio_withheld" now also requires the set's item file
+   to be archived, and never covers a glob. Tests cover both.
+5. DEPOSIT TIMING: the deposit is built and published after notification;
+   reviewers use the anonymized mirror. The README and Makefile now say so,
+   matching decision 3 and the anonymous paper text. Before, they said "at
+   submission".

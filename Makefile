@@ -43,6 +43,7 @@ paper thesis slides:
 	  echo "error: latexmk not found — '$@' compiles on $(LATEX_HOST), never on the Jetson" >&2; exit 2; }
 	cd $(if $(filter slides,$@),presentation,$@) && $(LATEXMK) main.tex
 
-# The data deposit (logs without audio, checksums, claim manifest). Run at submission.
+# The data deposit (logs without audio, checksums, claim manifest). Built and
+# published after notification; reviewers use the anonymized mirror until then.
 release:
 	PYTHONPATH=src $(BIN)/python src/scripts/release_bundle.py

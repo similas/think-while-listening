@@ -50,6 +50,13 @@ def main() -> None:
         default=Path("results/raw/triggers/epa_scored_raw.json"),
         help="the segments that pass scored (wav paths)",
     )
+    p.add_argument(
+        "--durations",
+        type=Path,
+        default=Path("results/raw/triggers/epa_wallclock/segment_durations.json"),
+        help="each scored segment's length in seconds: written from the wavs when they are "
+        "present, read when they are not (the data deposit withholds audio)",
+    )
     args = p.parse_args()
 
     checkpoints: dict[int, float] = {}
@@ -63,7 +70,17 @@ def main() -> None:
         raise SystemExit(f"{args.log}: no timing lines found")
 
     rows = json.loads(args.scored.read_text())
-    durs = [wav_seconds(Path(r["wav"])) for r in rows]
+    if all(Path(r["wav"]).exists() for r in rows):
+        durs = [wav_seconds(Path(r["wav"])) for r in rows]
+        table = {r["wav"]: d for r, d in zip(rows, durs, strict=True)}
+        if args.durations.exists():
+            if json.loads(args.durations.read_text()) != table:
+                raise SystemExit(f"{args.durations} disagrees with the wavs it records")
+        else:
+            args.durations.write_text(json.dumps(table, indent=1) + "\n")
+    else:
+        table = json.loads(args.durations.read_text())
+        durs = [table[r["wav"]] for r in rows]
     n_seg, minutes = total
     if n_seg != len(rows):
         raise SystemExit(f"log scored {n_seg} segments, {args.scored} holds {len(rows)}")

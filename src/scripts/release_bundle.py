@@ -107,8 +107,10 @@ class Dataset:
 
 
 # Dataset copies withheld from the deposit. EMPTY by the author's decision of
-# 2026-11-18: only audio is withheld. The multi-step items derive from GSM8K
-# (MIT) through Spoken-MQA; the recognizer's transcripts and the replies are the
+# 2026-11-18: only audio is withheld. The decision cited GSM8K (MIT); the
+# multi-step items in fact come from SVAMP and GSM8K, and the other splits from
+# AddSub, SingleOp, SVAMP and Timers and Such (Spoken-MQA, §3.1), so the licence
+# basis is under the author's review. The recognizer's transcripts and the replies are the
 # system's own output; the item files and the prefix-probe generations are
 # included and cited. If the Spoken-MQA authors answer the open licence request
 # otherwise, a Dataset entry here withholds the copy again, and the manifest
@@ -484,12 +486,13 @@ class _Index:
         hi = bisect.bisect_left(self.arcnames, prefix + "\U0010ffff")
         return self.arcnames[lo:hi]
 
-    def _left_out(self, path: str) -> Status:
+    def _left_out(self, path: str, *, glob: bool = False) -> Status:
         prefix = path + "/"
         under = [c for k, c in self.excluded_roots.items() if k.startswith(prefix)]
-        if under and all(c == "audio" for c in under):
+        item_file = path + ".json" in self.arcnames or prefix + "manifest.csv" in self.arcnames
+        if not glob and under and all(c == "audio" for c in under) and item_file:
             # A set directory that held only audio: the scorers read its item file
-            # (<dir>.json or manifest.csv), which is archived.
+            # (<dir>.json or <dir>/manifest.csv), which is archived.
             return Status("audio_withheld")
         pure = PurePosixPath(path)
         for anc in (pure, *pure.parents):
@@ -517,7 +520,7 @@ class _Index:
                 if _is_glob(part):
                     break
                 stem.append(part)
-            return self._left_out("/".join(stem))
+            return self._left_out("/".join(stem), glob=True)
         i = bisect.bisect_left(self.arcnames, path)
         if i < len(self.arcnames) and self.arcnames[i] == path:
             return Status("archived", (path,))
@@ -890,10 +893,12 @@ def make_manifest(
         "dataset_text": (
             "Withheld: all audio, nothing else. Included: the recognizer's transcripts and "
             "the replies, which are the system's own output; the Spoken-MQA item files and "
-            "the prefix-probe generations made from them. The multi-step items derive from "
-            "GSM8K (Cobbe et al. 2021, MIT licence) through Spoken-MQA (Wei et al. 2025, "
-            "arXiv:2505.15000); both are cited. A licence request to the Spoken-MQA authors "
-            "is open; if they answer otherwise, the deposit is revised."
+            "the prefix-probe generations made from them. Spoken-MQA (Wei et al. 2025, "
+            "arXiv:2505.15000) takes its multi-step items from SVAMP and GSM8K, its "
+            "single-step items from AddSub, SingleOp and SVAMP, and its arithmetic items "
+            "from Timers and Such. The licence basis for redistributing that text is under "
+            "the author's review, and a licence request to the Spoken-MQA authors is open; "
+            "the deposit is not published until both are settled."
         ),
         "builder": {
             "script": "src/scripts/release_bundle.py",

@@ -59,8 +59,9 @@ make slides     # presentation/main.tex (Beamer, metropolis, 16:9)
 
 ## Data release
 
-`results/raw/` is not in git: it holds recorded audio. At submission the logs
-are deposited without audio:
+`results/raw/` is not in git: it holds recorded audio. The logs are
+deposited without audio after the paper's notification. Until then,
+reviewers get the anonymized mirror. To build the deposit:
 
 ```sh
 make release    # archive, SHA256SUMS, MANIFEST.json
@@ -77,10 +78,14 @@ Everything else is included:
   output;
 - the Spoken-MQA item files, and the prefix-probe generations made from them.
 
-The multi-step items derive from GSM8K (Cobbe et al. 2021, MIT licence)
-through Spoken-MQA (Wei et al. 2025, arXiv:2505.15000), and both are cited. A
-licence request to the Spoken-MQA authors is open; if they answer otherwise,
-the deposit is revised. The scorers read a set's order from its item file
+The item text comes from Spoken-MQA (Wei et al. 2025, arXiv:2505.15000).
+Its sources are:
+- multi-step: SVAMP and GSM8K;
+- single-step: AddSub, SingleOp and SVAMP;
+- arithmetic: Timers and Such.
+The licence basis for redistributing that text is under the author's review,
+and a licence request to the Spoken-MQA authors is open. The deposit is not
+published until both are settled. The scorers read a set's order from its item file
 when the audio is absent, so every claim can be checked from the deposit
 alone.
 

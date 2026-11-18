@@ -1015,6 +1015,9 @@ def abstract_chars(numbers_tex_text: str) -> int:
     body = "\n".join(ln for ln in body.splitlines() if not ln.lstrip().startswith("%"))
     t = re.sub(r"\\([A-Za-z]+)(\{\})?", lambda m: vals.get(m.group(1), m.group(0)), body)
     t = t.replace("\\%", "%").replace("$", "").replace("\\,", " ").replace("~", " ")
+    unknown = sorted(set(re.findall(r"\\[A-Za-z]+", t)))
+    if unknown:
+        raise SystemExit(f"abstract uses macros the checker cannot expand: {unknown}")
     return len(" ".join(t.split()))
 
 
