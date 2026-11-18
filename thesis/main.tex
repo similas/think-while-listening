@@ -30,6 +30,7 @@ Think-While-Listening Compute on a Device That Pays for It}
 \newcommand{\departmentname}{Department of Computer Science and Software
 Engineering}                                                    % VERIFY
 \newcommand{\depositdate}{TODO Month Year}                       % VERIFY
+\newcommand{\supervisorname}{TODO Supervisor Name}               % VERIFY
 \newcommand{\deposityear}{2026}                                   % VERIFY
 % ---------------------------------------------------------------------------
 
@@ -91,7 +92,27 @@ Approved by \rule{3in}{0.4pt}\\[3ex]
 Ali Salimi Sadr
 \end{center}
 % At most 250 words. Written last, from results/RESULTS.md.
-TODO: abstract.
+A cascaded voice agent on an edge device answers seconds after the user
+stops speaking. The usual remedy, starting the language model on partial
+transcripts, assumes that compute spent while the user speaks would
+otherwise sit idle. On a unified-memory system-on-chip it does not. On a
+Jetson Orin Nano, this thesis measures what that silence is made of, prices
+the two ways of spending the listening window, and builds a rule that
+allocates it. The recognizer's final decode is the largest stage after speech
+at every utterance length tested: \SttShareMulti\% of the stage sum on spoken
+multi-step math problems, against \LlmShareMulti\% for the language model's
+first token. Co-residence alone slows the recognizer, through huge-page
+fallback. A reply draft still decoding at the endpoint costs
+\ThinkerOverlap. On this task a draft becomes usable only near the end of the
+utterance, where it no longer fits, and a pre-registered test closed that
+line. Committing agreed recognizer hypotheses while the user speaks attacks
+the largest stage instead. With a feasibility gate and a freeze of the
+orphaned hypothesis at the endpoint, it cuts the median paired time to first
+audio on long utterances by \PthreeRed{} ($n=\PthreeN$; the interval's lower
+end lies below the registered bar), and abstains on short ones. A simulated
+planner over the endpoint hazard improves on the gate by \PlannerDP{} at the
+median. Predictions were registered before their data; every number comes
+from a script over the logs.
 
 \chapter*{Acknowledgements}
 \addcontentsline{toc}{chapter}{Acknowledgements}
@@ -99,7 +120,13 @@ TODO: acknowledgements.
 
 \chapter*{Contribution of Authors}
 \addcontentsline{toc}{chapter}{Contribution of Authors}
-TODO: contribution of authors, consistent with the generative-AI disclosure.
+This is a chapter-based thesis with a single author. Ali Salimi Sadr
+designed the study, built the testbed, set and approved every pre-registered
+prediction, made every analysis decision, approved each measured run, and
+wrote this thesis. \supervisorname{} supervised the work. A conference paper
+drawn from Chapters~4 to~6 is in preparation, with Ali Salimi Sadr as its
+author. A generative-AI coding tool was used under the author's direction;
+its role is stated in Section~\ref{sec:genai-thesis}.
 
 \renewcommand{\contentsname}{Table of Contents}
 \tableofcontents

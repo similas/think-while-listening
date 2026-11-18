@@ -63,7 +63,7 @@ than silently deviating.
   SEPARATELY. Never pool them: a pooled mean compares different populations and
   can invert the sign of the effect. (2026-09-17: two-engine STT appeared to
   reduce anticipation lead 897 -> 561 ms pooled; on the six utterances both
-  configurations covered it RAISED it 897 -> 1701 ms, and the nine newly covered
+  configurations covered it RAISED it 897 -> 1685 ms, and the nine newly covered
   utterances simply had shorter leads.)
 - Do not rename baselines or metrics to obscure comparison with prior work. Use
   the metric names and definitions in `RESEARCH_BRIEF_v2.md` §5.
