@@ -214,7 +214,7 @@ def verdict(med: dict) -> tuple[str, str]:
     a_txt = "HOLDS" if a <= 1.1 else ("FALSIFIED" if a >= 1.3 else "UNSCORED BAND")
     b_ok = b >= 150 and blo > 0
     line = (
-        f"P9b-a KILL ratio {a:.2f}x [{alo:.2f}, {ahi:.2f}] -> {a_txt};  "
+        f"P9b-a KILL ratio {a:.2f}x [{alo:.2f}, {ahi:.2f}] n={len(ratios)} -> {a_txt};  "
         f"P9b-b paired TTFA {b:+.0f} ms [{blo:+.0f}, {bhi:+.0f}] n={n} -> "
         f"{'HOLDS' if b_ok else 'DOES NOT HOLD'}"
     )

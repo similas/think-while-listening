@@ -209,7 +209,7 @@ P2b: NOT TESTABLE on the Phase 5 design (each multi_step run plays each item onc
 ### Freezing the orphaned hypothesis decode at the endpoint (SIGSTOP) saves TTFA
 
 ```
-PRIMARY: P9b-a STOP ratio 0.93x [0.92, 0.98] -> HOLDS;  P9b-b paired TTFA +462 ms [+57, +737] n=16 -> HOLDS
+PRIMARY: P9b-a STOP ratio 0.93x [0.92, 0.98] n=17 -> HOLDS;  P9b-b paired TTFA +462 ms [+57, +737] n=16 -> HOLDS
 ```
 
 - command: `src/scripts/p9c_score.py` with the 6 runs below

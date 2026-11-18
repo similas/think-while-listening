@@ -277,6 +277,13 @@ H_EPA0 = "EPA (acoustic trigger): AUC 0.531. Neither trigger predicts the window
 
 CLAIMS: tuple[Claim, ...] = (
     Claim(
+        "p9_items",
+        "Kill and respawn (P9): items scored per arm",
+        "p9",
+        r"^reps: KILL",
+        H_P9,
+    ),
+    Claim(
         "attr_paired",
         "Recognizer final decode, pipeline minus isolation, paired per segment",
         "attr",

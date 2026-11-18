@@ -1,0 +1,767 @@
+% Defense / conference talk. Written from results/RESULTS.md, paper/main.tex and
+% the last corrections in results/NOTES.md.
+% Every measured or simulated value is a macro from ../paper/generated/numbers.tex
+% (src/scripts/paper_results.py); this file types no measured value of its own.
+% Typed: registered bars and predictions, set sizes, config constants, labels.
+% \NoMacro{n} marks an n (or interval) the slide needs and numbers.tex lacks.
+% Compiled on the LaTeX host from presentation/, never on the Jetson
+% (latexmk -xelatex main.tex for the theme's fonts, or latexmk -pdf main.tex).
+\documentclass[aspectratio=169,11pt]{beamer}
+\usetheme{metropolis}
+\metroset{block=fill}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{pgfpages}
+% Speaker notes on a second screen (right half of each page). Off by default.
+% \setbeameroption{show notes on second screen=right}
+\setbeamertemplate{note page}[plain]
+\setbeamerfont{note page}{size=\scriptsize}
+
+\graphicspath{{../paper/figures/}}
+\input{../paper/generated/numbers.tex}
+
+% A value the talk needs that no macro carries yet. Grep for it; add the macro
+% to paper_results.py and replace. Never fill it in by hand.
+\newcommand{\NoMacro}[1]{\textbf{[#1: no macro]}}
+
+% \twlgenerated[max total height]{file} typesets one of the generated table or
+% table* floats as a plain tabular on a slide: the float, its caption and its
+% label are dropped, and the tabular is scaled down (never up) to the frame's
+% width and to the given height. The generated file is read as is.
+\makeatletter
+\newsavebox{\twl@box}
+\newcommand{\twl@gobbleopt}{\@ifnextchar[{\twl@gobbleopt@}{\ignorespaces}}
+\def\twl@gobbleopt@[#1]{\ignorespaces}
+\newcommand{\twlgenerated}[2][0.75\textheight]{%
+  \begingroup
+    \expandafter\let\csname table*\endcsname\twl@gobbleopt
+    \expandafter\let\csname endtable*\endcsname\unskip
+    \let\table\twl@gobbleopt
+    \let\endtable\unskip
+    \renewcommand{\caption}[2][]{\ignorespaces}%
+    \renewcommand{\label}[1]{\ignorespaces}%
+    \let\centering\relax
+    \sbox{\twl@box}{\input{#2}\unskip}%
+    \ifdim\wd\twl@box>\linewidth
+      \sbox{\twl@box}{\resizebox{\linewidth}{!}{\usebox{\twl@box}}}%
+    \fi
+    \ifdim\dimexpr\ht\twl@box+\dp\twl@box\relax>#1\relax
+      \sbox{\twl@box}{\resizebox*{!}{#1}{\usebox{\twl@box}}}%
+    \fi
+    \usebox{\twl@box}%
+  \endgroup}
+\makeatother
+
+\title{The Window Belongs to the Listener}
+\subtitle{Allocating think-while-listening compute on a device that pays for it}
+\author{Ali Salimi Sadr}
+\institute{Concordia University}
+\date{}
+
+\begin{document}
+
+% ---------------------------------------------------------------- 1
+\begin{frame}[plain,noframenumbering]
+  \titlepage
+  \note{
+    \begin{itemize}
+    \item One sentence: on a device that pays for its speculation, the
+      listening window belongs to the listener, not to the reasoner.
+    \item The silence is mostly the recognizer's: its final decode is
+      \SttShareMulti\% of the stages after speech on multi-step problems,
+      the language model's first token \LlmShareMulti\%.
+    \item The gated, freezing listener cuts the median paired TTFA by
+      \PthreeRed{} ($n=\PthreeN$ items); the CI's lower end lies below the
+      registered 300\,ms bar.
+    \item Told as it happened: every prediction is shown with its
+      registration, the failed ones included.
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 2
+\begin{frame}{Think while listening}
+  \begin{itemize}
+  \item A cascaded voice agent on an edge device answers seconds after the
+    user stops: a median \TTFAMulti\,ms here, on spoken multi-step problems.
+  \item The field's answer: start the language model on partial transcripts,
+    so part of the reply is ready at the endpoint.
+  \item Its assumption: compute is idle while the user speaks.
+  \item On a unified-memory system-on-chip it is not. Recognizer, reasoner
+    and synthesizer share one memory system and one set of cores.
+  \end{itemize}
+  \bigskip
+  \alert{Which speculation should the listening window be spent on?}
+  \note{
+    \begin{itemize}
+    \item TTFA: time to first audio, from the true end of speech (known to
+      the file source) to the first reply audio.
+    \item \TTFAMulti\,ms is the median TTFA of the reactive pipeline without
+      partial decodes (REACTIVE-NOPARTIAL) on the 80 seeded multi-step items,
+      three runs. Its n in turns is printed on Fig.~1; its scorer prints no
+      interval for it.
+    \item The field's designs: input-time speculation, semantic triggering,
+      endpoint anticipation, simultaneous inference; spoken language models
+      pursue the same idea inside one model. They assume idle compute.
+    \item Here a speculative decode is paid for by whatever runs next to it.
+      The talk prices both kinds of speculation on one axis.
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 3
+\begin{frame}{Testbed}
+  \begin{itemize}
+  \item \textbf{Device.} Jetson Orin Nano Super, 8\,GB unified memory,
+    MAXN\_SUPER with clocks pinned, headless.
+  \item \textbf{Pipeline.} Silero VAD; Whisper \texttt{tiny} (hypotheses) and
+    \texttt{base} (final), int8, on three shared CPU cores; a 4-bit
+    Gemma~4~E2B in llama.cpp, all layers on the GPU, one slot; Piper.
+  \item \textbf{Sets.} Dev (16 short spoken queries); Spoken-MQA short and
+    long digit splits (20 each); multi-step (80 seeded items, and their 20
+    longest).
+  \item \textbf{Protocol.} Audio played in at real time through the capture
+    path; arms paired per item, each item's median over three runs,
+    bootstrap 95\% CI over items.
+  \end{itemize}
+  \note{
+    \begin{itemize}
+    \item The language model runs on the other three cores; recognizer and
+      reasoner share one memory system.
+    \item The next file starts only after the reply has finished and a quiet
+      period has passed, so turns never overlap.
+    \item Excluded: turns split by the VAD, turns whose endpoint fired after
+      the final, runs that fail a registered validity check.
+    \item Analyses that depart from paired-per-item say so on their slide
+      (the tax: one run per condition; the overlap fit: intervals over
+      runs).
+    \item Pre-registration: predictions, bars and scoring rules committed to
+      the lab notebook before the runs that test them; corrections appended,
+      never edited in.
+    \item Spoken-MQA's single-step split selected the listener's
+      configuration and tested preemption.
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 4
+\begin{frame}{One window, two consumers}
+  \[
+    \mathrm{TTFA} = s + F(D - C) + L + S + O
+  \]
+  \begin{itemize}
+  \item \textbf{Listener.} Decodes the uncommitted audio with a small model
+    and commits the words consecutive hypotheses agree on: it shrinks
+    $D - C$.
+  \item \textbf{Thinker.} Drafts the reply at fraction $f$ of the utterance;
+    usable with probability $p_{\mathrm{usable}}(f)$, worth issuing only
+    above a break-even $p^\ast$.
+  \item A draft must finish inside the window $w(f) = D(1-f) - d(fD)$.
+  \item Neither $D$ nor the endpoint is known while the user speaks.
+  \end{itemize}
+  \note{
+    \begin{itemize}
+    \item $s$: the VAD's settle time. $D$: the audio held at the endpoint.
+      $C$: the audio committed before it. $F$: the final decode of the
+      uncommitted tail, close to affine in its audio. $L$: the language
+      model's first token. $S$: the synthesizer's first chunk. $O$: audio
+      output.
+    \item A hypothesis still decoding at the endpoint competes with the
+      final for the same cores, unless it is stopped.
+    \item $d(fD)$: the decode of what has been heard. A draft that cannot
+      finish before the endpoint is all cost.
+    \item A rule must judge, per consumer, whether work issued now is
+      feasible; for the thinker, also whether it is valuable,
+      $p_{\mathrm{usable}}(\hat f) \ge p^\ast$. Ours estimates both from a
+      point prior on utterance length and in-pipeline timings.
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 5
+\begin{frame}{What the silence is made of}
+  {\centering
+  \includegraphics[width=\linewidth,height=0.55\textheight,keepaspectratio]{paper_fig1_stage_decomposition.pdf}\par}
+  \small
+  \begin{itemize}
+  \item The final decode is the largest stage on every set: \SttShareMulti\%
+    of the stage sum on multi-step; the language model's first token,
+    \LlmShareMulti\%.
+  \item Speculating the reply attacks a small stage; speculating the
+    transcript attacks the largest.
+  \end{itemize}
+  \note{
+    \begin{itemize}
+    \item Median stage durations after the end of speech,
+      REACTIVE-NOPARTIAL, five utterance lengths.
+    \item The final's share of the stage sum: dev \SttShareDev\%, short
+      digit \SttShareShort\%, long digit \SttShareLong\%, multi-step
+      \SttShareMulti\%. Language model's first token on multi-step
+      \LlmShareMulti\%; median TTFA there \TTFAMulti\,ms.
+    \item n: turns per set, printed on the figure; the scorer prints no
+      interval for the shares. The 20-longest bar comes from one run.
+    \item Caveat that travels: P1 (share $\ge$ 50\% at every length, rising
+      with length) is FALSIFIED. The share is not monotone in length and is
+      below half on two sets. What stands: the final is the largest single
+      stage at every length.
+    \item One device class with CPU-bound recognition: a GPU recognizer
+      would move the shares.
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 6
+\begin{frame}{Residency alone taxes the recognizer}
+  {\centering
+  \includegraphics[width=\linewidth,height=0.52\textheight,keepaspectratio]{paper_fig2_occupancy_tax.pdf}\par}
+  \small
+  \begin{itemize}
+  \item A process the size of the language model that only holds pages slows
+    the final decode by \TaxBallastA{} and \TaxBallastB{} (two runs, paired).
+  \item Mechanism: transparent-huge-page fallback in the decoder's own
+    allocations: \AloneFallback{} $\rightarrow$ \BallastFallback{} fallbacks per
+    decode.
+  \end{itemize}
+  \note{
+    \begin{itemize}
+    \item Recognizer alone: final decode \AloneSTT{}, \AloneFallback{}
+      fallbacks per decode, \AloneHuge\,MB of huge pages kept. Inert ballast
+      co-resident: \BallastFallback{} fallbacks per decode, \BallastHuge\,MB
+      kept.
+    \item Paired tax, inert ballast: \TaxBallastA{} and \TaxBallastB{}. Full
+      pipeline co-resident: \TaxFullA{} and \TaxFullB{}. 32 turns per
+      condition (the 16 dev files, each played twice); the CI resamples the
+      files.
+    \item Caveats that travel: one run per condition, each made after its
+      baseline, so time order is confounded with condition. The two runs
+      disagree on the size and on the order of conditions, and only the
+      second was instrumented for huge pages. Every interval excludes zero.
+    \item Not claimed: that an inert ballast costs as much as a live
+      inference server. It does in one run, not in the other.
+    \item The figure is the instrumented session: one run per condition.
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 7
+\begin{frame}{Two overlap penalties}
+  {\centering
+  \includegraphics[width=\linewidth,height=0.52\textheight,keepaspectratio]{paper_fig3_overlap_penalties.pdf}\par}
+  \small
+  \begin{itemize}
+  \item \textbf{Thinker.} A draft still decoding at the endpoint delays first
+    audio by \ThinkerOverlap{} ($n=\ThinkerOverlapN$ turns).
+  \item \textbf{Listener.} A hypothesis still decoding there costs the final
+    \ListenerC\,ms per s of overlap, \ListenerCCI{}: below the registered
+    500--1500\,ms/s band, not falsified.
+  \end{itemize}
+  \note{
+    \begin{itemize}
+    \item Thinker, still decoding: \ThinkerOverlap{}, $n=\ThinkerOverlapN$
+      turns, against the same item's reactive turns in the same run
+      (blocked policy runs).
+    \item Thinker, finished first: \ThinkerFinished{},
+      $n=\ThinkerFinishedN$; no detectable penalty in these runs. Not a
+      general zero: the onset test found \OnsetSixtyFourFin\,ms
+      \OnsetSixtyFourFinCI{} ($n=\OnsetSixtyFourFinN$) for finished drafts
+      at $B=64$ contended, timed from speech onset, not the endpoint.
+    \item Listener: $c$ fitted over \PtwoaPop{}, the arms that let a partial
+      decode run past the endpoint (not the freezing arm); interval over
+      runs. Below the registered band, not falsified; the scorer was written
+      after the data; a coding of the arms chosen afterwards gives a higher
+      value.
+    \item Removing partial decodes from the reactive pipeline cuts dev TTFA
+      by \PartialsDev{} ($n=\PartialsDevN$ items, pass 1n).
+    \item The listener's in-flight bar is final-decode time ($c$ times the
+      median overlap); the other bars are TTFA.
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 8
+\begin{frame}{Is a draft usable? The prefix probe}
+  \begin{itemize}
+  \item Offline, the language model sees the first fraction $f$ of each
+    multi-step problem. Its draft is \emph{usable} if its first spoken chunk
+    is a word prefix of the full-transcript reply's.
+  \item Break-even, from the measured costs: $p^\ast = \BreakEven$.
+  \item Greedy usability: \GreedyFifty{} at $f = 0.5$; \GreedySeventyFive{}
+    at $f = 0.75$.
+  \item The registered test at $f = 0.75$ fires: the value side is closed on
+    this corpus. The problems ask their question last.
+  \end{itemize}
+  \note{
+    \begin{itemize}
+    \item The 80 seeded multi-step items, run twice: sampling at
+      $T = 0.5$, and greedy.
+    \item The probe's gate: from the full transcript, greedy answers
+      correctly on \GreedyGate{} of the items, passing the registered 30\%
+      gate; sampling gives \SampledGate{} and fails it. The curve is the
+      greedy one; the live pipeline replies at $T = 0.5$.
+    \item At $f = 0.75$: greedy \GreedySeventyFive{}
+      (\GreedySeventyFiveK{} items); sampled \SampledSeventyFive.
+    \item At $f = 0.9$, exploratory and not the registered test: greedy
+      \GreedyNinety{}. The point estimate clears $p^\ast$; the interval
+      reaches below it.
+    \item $p^\ast$ weighs the overlap cost of a draft still running at the
+      endpoint against the time a usable draft saves.
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 9
+\begin{frame}{Where a draft still fits}
+  {\centering
+  \includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{paper_fig4_usable_vs_window.pdf}\par}
+  \small
+  \begin{itemize}
+  \item The last fraction at which a 10-token draft still fits:
+    $f^\ast =$ \Fstar{} ($n=\FstarN$ items); predicted 0.858.
+  \item There a greedy draft is usable with probability \FstarUsable{},
+    within sampling error of $p^\ast = \BreakEven$.
+  \item Where a draft fits, it is rarely worth issuing; where it would be
+    worth issuing, it no longer fits.
+  \end{itemize}
+  \note{
+    \begin{itemize}
+    \item $f^\ast$: \Fstar{}, $n=\FstarN$ items in the interquartile range
+      of duration, on the buffer clock. Predicted 0.858: NOT FALSIFIED,
+      lands on the prediction.
+    \item Correction that travels: as registered, on mixed clocks, the
+      estimate was higher. The clock-consistent correction is the figure
+      cited; both are in the ledger.
+    \item Usability at $f^\ast$, \FstarUsable{}, is a value read off the
+      offline probe's curve, which carries no interval. That it is above
+      break-even is not shown.
+    \item The line is the registered window model; the squares are measured
+      windows (pass 8).
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 10
+\begin{frame}{Could a trigger tell?}
+  \begin{itemize}
+  \item Two triggers for ``more than 900\,ms of speech remain'': semantic,
+    on the partial transcript, and acoustic endpoint anticipation.
+  \item AUC \TsemAUC{} (semantic) and \EpaAUC{} (acoustic), over
+    \TriggerPoints{} decision points from \TriggerUtts{} dev utterances.
+  \item Neither is distinguishable from chance, and the intervals are too
+    wide to call either useless: \alert{not detectable}, and open.
+  \item The acoustic model also runs slower than real time here:
+    \EpaRtf$\times$ its audio.
+  \end{itemize}
+  \note{
+    \begin{itemize}
+    \item Plus \TriggerUnindexed{} points with no utterance index. The
+      registered bootstrap resampled them as one cluster; that is recorded,
+      not corrected after the fact.
+    \item ``Not detectable'' is not ``no effect''.
+    \item Acoustic model's wall clock: a logged mean of \EpaWall\,s per
+      segment, $n=\EpaN$. Per-segment times were not logged, so there is no
+      median or interval. \EpaRtf$\times$ is a ratio of totals over the same
+      segments.
+    \item Reading the triggers on the multi-step set was registered not to
+      happen once the probe closed the value side, and it was not done.
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 11
+\begin{frame}{The allocator never spent the window on a draft}
+  Admit a draft of budget $B$ only if $p_{\mathrm{usable}}(\hat f) \ge
+  p^\ast$ and $B$ tokens fit in $w(\hat f)$ at the measured decode rate.
+  \bigskip
+
+  {\centering\small
+  \begin{tabular}{lrl}
+    \toprule
+    reason & decisions & why no draft \\
+    \midrule
+    below break-even & \AllocBelow & a draft would fit; usability below $p^\ast$ \\
+    infeasible & \AllocInfeasible & usability past $p^\ast$; no room left \\
+    \midrule
+    all decisions & \AllocDecisions & drafts issued: \AllocSpends \\
+    \bottomrule
+  \end{tabular}\par}
+  \bigskip
+  {\small One logged multi-step run (pass 6). Every record carries the inputs
+  its reason rests on.}
+  \note{
+    \begin{itemize}
+    \item \AllocDecisions{} decisions in one logged multi-step run:
+      \AllocBelow{} below break-even, \AllocInfeasible{} infeasible. It
+      spent the window on the drafter \AllocSpends{} of \AllocDecisions{}
+      times. $p^\ast = \BreakEven$.
+    \item Below break-even: the draft would have fit, but its usability at
+      the estimated fraction was below $p^\ast$. Infeasible: usability had
+      passed $p^\ast$, and the registered window model left no room.
+    \item The full generated Table 2 (median and range of $\hat f$,
+      $\hat p_{\mathrm{usable}}$, feasible budget and remaining time, per
+      reason) is in the backup slides.
+    \item The listener's gate runs independently of the allocator. On a
+      task whose questions come early, the same rule would admit drafts
+      wherever the measured curve clears break-even within the window.
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 12
+\begin{frame}{The listener: commit what agrees, issue what can finish}
+  \begin{itemize}
+  \item A hypothesis worker decodes only the audio after the committed
+    point; LocalAgreement-2 commits the agreed prefix, never a word in the
+    last 0.3\,s of the buffer.
+  \item At the endpoint the final decodes only the uncommitted tail.
+  \item \textbf{Feasibility gate.} Issue a hypothesis only if the decodes
+    still needed to commit its words fit in the expected remaining speech.
+  \item \textbf{The orphan.} A hypothesis still decoding at the endpoint
+    competes with the final for the same cores.
+  \end{itemize}
+  \note{
+    \begin{itemize}
+    \item The worker is a separate process running \texttt{tiny}.
+      Hypotheses are self-paced at duty $\delta = 0.6$: after a decode of
+      measured length $d$, the worker rests $(1/\delta - 1)\,d$. A duty
+      near 1 split no more turns; the bound gives the same outcome with
+      fewer decodes.
+    \item The gate's prior is a point value, the median duration of the
+      set's files, derived at run start. On short utterances the gate
+      abstains outright.
+    \item The first live test (pass 2) ran the listener on every turn, with
+      no gate and no freeze: slower than the baseline, with a CI that
+      includes zero (Fig.~5).
+    \item Two mechanisms were proposed for that failure: the orphan at the
+      endpoint, and speculation on utterances too short to pay. The freeze
+      and the gate answer them; only the first was tested directly.
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 13
+\begin{frame}{Stopping the orphan: two designs that failed}
+  \begin{itemize}
+  \item \textbf{Kill and respawn} --- FALSIFIED AS RUN. The final ran at
+    \PnineKill{} of the solo model of its tail. By elimination, the cause
+    was the respawn landing at every endpoint.
+  \item \textbf{Kill and promote a hot spare} --- NOT TESTABLE. Its validity
+    check (check 1) voided every attempt.
+  \end{itemize}
+  \bigskip
+  {\small Each design was pre-registered before its run. The third is the
+  freeze.}
+  \note{
+    \begin{itemize}
+    \item P9, kill and respawn: the run tested the respawn, not the kill.
+      Final over the solo model of its tail \PnineKill{},
+      $n=\PnineKillN$ items.
+    \item P9b, hot spare: check 1 voids a run in which a spawn overlapped
+      any endpoint-to-final window. It failed in every attempt, the declared
+      re-run included. The first attempt's favourable result was withdrawn
+      for that reason, and the re-run's scorer output is not reported as a
+      pass.
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 14
+\begin{frame}{Freeze the orphan}
+  \begin{itemize}
+  \item At the endpoint the orphan is frozen (\texttt{SIGSTOP}). It resumes
+    once the recognizer is idle after the reply; its stale result is
+    discarded by sequence number.
+  \item Against racing it, freezing saves \PnineTTFA{} of paired TTFA
+    ($n=\PnineN$ items). The final runs at \PnineRatio{} of the solo model
+    of its tail.
+  \end{itemize}
+  \begin{alertblock}{It holds, with three caveats}
+    The CI's lower end lies below the registered 150\,ms bar.
+    It holds only under an amendment registered before the run.
+    It needs the 3\,s quiet period after each reply.
+  \end{alertblock}
+  \note{
+    \begin{itemize}
+    \item P9c, on Spoken-MQA's single-step split: freezing against racing,
+      paired TTFA \PnineTTFA{}, $n=\PnineN$ items. Final over the solo model
+      of its tail \PnineRatio{}, $n=\PnineRatioN$ items.
+    \item The three caveats go with this number every time: (1) the CI's
+      lower end is below the registered 150\,ms bar; (2) under the original
+      check 2 it would be NOT TESTABLE, and it holds under the amendment
+      made before the run; (3) it depends on the 3\,s quiet period after
+      each reply.
+    \item Costs of the freeze: the resumed decodes still spend energy (two
+      slides on); a turn that opens while the worker is frozen issues no
+      hypotheses.
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 15
+\begin{frame}{The gain: gate and freeze turn a regression into a saving}
+  {\centering
+  \includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{paper_fig5_pass2k.pdf}\par}
+  \small
+  \begin{itemize}
+  \item \textbf{Pass 2}, ungated and unfrozen: \PtwoCI{} as a reduction
+    ($n=\PtwoN$ items): slower, CI includes zero. P3 FAILED.
+  \item \textbf{Pass 2k}, gated and frozen: median paired per-item TTFA
+    reduction \PthreeRed{} ($n=\PthreeN$ items). It meets the registered
+    prediction; \alert{the CI's lower end lies below the 300\,ms bar}.
+  \end{itemize}
+  \note{
+    \begin{itemize}
+    \item P3, pass 2k, multi-step, against REACTIVE-NOPARTIAL: \PthreeRed{},
+      $n=\PthreeN$ items. Registered as $\ge$ 300\,ms; HOLDS. Say every
+      time that the CI's lower end lies below the 300\,ms bar.
+    \item P3's first registration moved its bar before the data ($\ge$
+      1000, $\ge$ 500, then $\ge$ 300\,ms) and FAILED on pass 2.
+    \item Dev, pass 2k: the gate issued no hypothesis, at no detectable TTFA
+      cost, \DevTTFA{}, $n=\DevTTFAN$ items. Say it: Fig.~5(a), dev bars.
+    \item Pass 2: multi-step \PtwoCI{} ($n=\PtwoN$); dev \PtwoDev{}
+      ($n=\PtwoDevN$), a regression; its final ran at \PtwoSix{} of the
+      solo model ($n=\PtwoSixN$ turns, interval over turns). Pass 2's
+      baseline and treatment ran on different days.
+    \item The two passes differ in preemption, gate, quiet period and build:
+      each is paired against its own baseline, not against the other.
+    \item Commits: the listener commits a median \WordsCommitted{} of the
+      words before the endpoint ($n=\WordsN$ items), short of the 0.60 we
+      expected.
+    \item Panel (c) is raw energy; the net figures are on the next slide.
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 16
+\begin{frame}{What the saving costs}
+  \begin{itemize}
+  \item \textbf{Accuracy.} Mean dWER \PfourMean{} \PfourCI, \PfourWorse{}
+    items worse, \PfourBetter{} better: bounded, not shown absent.
+  \item \textbf{Energy.} \EnergyListenerr{} per turn net of the idle floor,
+    or \SevenJms{} of time saved.
+  \item \textbf{Frozen decodes,} resumed and discarded: \StaleTotal\,J net
+    over \StaleN{} decodes, a mean of \StaleMean\,J each.
+  \item \textbf{Memory.} The hypothesis worker holds \WorkerPSS\,MB (PSS) at
+    spawn.
+  \end{itemize}
+  \note{
+    \begin{itemize}
+    \item All pass 2k, multi-step, against REACTIVE-NOPARTIAL.
+    \item P4 (dWER $\le$ +0.020): PASSES on pass 2, HOLDS on pass 2k; the
+      selection-set estimate did not carry. Pass 2k mean \PfourMean{}
+      \PfourCI{}, $n=\PfourN$ items.
+    \item The final decode runs at \PsixRatio{} of the solo model of its
+      tail (P6, $n=\PsixN$ items).
+    \item Energy, net: \EnergyListener{}, $n=\EnergyListenerN$ items; net is the
+      like-for-like figure, because the energy window ends at first audio,
+      which the listener moves earlier. Per ms saved: \SevenJms{}
+      ($n=\SevenJmsN$ items). P7 (energy no higher than reactive) was FALSIFIED on
+      pass 2; on pass 2k it is descriptive, with no bar.
+    \item Stale decodes: \StaleN{} discarded, mean \StaleMean\,J, total
+      \StaleTotal\,J net; the per-decode median understates the cost. Some
+      drew far more power than their length explains, for reasons not
+      found.
+    \item Worker: PSS \WorkerPSS\,MB at spawn, before any decode
+      ($n=\WorkerN$ spawns); the per-decode working set is not logged.
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 17
+\begin{frame}{Is the gate enough? A simulated planner}
+  \begin{itemize}
+  \item A finite-horizon dynamic program over elapsed time, calibrated from
+    the logs: decode times, commit boundaries, the final's cost, the
+    endpoint hazard.
+  \item At the gate's duty bound it beats the gate by a median paired
+    \PlannerDP: at the median, the gate is within that of the optimum.
+  \item Without the bound: \PlannerNoDuty{}, a gain from decoding back to
+    back, not from planning.
+  \item Simulated only; no live pass. The remaining gain sits in items
+    longer than the gate's prior.
+  \end{itemize}
+  \note{
+    \begin{itemize}
+    \item Per-item TTFA reduction of the planner over the gate, multi-step,
+      simulated at the calibrated fill ($n=\PlannerN$ items).
+    \item The validation is weak. The simulated gate's saving over
+      REACTIVE-NOPARTIAL is \PlannerVal{}; the value measured on the same
+      items lies just outside that interval. The final's slope was fitted
+      largely from the same contrast; the committed fraction is the real
+      check.
+    \item Commit boundaries no run reached are invisible to the simulator.
+      They are filled synthetically, at the one rate that matches the
+      measured committed fractions with and without the gate. Richer fills
+      and a steeper final-decode slope raise the planner's median gain.
+    \item A gate whose prior adapts to elapsed speech is a hypothesis, not
+      simulated.
+    \item Decision: on the registered statistic, the median paired
+      reduction, no live pass. The planner is the formalisation.
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 18
+\begin{frame}{Live speech (pass 9) --- pending}
+  \begin{itemize}
+  \item Descriptive, one speaker, live microphone: the approved exception
+    after the measurement freeze. It supports no claim.
+  \item Design: the speaker reads 16 multi-step items over four runs
+    (NOPARTIAL, gated listener, gated listener, NOPARTIAL).
+  \item The first attempt is void: the array heard the replies on the room
+    speaker, and the pipeline answered itself.
+  \item Half-duplex input registered before the next run; its test run
+    passed. \alert{Results go here.}
+  \end{itemize}
+  \note{
+    \begin{itemize}
+    \item Placeholder. No number from pass 9 exists.
+    \item Half-duplex: from the first reply write until the reply has played
+      plus a 500\,ms tail, the microphone source substitutes silence. The
+      user cannot interrupt a reply, which the protocol never asks for. TTFA
+      ends at the first reply audio, before muting matters.
+    \item Turns that overlap a mute interval are flagged as masked,
+      reported, and excluded from TTFA. Speech entirely inside a mute window
+      leaves no trace; that limitation goes with the results.
+    \item To report: turns and splits per run, stage shares, TTFA and the
+      committed fraction per arm, masked turns, and whether Fig.~1's shares
+      hold on a person.
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 19
+\begin{frame}{Limitations}
+  \begin{itemize}
+  \item One device class with CPU-bound recognition (a GPU recognizer would
+    move the shares); one small 4-bit language model; one synthesizer voice.
+  \item Benchmark audio is synthesized speech played in at real time; live
+    speech is pending.
+  \item The gate's prior is the set's own median duration; a deployment
+    would have to learn it.
+  \item The tax rests on two runs, one per condition; the thinker's live
+    comparison is descriptive; the planner is simulated.
+  \end{itemize}
+  \note{
+    \begin{itemize}
+    \item The headline's interval: P3's lower end lies below the 300\,ms
+      bar, and the ungated test failed.
+    \item The listener's overlap cost, \ListenerC\,ms/s \ListenerCCI, lies
+      below the registered band; its scorer was written after the data.
+    \item Draft usability comes from an offline probe of the 80 seeded
+      items, with no interval on the curve.
+    \item The thinker's live comparison (pass 7): its interleaved design
+      broke at the first VAD split, and its scorer was written after the
+      run.
+    \item Drift across dates: part of a cross-date difference in baseline
+      TTFA is unattributed. Every claim-bearing comparison from the reactive
+      baseline without partials onward has a same-day baseline; pass 2 does
+      not.
+    \item The freeze: some stale decodes drew unexplained power; a turn that
+      opens while the worker is frozen gets no hypotheses.
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 20
+\begin{frame}{Where to speculate}
+  {\centering\footnotesize
+  \renewcommand{\arraystretch}{1.1}
+  \begin{tabular}{@{}p{0.17\linewidth}p{0.37\linewidth}p{0.37\linewidth}@{}}
+    \toprule
+     & \textbf{Listener} (gated, freezing) & \textbf{Thinker} (continued draft) \\
+    \midrule
+    Survival & words committed before the endpoint \WordsCommitted{} ($n=\WordsN$ items) & per-item median share of draft tokens accepted \SpecAccepted{} ($n=\SpecItems$ items) \\
+    TTFA, paired & reduction \PthreeRed{} ($n=\PthreeN$ items; CI lower end below the 300\,ms bar) & change \SpecTTFAr{} ($n=\SpecN$ items; positive is slower) \\
+    Overlap cost & \ListenerC\,ms of final per s of overlap, \ListenerCCI{} (below the registered band) & \ThinkerOverlap{} of TTFA ($n=\ThinkerOverlapN$ turns) \\
+    Energy per turn, net & \EnergyListenerr & \SpecEnergyr \\
+    Memory & worker \WorkerPSS\,MB PSS at spawn & no second model: one language-model slot \\
+    \bottomrule
+  \end{tabular}\par}
+  \medskip
+  {\small Thinker survival, TTFA and energy: pass 7, descriptive.
+  \alert{On this device, the window belongs to the listener.}}
+  \note{
+    \begin{itemize}
+    \item Listener: TTFA, energy, memory from pass 2k; words committed from
+      STOP + gate (pass 6, P8; expected $\ge$ 0.60, not met); overlap from
+      the P2a fit over \PtwoaPop{}, CI over runs, arms with partial decodes
+      in flight (not the freezing arm), below the registered band.
+    \item Thinker, pass 7, interleaved with REACTIVE on multi-step:
+      \SpecTokens{} draft tokens per turn; accepted share \SpecAccepted{}
+      ($n=\SpecItems$ items); TTFA \SpecTTFAr{} ($n=\SpecN$ items, positive
+      is slower: no saving detected); energy \SpecEnergyr{} ($n=\SpecEnergyN$ items).
+      Descriptive: the interleaved design broke at the first VAD split, and
+      the scorer was written after the run.
+    \item Earlier live drafts that restarted on every partial: first
+      sentence exact \PgFirst; tokens surviving \PgSurvival{}
+      \PgSurvivalCI{} ($n=\PgSurvivalN$ turns); TTFA worse by \PgBlocked{}
+      ($n=\PgBlockedN$ turns, blocked re-measurement).
+    \item Listener energy: \EnergyListenerr{} ($n=\EnergyListenerN$ items). An idle second
+      recognizer costs +\ResidencyMem\,MB RSS (range \ResidencyMemRange\,MB
+      over run pairs, $n=\ResidencyMemRuns$ runs per arm) and no detectable TTFA, \ResidencyTTFA{}
+      ($n=\ResidencyN$ items; full pass \ResidencyFull, $n=\ResidencyFullN$).
+    \end{itemize}
+  }
+\end{frame}
+
+% ---------------------------------------------------------------- 21
+\begin{frame}{The record}
+  {\centering\twlgenerated[0.66\textheight]{../paper/generated/table3_summary.tex}\par}
+  \medskip
+  {\footnotesize Six of the ledger's entries. The full ledger lists every
+  prediction with its registration and scoring commits.}
+  \note{
+    \begin{itemize}
+    \item P1: the final's share is not monotone in length and is below half
+      on two sets; it is still the largest stage on every set.
+    \item P2a: \ListenerC\,ms/s \ListenerCCI{} over \PtwoaPop, below the
+      registered 500--1500\,ms/s band; scorer written after the data.
+    \item P3 (pass 2k): \PthreeRed{} ($n=\PthreeN$), lower end below the
+      300\,ms bar; FAILED on pass 2 (\PtwoCI{} as a reduction,
+      $n=\PtwoN$).
+    \item P4 (pass 2): PASSES; pass 2k mean \PfourMean{} \PfourCI.
+    \item P7 (pass 2): FALSIFIED; in pass 2k, \SevenJms{} per ms saved,
+      descriptive.
+    \item P9c: \PnineTTFA{} ($n=\PnineN$); lower end below the 150\,ms bar,
+      pre-run amendment, 3\,s quiet period.
+    \item Where a prediction was stated informally, a bar moved before its
+      data, or a scorer was written after the data, the ledger says so.
+    \end{itemize}
+  }
+\end{frame}
+
+\appendix
+
+% ---------------------------------------------------------------- backup
+\begin{frame}{Backup: Table 1 as generated}
+  {\centering\twlgenerated[0.78\textheight]{../paper/generated/table1.tex}\par}
+  \smallskip
+  {\footnotesize P3 (pass 2k): the CI's lower end lies below the registered
+  300\,ms bar.}
+  \note{
+    \begin{itemize}
+    \item paper/generated/table1.tex as the generator writes it, only
+      scaled. Every cell is a scorer's output; sources in RESULTS.md.
+    \item Too dense to project: zoom in the PDF. The compact version is the
+      slide ``Where to speculate''.
+    \end{itemize}
+  }
+\end{frame}
+
+\begin{frame}{Backup: Table 2 as generated}
+  {\centering\twlgenerated[0.6\textheight]{../paper/generated/table2.tex}\par}
+  \medskip
+  {\small The allocator's decisions in one multi-step run, by reason: median
+  (min to max) of the inputs each decision logged.}
+  \note{
+    \begin{itemize}
+    \item paper/generated/table2.tex as the generator writes it, only
+      scaled; nine columns, so small on a slide.
+    \item Below break-even: a draft would have fit, but its usability was
+      below $p^\ast$. Infeasible: usability had passed $p^\ast$, and the
+      registered window model left no room for a draft.
+    \end{itemize}
+  }
+\end{frame}
+
+\end{document}

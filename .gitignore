@@ -3,6 +3,10 @@
 results/raw/*
 !results/raw/.gitkeep
 
+# The data deposit (src/scripts/release_bundle.py): built at submission, uploaded,
+# never committed.
+/dist/
+
 # Model weights and audio are never committed
 *.gguf
 *.onnx
