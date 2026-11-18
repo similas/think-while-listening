@@ -1,22 +1,50 @@
-% Draft, sections 1-5. Written from results/RESULTS.md and RESEARCH_BRIEF_v3.md.
+% Written from results/RESULTS.md and RESEARCH_BRIEF_v3.md.
 % Every number is a macro from generated/numbers.tex (src/scripts/paper_results.py);
 % this file types no measured value of its own. Compiled on the LaTeX host, never
-% on the Jetson. The Interspeech class replaces `article' there.
+% on the Jetson. The Interspeech class replaces `article' there: every place the
+% switch touches is listed in INTERSPEECH_KIT_NOTES.md.
+%
+% THREE BUILDS, two switches:
+%   Interspeech submission   \anonymoustrue   \extendedfalse
+%   Interspeech camera-ready \anonymousfalse  \extendedfalse
+%   arXiv extended           \anonymousfalse  \extendedtrue
 \documentclass[a4paper,10pt,twocolumn]{article}
 \usepackage[utf8]{inputenc}
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{xcolor}
 \usepackage[hidelinks]{hyperref}
 \input{generated/numbers.tex}
-% Interspeech: \extendedfalse (six-row ledger). Extended arXiv version: \extendedtrue.
 \newif\ifextended
 \extendedfalse
+\newif\ifanonymous
+\anonymousfalse
 \graphicspath{{figures/}}
+
+% Release pointers, filled at submission. Never printed in the anonymous build.
+\newcommand{\releasedoi}{TODO-zenodo-doi}     % VERIFY at deposit
+\newcommand{\repourl}{\url{TODO-repository-url}}  % VERIFY at release
+
+% Pass 9 (live speech) is pending: these boxes mark where its paragraph and its
+% Limitations line go. The build is not final while any remains.
+\newcommand{\pendingpassnine}[1]{\noindent\fbox{\parbox{0.95\linewidth}{%
+  \textcolor{red}{\footnotesize PASS 9 PENDING: #1}}}}
+
+\ifanonymous
+  \hypersetup{pdfauthor={}}
+\else
+  \hypersetup{pdfauthor={Ali Salimi Sadr}}
+\fi
 
 \title{The Window Belongs to the Listener: Allocating Think-While-Listening
 Compute on a Device That Pays for It}
-\author{Ali Salimi Sadr}
+\ifanonymous
+  \author{Anonymous submission}
+\else
+  \author{Ali Salimi Sadr\\Concordia University, Montreal, Canada}
+\fi
 \date{}
 
 \begin{document}
@@ -421,6 +449,8 @@ detectable TTFA cost (\DevTTFA). On multi-step problems:
 \end{itemize}
 The same mechanism without the gate and the freeze changed TTFA by \PtwoCI{}
 ($n=\PtwoN$, as a reduction): slower, with an interval that includes zero.
+That earlier pass ran its baseline three days before its treatment, so it
+carries the cross-date caveat in Limitations.
 
 \subsection{Where to speculate}
 \input{generated/table1.tex}
@@ -443,14 +473,54 @@ it is \PlannerNoDuty{}, a gain that comes from decoding back to back, not from
 planning. Under the measured costs, the gate is within \PlannerDP{} of the
 planner's optimum at the median. Its remaining gain sits in items longer than
 the gate's prior. The planner was not run live.
+\ifextended
+
+\textbf{Formulation.} State is the buffered audio $t$ and the buffer ends of
+the last two completed hypotheses; under LocalAgreement-2 these fix what is
+committed. At each idle instant the planner issues a hypothesis or waits. An
+issued hypothesis completes after its decode time unless the endpoint arrives
+first, in which case it is frozen and lost. The objective is the expected
+committed audio at the endpoint, which minimises the expected final decode,
+since the final is affine in the uncommitted tail and the freeze removes the
+overlap term. The endpoint enters through its hazard, taken from the smoothed
+distribution of utterance lengths. A finite-horizon dynamic program over $t$
+gives the policy table. The planner sees neither an item's length nor its
+segment boundaries.
+
+\textbf{Calibration and validation.} Per item, the simulator draws from the
+logs:
+\begin{itemize}
+\item the buffer at the endpoint;
+\item the segment boundaries the item ever committed, each with its observed
+  commit rate;
+\item partial decode times with their residuals;
+\item the final's within-item cost per second of audio.
+\end{itemize}
+Boundaries no logged run reached are filled synthetically, at the one rate
+that matches the measured committed fractions with and without the gate. Run
+through the simulator, the gate's saving is \PlannerVal, against \PthreeRed{}
+measured. The value measured on the same items lies just outside the simulated
+interval. This is a weak check: the final's slope was fitted largely from the
+same contrast, and the fill rate was chosen to match the committed fractions.
+Richer fills and a steeper final slope both raise the planner's median gain.
+\fi
+
+\subsection{Live speech}
+\pendingpassnine{One descriptive paragraph from pass 9: the speaker read 16
+multi-step items into the microphone, four runs (reactive without partials,
+gated listener, gated listener, reactive), half-duplex input. Report turns and
+splits per run, stage shares, TTFA and the committed fraction per arm, masked
+turns by the registered overlap rule, and whether the stage shares of
+Fig.~\ref{fig:stages} hold on a person. No claim.}
 
 \subsection{The record}
-\ifextended
-\input{generated/table3.tex}
-Table~\ref{tab:ledger} lists every registered prediction with its
-registration and scoring commits and its verdict as it stands.
-\else
 \input{generated/table3_summary.tex}
+\ifextended
+Table~\ref{tab:ledger} gives six predictions with their verdicts and one
+qualifier each. Appendix~\ref{app:ledger} lists every entry of the ledger with
+its registration and scoring commits, its verdict as it stands, and its
+corrections; Appendix~\ref{app:retractions} lists every correction.
+\else
 Table~\ref{tab:ledger} gives six predictions with their verdicts and one
 qualifier each. The full ledger, with every registration and scoring commit,
 is in the extended version.
@@ -464,8 +534,9 @@ CPU-bound recognition. A GPU recognizer would move the stage shares. The
 language model is one small 4-bit model, and synthesis is one Piper voice.
 
 \textbf{Audio.} The benchmark audio is synthesized speech, played in at real
-time through the capture path. We have no live-speech data yet; one
-descriptive single-speaker pass is planned, and it will support no claim.
+time through the capture path.
+\pendingpassnine{One line: live speech is one speaker in one descriptive pass
+with half-duplex input; what it showed, and that it supports no claim.}
 
 \textbf{The gate's prior is the set's own median.} The feasibility gate uses a
 point prior, the median file duration of the set it runs on. A deployment
@@ -506,10 +577,36 @@ fill whose rate is calibrated on the measured commit fractions. Richer fills
 raise the planner's median gain, and so would a steeper final-decode slope.
 
 \textbf{Drift across dates.} Part of a cross-date difference in baseline TTFA
-remains unattributed. Every claim-bearing comparison therefore has a same-day
-baseline.
+remains unattributed. Every claim-bearing comparison from the reactive
+baseline without partials onward has a same-day baseline; the earlier
+ungated listener pass does not, and is read with that caveat.
 
-\section{Generative-AI use}
+\ifanonymous\else
+\section*{Acknowledgments}
+% TODO(Ali). Stripped from the anonymous build.
+\fi
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+% The +2 pages that carry the references also carry these two statements
+% (Interspeech 2027; see INTERSPEECH_KIT_NOTES.md).
+\section*{Reproducibility}
+\label{sec:repro}
+Every number in this paper is produced by a script from the logged runs, and a
+claim registry pins each number to its scorer and its run identifiers.
+\ifanonymous
+The code, the logs without audio, and a manifest mapping every claim to its
+scorer and runs will be released on publication.
+\else
+The code is at \repourl. The logs without audio, their checksums, and a
+manifest mapping every claim to its scorer and runs are deposited at Zenodo
+(doi:\releasedoi).
+\fi
+Third-party audio is not redistributed; the scripts fetch it from its
+source.
+
+\section*{Generative-AI use}
 \label{sec:genai}
 
 % Model list verified from the session logs on the development device
@@ -529,7 +626,25 @@ made every decision, approved each run, and verified the text. Every measured or
 simulated value in this paper is produced by a script from the logs;
 registered bars and set sizes are stated as designed.
 
-\bibliographystyle{IEEEtran}
-\bibliography{refs}
+
+\ifextended
+\onecolumn
+\appendix
+\section{The pre-registration ledger}
+\label{app:ledger}
+\input{generated/ledger_full.tex}
+
+\section{Retractions log}
+\label{app:retractions}
+\input{generated/retractions.tex}
+
+\section{Capture-path hazards}
+\label{app:capture}
+The microphone array delivers two processed channels; opening it as one
+channel downmixes them and recognition degrades badly. Replies played through
+a separate USB speaker reach the array acoustically, which is why the live
+pass runs half-duplex.
+\input{generated/capture_hazards.tex}
+\fi
 
 \end{document}

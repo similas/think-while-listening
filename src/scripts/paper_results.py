@@ -1024,13 +1024,16 @@ def main() -> None:
         gen.mkdir(parents=True, exist_ok=True)
         _write_generated(gen)
     print("  wrote paper/generated and thesis/generated")
-    gen = REPO / "thesis/generated"
-    (gen / "ledger_full.tex").write_text(ledger_full_tex())
-    (gen / "retractions.tex").write_text(retractions_tex())
-    (gen / "capture_hazards.tex").write_text(
-        md_to_tex((REPO / "results/tables/capture_hazards.md").read_text())
-    )
-    print("  wrote thesis/generated appendices")
+    # The thesis's appendices; the paper's extended (arXiv) build uses them too.
+    appendices = {
+        "ledger_full.tex": ledger_full_tex(),
+        "retractions.tex": retractions_tex(),
+        "capture_hazards.tex": md_to_tex((REPO / "results/tables/capture_hazards.md").read_text()),
+    }
+    for gdir in ("thesis/generated", "paper/generated"):
+        for name, body in appendices.items():
+            (REPO / gdir / name).write_text(body)
+    print("  wrote the appendix tables to thesis/generated and paper/generated")
 
 
 def _write_generated(gen: Path) -> None:

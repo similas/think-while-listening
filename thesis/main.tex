@@ -22,6 +22,10 @@
 % A number the registry does not yet carry. Renders as a red box naming the
 % NOTES entry that records it; the thesis is not final while any remains.
 \newcommand{\needsclaim}[2]{\fbox{\textcolor{red}{\footnotesize CLAIM NEEDED: #1 (NOTES: #2)}}}
+% Pass 9 (live speech) is pending: these boxes mark where its paragraph and its
+% Limitations line go.
+\newcommand{\pendingpassnine}[1]{\noindent\fbox{\parbox{0.95\linewidth}{%
+  \textcolor{red}{\footnotesize PASS 9 PENDING: #1}}}}
 
 % --- Verify with the graduate program assistant (brief v1 §9) -------------
 \newcommand{\thesistitle}{The Window Belongs to the Listener: Allocating
