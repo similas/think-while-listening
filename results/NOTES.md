@@ -8446,3 +8446,222 @@ Appended, not edited. From the reviewer's pass over 830b03b.
    reviewers use the anonymized mirror. The README and Makefile now say so,
    matching decision 3 and the anonymous paper text. Before, they said "at
    submission".
+
+## 2026-11-18 — The learned-committer phase opens (Ali): 80 fresh multi_step items SEALED before any code
+
+Ali opened the phase on 2026-11-18 with the plan below, quoted as given. Step
+5's predictions are left out here, because Ali writes that pre-registration
+in Ali's own words before the run.
+
+> GOAL. Replace LocalAgreement-2 with a trained per-word survival model: for
+> each word in a partial hypothesis, P(word survives unchanged to the final
+> transcript). Commit = longest prefix with P ≥ τ. Target on multi_step:
+> ≥ 70 % of words committed before the endpoint at dWER ≤ +0.020, measured
+> on fresh items.
+> 1. LABEL GENERATOR (src/scripts/commit_labels.py). Replay tiny partials at
+> the live cadence (self-paced, duty 0.6, trimmed buffer, exactly as stt.py
+> issues them) over: our existing partial logs; LibriSpeech test-clean/other;
+> Common Voice en (a fixed seeded subset); People's Speech (subset);
+> Spoken-MQA all splits. Final = base decode of the full utterance. Align
+> partial words to the final by timestamp-aware edit alignment; label 1 if the
+> word appears unchanged in the final at that position, else 0. Features per
+> word: text (hashed), position from buffer end (s), word duration, decoder
+> logprob, no_speech_prob of its segment, partials-seen count,
+> agreed-with-previous flag, LocalAgreement-2 would-commit flag, buffer
+> length, elapsed since last commit. Write one parquet per corpus with
+> provenance. Report: words, positive rate, per-corpus WER of the final.
+> 2. MODEL. Baseline A: LocalAgreement-2 and -3 (existing). Model B:
+> gradient-boosted trees (LightGBM-equivalent, torch-free) on the features.
+> Model C only if B leaves room: a small transformer over the hypothesis
+> (ONNX, CPU). Train on LibriSpeech + Common Voice + People's Speech; validate
+> on Spoken-MQA single_step (the selection set); NEVER on multi_step.
+> 3. OFFLINE EVALUATION, pre-registered before training: Pareto of committed
+> fraction vs WER at the endpoint, sweeping τ, against LA-2 and LA-3, per
+> corpus; commit lag (audio age at commit). Prediction: at the LA-2 WER, the
+> committer commits ≥ 1.5× LA-2's fraction on single_step. Falsified if
+> < 1.2×.
+> 4. INTEGRATION. committer: {local_agreement, learned} in config; ONNX
+> inference inside the issuer; per-turn record adds τ, committed fraction,
+> model latency. make check green. Selection reps on single_step, 3 reps,
+> pick τ by the rule: dWER ≤ +0.020, then largest committed fraction.
+> 5. LIVE, pre-registered: fresh 80 multi_step items (new seed, untouched) +
+> dev; same-day interleaved arms: NOPARTIAL, LA-gated+freeze,
+> LEARNED-gated+freeze, LEARNED-gated without freeze; 2 reps; online prior
+> (EMA of observed lengths); score TTFA median/p90/p95, answer accuracy vs
+> gold, WER and dWER, energy, per-arm exclusion table. [Predictions: Ali's
+> pre-registration.] I write this pre-registration in my own words before the
+> run.
+> 6. Also in this phase, unchanged from the review plan: THP causal test (THP
+> always/never × alone/ballast, randomized, 3 reps); pass 9 with three
+> speakers when I say; φ0/φ1 reported for base and tiny.
+> 7. Overleaf: compile the paper and thesis through the Overleaf-GitHub sync
+> after every change that touches a figure, table or macro; report page count
+> under \extendedfalse and any overfull or missing-package warnings. The
+> Overleaf token lives outside the repository: verify it is not committed, add
+> its path to .gitignore, and have the reviewer check every commit for
+> secrets.
+> Standing rules unchanged: reviewer before every report, pre-register before
+> code, no compute on the box during measured runs, void runs reported not
+> retried. Report at the end of each numbered step. Writing on the February 9
+> paper continues in parallel from the current results.
+
+### SEAL — 80 multi_step items, seed 20261118
+
+Step 5 requires 80 multi_step items that are untouched. They were drawn
+before any label, model or offline evaluation exists, by
+src/scripts/seal_fresh_items.py (committed with this entry, unchanged from the
+version that drew them; Python 3.10.12):
+
+    random.Random(20261118).sample(sorted(untouched), 80), sorted
+
+TOUCHED means a multi_step index named in an earlier item file or audio
+directory (the first 80 rows, the seed-20260922 draw, p5_long20, mqa24), a
+prefix-probe record, the pass 9 reading sheet, or a run's
+playback_timeline.json or turns.jsonl. 155 of the 1402 rows are touched,
+which leaves 1247.
+- sha256 of the sorted, comma-joined touched indices:
+  e76d021938e71ea83cd22c00f0672a86269967af67d9b6e0021dc86f3e62a416
+  (the list: results/raw/spoken_mqa/multi_step_fresh80-seed20261118.touched.json,
+  regenerated at 20:36 by the script's touched(); it reproduces the seal
+  file's per-source counts, and drawing from it gives the sealed 80)
+- sha256 of the sorted, comma-joined sealed indices:
+  fab75d029d2baa95f93e0a133899596e036dedfed55f6354b2a018766f63e5b3
+- the seal file, results/raw/spoken_mqa/multi_step_fresh80-seed20261118.json,
+  written 2026-11-18 19:56:14 -0500, sha256
+  ef789ce95b8329ff482c0e72404e6ba98a4f1c46a88fcfc67014e75cda8dce8c
+
+    87,92,118,144,173,181,192,197,205,206,220,226,247,286,293,312,318,326,
+    399,406,413,417,426,447,478,496,512,528,538,552,555,558,575,583,588,609,
+    641,660,670,682,684,688,727,771,815,826,828,832,856,860,885,897,899,902,
+    908,927,935,944,951,977,997,1004,1019,1089,1092,1103,1105,1152,1154,1189,
+    1203,1241,1259,1294,1295,1303,1318,1346,1375,1376
+
+LIMITS OF THE TOUCHED SET. The script reads run logs at one directory depth,
+and its pattern does not match a multi_step_smoke3/ directory: run
+reactive-20261008-163854-13c7fe names items 15, 36 and 42 from there, all
+three already touched by other sources. The reviewer matched every 8-word
+sequence of the 1402 transcripts across results/, src/, paper/, thesis/,
+presentation/ and dist/, and found no multi_step row outside the 155. A later
+seal should store its touched list and search recursively. This one is not
+redrawn.
+
+ROW ORDER. The indices are positions in multi_step_reasoning_index.json,
+pulled from the Hub's rows endpoint in September. The two multi_step parquet
+shards fetched today (revision a1f9ec61, below) were compared with it row by
+row: all 1402 transcripts are equal, in order.
+
+PROPOSED, FOR ALI: no script or run reads these 80 before step 5;
+commit_labels.py and run_reactive.py refuse them by reading the seal file and
+checking its sha256.
+
+### Data, fetched 2026-11-18
+
+Into ~/corpora, by a scratch script that fetched from each repository's main
+branch without checks. Every data file was checked afterwards: each matches
+the Hub's LFS hash at the revision pinned below, and the LibriSpeech archives
+match OpenSLR's md5sum.txt. src/scripts/fetch_corpora.sh, committed with this
+entry, fetches the same nine files pinned to those revisions and sha256s, and
+writes SHA256SUMS from its table. The two README files and OpenSLR's page
+fetched beside them are unpinned copies.
+- Spoken-MQA (amao0o0/spoken-mqa, revision a1f9ec6143c6), all four splits:
+  short_digit 100, long_digit 173, single_step 594, multi_step 1402 rows.
+- LibriSpeech test-clean and test-other (OpenSLR 12): 2620 and 2939 files.
+- People's Speech (MLCommons/peoples_speech, revision f10597c5d3d3), clean/test
+  shards 0 and 1 of 9: 7756 rows. Shards 0-1 are fetched; the subset is Ali's
+  to define.
+- Common Voice: not fetched. The README of the Hugging Face dataset
+  mozilla-foundation/common_voice_17_0 reads (2026-11-18, link markup
+  removed): "Effective October 2025, Mozilla Common Voice datasets are now
+  exclusively available through Mozilla Data Collective."
+
+A tool environment for label generation and training, ~/.venvs/twl-learn
+(764 MB), was installed before asking, against CLAUDE.md §6's 200 MB rule. It
+pins the measurement venv's recognizer stack (faster-whisper 1.2.1,
+ctranslate2 4.8.1, numpy 2.2.6, onnxruntime 1.23.2) and adds pyarrow 25.0.1,
+lightgbm 4.7.0, onnx 1.23.2 and onnxmltools 1.16.0. ~/.venvs/twl is unchanged.
+
+### Open, for Ali
+
+1. Common Voice: an account with the Mozilla Data Collective, or train
+   without it.
+2. Where the corpora live. Either ~/corpora, with a CLAUDE.md amendment and
+   each label file citing SHA256SUMS. Or results/raw/, with a deposit rule
+   that withholds parquet files holding audio. CLAUDE.md §1 keeps raw audio
+   under results/raw/, and the nightly backup covers only results/raw/.
+3. Label generation:
+   - whether the replay runs on a simulated clock at all, and if so which
+     decode cost advances it;
+   - which committer trims the buffer during the replay;
+   - whether the feasibility gate is on, and with which prior per corpus;
+   - what the existing partial logs are for: a partial_record holds the
+     hypothesis text, its offset and decode timing, but no word times,
+     log-probabilities or no_speech_prob, so most of the step-1 features
+     cannot be computed from it.
+4. single_step as the selection set. The 2026-10-01 entry ("Word density
+   scored") says "single_step_reasoning is no longer naive and is not used as
+   a selection set again". The plan validates on single_step and selects tau
+   there. Is that sentence superseded, and are the single_step items used
+   before (single_step_reasoning.json, single_step_set.json) left out?
+5. The offline prediction: its LA-2 comparator. The deployed LA-2 commits
+   segments, chosen 2026-09-23 over words; the learned committer works per
+   word. Also, single_step is both the validation set and the set the
+   prediction is scored on.
+6. New runs and the paper. p2_score.py, a paper source run without
+   arguments, reads every results/raw/reactive/reactive-20261*/ run whose
+   config is in its INCLUDE list (reactive.yaml, reactive_mqa.yaml,
+   commit_wl.yaml, p5_naive_10.yaml, p5_controlled_08.yaml,
+   commit_wl_proc.yaml, commit_wl_proc1.yaml). A run of this phase on one of
+   those configs would enter the claims p2a_pop, listener_c, p2a and p2b at the
+   next `make results`. A run on commit_wl_stop_gate.yaml enters only a
+   sensitivity line no claim reads. Proposed: a date bound on the
+   argument-less scorers, as the "audit" source already has (--until).
+7. Step 7's compile path. In place since 2026-11-18 is a git-bridge clone of
+   the Overleaf project (~/.cache/twl-overleaf/paper), not the GitHub sync.
+   Overleaf compiles in the browser, so neither path reports a page count or
+   warnings back to the box.
+8. Step 6: "the review plan" is not in the repository. φ0 and φ1 are
+   defined in paper/main.tex: the final decode is close to affine in its
+   audio, F(a) = φ0 + φ1·a. They correspond to final_decode_model.py's a and b
+   at zero overlap (it fits final_ms = a + b·audio_s + c·overlap_s). Read
+   here as: report φ0 and φ1 for base and for tiny. To be confirmed.
+9. The freeze. NOTES 2026-10-13 froze measurement ("No further claim-bearing
+   run"), with pass 9 the one approved exception. Steps 4, 5 and 6 are
+   measured runs. Recording that the freeze is lifted for them, and from
+   when, is Ali's.
+
+### Secrets (step 7)
+
+The Overleaf git token is in ~/.config/overleaf/credentials (mode 600),
+outside the repository. A credential helper in ~/.gitconfig reads it. On
+2026-11-18 it was not found in this repository's objects, tree, commit
+messages or reflogs, nor in the Overleaf clone's history or remote URL. The
+only token-shaped strings in this repository's history are fake credentials
+in release_bundle test fixtures, in commits 9bad4fc, 98f41c5, 830b03b and
+79731c7. They are now assembled at runtime; the history is not rewritten.
+- src/twl/secret_shapes.py holds the token shapes and the credential file
+  names. The deposit scanner uses the same token shapes, so it now refuses a
+  bare token in an archived log. File names and binary files it handles
+  separately. Its dry run at 21:12 (build 9100042, untracked files allowed):
+  "SECRET SCAN  1756 text files, 0 hits", "would build: no problems".
+- src/scripts/secret_scan.py scans with that list. It fails closed: exit 2
+  when it cannot run.
+  - pre-commit and pre-merge-commit run `--staged`;
+  - pre-push runs `--push`: every pushed commit's changed files and message,
+    an annotated tag's text, and a blob or tree a tag points at. Cherry-pick,
+    rebase and am skip pre-commit; every push from a clone with the stubs
+    installed, made without --no-verify, passes pre-push. A push scans
+    what the target remote does not already hold, so the four fixture commits
+    above stop a push of the history to any other remote (a mirror, a new
+    host);
+  - `--tree` runs first in `make check`.
+  `make hooks` (src/scripts/hooks/install.sh) writes stubs into each clone's
+  own .git/hooks, here and in the Overleaf clone, whose pushes carry the
+  token. A stub refuses (exit 2) if the wrapper it calls is gone. It does not
+  use core.hooksPath, which points at nothing after a checkout of an older
+  commit, and git then runs no hook and says nothing.
+- .gitignore lists credential file names.
+- Reviewer item 13 checks every commit for secrets.
+NOT FIXABLE IN THE REPOSITORY: the token was pasted into a working session
+on 2026-11-18. It is in plain text in that session's local log, outside the
+repository, and it left the box with that session. Revoking it and issuing a
+new one is Ali's.

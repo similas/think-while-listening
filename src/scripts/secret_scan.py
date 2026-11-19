@@ -11,7 +11,8 @@ change except a deletion is read, so a symlink replaced by a file (a type
 change) is scanned like an added file.
 
 The pre-commit hook does not run for a cherry-pick, a rebase or `git am`;
-pre-push runs for every commit that leaves the box, which is why it exists.
+pre-push runs for every push from a clone where `make hooks` has installed the
+stubs, unless the push says --no-verify.
 
 FAILS CLOSED. Exit 0 means the scan ran and found nothing; 1 means it found
 something; 2 means it could not run (no repository, git failed, a pushed
