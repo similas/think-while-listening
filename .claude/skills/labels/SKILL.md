@@ -1,6 +1,6 @@
 ---
 name: labels
-description: "Use when generating, regenerating, extending or inspecting the learned committer's training labels (learned-committer phase, step 1; src/scripts/commit_labels.py, to be written), and when deciding which corpus a label set may be used for (train, select, evaluate offline). Item draws for a registered evaluation belong to the preregister skill."
+description: "Use when generating, regenerating, extending or inspecting the learned committer's training labels (learned-committer phase, step 1; src/scripts/commit_labels.py, with the pure logic in src/twl/survival_labels.py), and when deciding which corpus a label set may be used for (train, select, evaluate offline). Item draws for a registered evaluation belong to the preregister skill."
 ---
 
 # Committer labels

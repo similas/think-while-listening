@@ -57,6 +57,7 @@ from twl.commit import LocalAgreementCommitter, Word
 from twl.config import SttConfig
 from twl.hypothesis_worker import HypothesisWorker, WorkerPool
 from twl.pacing import FixedTickIssuer, SelfPacedIssuer
+from twl.stt_engine import MIN_DECODE_S, POLL_S
 from twl.telemetry import (
     read_faults,
     read_page_cache_mb,
@@ -77,10 +78,10 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-# How often the partial loop checks whether the audio has crossed the next
-# offset. This is NOT the cadence: offsets are seconds apart, so the only
-# effect of the poll is to bound how late a crossing is noticed.
-POLL_S = 0.05
+# POLL_S: how often the partial loop checks whether the audio has crossed the
+# next offset. This is NOT the cadence: offsets are seconds apart, so the only
+# effect of the poll is to bound how late a crossing is noticed. It and
+# MIN_DECODE_S live in twl.stt_engine, which code without pipecat can import.
 
 
 class StreamingWhisperSTT(STTService):
@@ -460,7 +461,7 @@ class StreamingWhisperSTT(STTService):
             n0 = int(committed_end * self.sample_rate)
             with self._lock:
                 buf = self._audio[n0:].copy()
-            if len(buf) < int(0.2 * self.sample_rate):
+            if len(buf) < int(MIN_DECODE_S * self.sample_rate):
                 continue
             buffer_end_s = committed_end + len(buf) / self.sample_rate
             issued_ns = now_ns()
