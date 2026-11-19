@@ -169,6 +169,16 @@ Root-level files are allowed; no other top-level folders.
   or `reviewer: no findings`.
 - On every commit, the reviewer also reads the staged diff for secrets (its
   item 13; Ali, 2026-11-18).
+- **PROJECT SKILLS ARE MANDATORY FOR THEIR STEPS** (Ali, 2026-11-18). Each
+  skill in `.claude/skills/` holds the procedure and the templates for one step.
+  Use it before and during that step:
+  `preregister`, `run`, `score`, `notes`, `claim`, `report`, `overleaf`,
+  `release`, `labels` and `review`. Ali starts `run`, `overleaf` and `release`
+  with `/run`, `/overleaf` and `/release`; they are never loaded on their own,
+  so on a GO or a request given in words, read that SKILL.md before acting.
+  Where a skill disagrees with this file or with a committed NOTES decision
+  of Ali's, those win, and the skill is corrected in the same commit that
+  finds it.
 - Keep `results/NOTES.md` as a dated lab notebook: what was run, what was
   observed, what surprised you, what is unresolved. Terse. Facts only.
 - Any run with swap activity, an OOM, or a thermal-throttle event is recorded
