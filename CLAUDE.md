@@ -77,7 +77,9 @@ Write as a principal engineer whose code will be read by strangers for years.
 
 - Python ≥ 3.10, one package under `src/twl/`, `pyproject.toml` with
   `ruff` (lint+format), `mypy --strict` on `src/twl`, `pytest` with coverage.
-  `make check` must pass (ruff, mypy, pytest) before every commit that touches `src/`.
+  `make check` must pass (secret scan, ruff, mypy, pytest) before every commit that
+  touches `src/`. `make hooks`, once per clone, installs the secret-scan hooks
+  (pre-commit, pre-merge-commit, pre-push).
 - Full type hints; `dataclass(frozen=True)`/`pydantic` for configs; no `Any` in
   public signatures; no bare `except`; no global mutable state; no print — use
   `structlog`/`logging` with structured JSON lines.
@@ -165,6 +167,8 @@ Root-level files are allowed; no other top-level folders.
   finding or state why not. Only findings that survive come to the user.**
   Every report carries a one-line footer: `reviewer: N findings, M resolved`,
   or `reviewer: no findings`.
+- On every commit, the reviewer also reads the staged diff for secrets (its
+  item 13; Ali, 2026-11-18).
 - Keep `results/NOTES.md` as a dated lab notebook: what was run, what was
   observed, what surprised you, what is unresolved. Terse. Facts only.
 - Any run with swap activity, an OOM, or a thermal-throttle event is recorded

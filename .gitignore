@@ -50,3 +50,26 @@ presentation/*.pdf
 paper/*.log
 thesis/*.log
 presentation/*.log
+
+# Secrets. The Overleaf git token lives OUTSIDE this repository, in
+# ~/.config/overleaf/credentials (mode 600), read by a git credential helper in
+# ~/.gitconfig; git cannot see it from here. These patterns stop a copy of it, or
+# of any other credential, from being added by accident. The secret-scan hooks
+# (pre-commit, pre-merge-commit, pre-push; `make hooks`, once per clone) and
+# `make check` run src/scripts/secret_scan.py, which refuses token-shaped
+# strings and these names even when force-added.
+credentials
+*credentials.*
+.git-credentials
+.env
+.env.*
+.netrc
+*.token
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+.overleaf/

@@ -9,13 +9,21 @@ VENV ?= $(HOME)/.venvs/twl
 BIN  := $(VENV)/bin
 LATEX_HOST ?= mac
 
-.PHONY: check results figures paper thesis slides release
+.PHONY: check hooks results figures paper thesis slides release
 
 check:
+	PYTHONPATH=src $(BIN)/python src/scripts/secret_scan.py --tree
 	$(BIN)/ruff check src
 	$(BIN)/ruff format --check src
 	$(BIN)/mypy
 	$(BIN)/pytest -q
+
+# Install the secret-scan hooks (pre-commit, pre-merge-commit, pre-push) into
+# this clone's .git/hooks and, when it exists, the Overleaf clone's: that clone
+# pushes with the Overleaf token. Once per clone (the Mac too).
+OVERLEAF_CLONE ?= $(HOME)/.cache/twl-overleaf/paper
+hooks:
+	src/scripts/hooks/install.sh "$(CURDIR)" "$(OVERLEAF_CLONE)"
 
 # The artifact targets are introduced by later phases. Until their inputs exist,
 # building them is a misconfiguration and fails loudly (CLAUDE.md §3).

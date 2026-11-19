@@ -88,6 +88,7 @@ from pathlib import Path, PurePosixPath
 from typing import BinaryIO
 
 from scripts.paper_sources import CLAIMS, SOURCES, Claim, Source
+from twl.secret_shapes import TOKEN_ANCHORS, TOKEN_SHAPES
 
 REPO = Path(__file__).resolve().parents[2]
 RAW_ARC = "results/raw"
@@ -147,13 +148,17 @@ SECRET_NAME = re.compile(
 # Matched against LOWERCASED text. Group names are the labels a hit is reported
 # under. Patterns never span a line, which is what lets the scan read
 # line-aligned chunks. Every match contains one of SECRET_ANCHORS, a literal
-# prefilter: a chunk without any anchor skips the regex, which is what keeps
-# 600 MB of logs to seconds rather than a minute.
+# prefilter: a chunk without any anchor skips the regex. With the shared token
+# shapes the whole dry run, scan included, took 16 s over 1755 text files
+# (2026-11-18). The token shapes (and the private-key header) are
+# twl.secret_shapes', the list the git hooks use; the two generic anchors are
+# the deposit's own, since source code carries them. File names and binary
+# files are handled here, by SECRET_NAME and the NUL sniff, not by that module.
 SECRET_TEXT = re.compile(
-    rb"(?P<Authorization>authorization:)|(?P<api_key>api[_-]?key)"
-    rb"|(?P<private_key>begin [a-z ]*private key)"
+    rb"(?P<Authorization>authorization:)|(?P<api_key>api[_-]?key)|"
+    + b"|".join(b"(?P<%s>%s)" % (k.encode(), v) for k, v in TOKEN_SHAPES.items())
 )
-SECRET_ANCHORS = (b"authorization:", b"api_key", b"api-key", b"apikey", b"private key")
+SECRET_ANCHORS = (b"authorization:", b"api_key", b"api-key", b"apikey", *TOKEN_ANCHORS)
 
 RULES: dict[str, str] = {
     "vcs": "a .git directory or file",

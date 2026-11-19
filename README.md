@@ -22,7 +22,8 @@ its runs and its notebook entry.
 On the measurement device, with the logs in `results/raw/`:
 
 ```sh
-make check      # ruff, mypy --strict, pytest
+make hooks      # once per clone: the secret-scan hooks (commit, merge, push)
+make check      # secret scan, ruff, mypy --strict, pytest
 make figures    # results/figures/*.pdf (paper_fig1..5 are the paper's figures)
 make results    # results/tables/*, results/RESULTS.md,
                 # paper/generated/*.tex and thesis/generated/*.tex

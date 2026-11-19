@@ -65,7 +65,8 @@ def repo(tmp_path: Path) -> Path:
     _write(raw / "takes/take.flac", b"fLaC")
     _write(raw / ".git/HEAD", "ref: refs/heads/main\n")
     # A secret in a file that is never archived must not refuse the build.
-    _write(raw / ".git/config", "[remote] url = https://user:api_key@example.invalid\n")
+    # Split so the source carries no credential URL (the tree scan reads tests).
+    _write(raw / ".git/config", "[remote] url = https://user:" + "api_key@example.invalid\n")
     _write(raw / "stt_isolation/.git/HEAD", "ref: refs/heads/main\n")
     _write(raw / DATASET_ITEMS.removeprefix("results/raw/"), "[]\n")
     _write(raw / "spoken_mqa/multi_step_reasoning-seed1/00001.wav", b"RIFF")
@@ -166,9 +167,11 @@ def test_two_builds_of_one_tree_hash_the_same(repo: Path, tmp_path: Path) -> Non
 def test_a_secret_in_an_archived_file_refuses_the_build(repo: Path, tmp_path: Path) -> None:
     _write(
         repo / f"results/raw/reactive/{RUN}/http.log",
-        "GET / HTTP/1.1\nAuthorization: Bearer sk-live-123\n",
+        "GET / HTTP/1.1\n" + "Authorization: " + "Bearer " + "sk-live-123\n",
     )
-    _write(repo / "results/raw/triggers/dump.txt", "-----BEGIN RSA PRIVATE KEY-----\n")
+    # Split so the source itself carries no key header (the pre-commit hook
+    # scans tracked files); the scanner under test still sees one.
+    _write(repo / "results/raw/triggers/dump.txt", "-----BEGIN " + "RSA PRIVATE KEY-----\n")
     out = tmp_path / "out"
     with pytest.raises(BundleError) as err:
         run_build(repo, out)

@@ -1,0 +1,8 @@
+#!/bin/sh
+# pre-push: refuse secret-shaped content (src/scripts/secret_scan.py --push).
+# Called by the stub `make hooks` writes into each clone's .git/hooks
+# (src/scripts/hooks/install.sh), here and in the Overleaf clone. The scanner
+# is found next to this file, not in the repository being committed to.
+# Fails closed: exit 2 when it cannot run, and so does this wrapper.
+here=$(cd "$(dirname "$0")" && pwd) || exit 2
+PYTHONPATH="$here/../.." exec python3 "$here/../secret_scan.py" --push --remote "$1"
