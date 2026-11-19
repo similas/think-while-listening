@@ -57,7 +57,7 @@ from twl.commit import LocalAgreementCommitter, Word
 from twl.config import SttConfig
 from twl.hypothesis_worker import HypothesisWorker, WorkerPool
 from twl.pacing import FixedTickIssuer, SelfPacedIssuer
-from twl.stt_engine import MIN_DECODE_S, POLL_S
+from twl.stt_engine import MIN_DECODE_S, POLL_S, PREROLL_S
 from twl.telemetry import (
     read_faults,
     read_page_cache_mb,
@@ -115,7 +115,7 @@ class StreamingWhisperSTT(STTService):
         self._speaking = False
         self._preroll: deque[npt.NDArray[np.float32]] = deque()
         self._preroll_samples = 0
-        self._preroll_max = int(0.6 * sample_rate)
+        self._preroll_max = int(PREROLL_S * sample_rate)
         self._partial_task: asyncio.Task[None] | None = None
         self._decode_lock = asyncio.Lock()
         # Touched from the thread pool, so it needs a threading lock, not the

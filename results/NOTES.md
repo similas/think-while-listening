@@ -8718,3 +8718,122 @@ Appended, not edited. Found by the reviewer of the report on 7642e87. The
 entry gives ~/.venvs/twl-learn as "764 MB", read from `du -sh`, which prints
 "764M" in binary units. `du -sB1 ~/.venvs/twl-learn` prints 800890880 bytes
 on disk; `du -sB1 --apparent-size` prints 762633679.
+
+## 2026-11-19 — Step 1 PILOT (labels, 20 files per corpus) and DECISIONS on it (Ali): full run GO, turns at live endpoints, label under the WER normalizer
+
+### The pilot, as run (build cdee762, 2026-11-18 23:01-23:13)
+
+src/scripts/commit_labels.py --limit 20 --tag pilot on each corpus; logs in
+results/raw/run_logs/20261118_labels_pilot/, labels in
+results/raw/commit_labels/*.pilot.*. Each file was ONE turn, and the label was
+survival under Word.key. Both are superseded below, so these numbers describe
+the pilot only and enter no claim. From the LABELS lines:
+
+    corpus                  words  positive (files with rows)    final WER (n=20 files)
+    librispeech-test-clean    376  0.8963 [0.8623, 0.9384] n=20  0.0328 [0.0115, 0.0633]
+    librispeech-test-other    632  0.7627 [0.7107, 0.8206] n=17  0.1678 [0.1218, 0.2222]
+    peoples-speech            379  0.7388 [0.6245, 0.8588] n=15  0.2339 [0.1550, 0.3272]
+    mqa-short_digit            51  0.6471 [0.4333, 0.8049] n=16  0.1456 [0.0667, 0.2376]
+    mqa-long_digit             77  0.4935 [0.3846, 0.6364] n=18  0.2054 [0.1271, 0.2906]
+    mqa-single_step           612  0.8595 [0.8084, 0.8990] n=20  0.0340 [0.0200, 0.0470]
+    mqa-multi_step           1618  0.9438 [0.9284, 0.9579] n=20  0.0226 [0.0108, 0.0361]
+
+Wall time 12 min. The COST lines' whole-corpus projections, at the pilot's
+wall time per file: short_digit 0.08 h, long_digit 0.14, single_step 0.97,
+multi_step 3.55, librispeech-test-clean 2.94, -other 4.06, peoples-speech
+9.08.
+Files with an internal silence of at least vad.stop_secs, of 20 per corpus,
+by Silero / by the final's word timestamps: test-clean 1/1, test-other 5/5,
+peoples-speech 2/2, short_digit 0/0, long_digit 1/0, single_step 0/2,
+multi_step 1/2.
+
+THE WATCHDOG DID NOT GUARD THE PILOT. The launch read the pid to guard with
+`pgrep -f` on the driver's name, which matched the launching shell first; the
+watchdog guarded that shell, not the setsid'd driver, so a breach would not
+have stopped the load. Its log records only the start line: no breach was
+logged, but the pilot was not protected. The full run's launcher reads the
+watched pid back from the watchdog's log and refuses to start the driver
+unless it equals the driver's own pid and process group. The generator is
+covered through that group: it runs in the driver's process group, which the
+watchdog kills on a breach, and the driver checks the group of each generator
+it starts and the watchdog's liveness before each corpus.
+
+### DECISIONS (Ali), recorded as given
+
+1. GO for the full step 1 (~21 h), People's Speech at both parts. Order: the
+   Spoken-MQA splits, librispeech-test-clean, -other, then People's Speech.
+   Resumable: a checkpoint per file and parquet parts every 50 files, each
+   written under a temporary name and renamed into place. A crash costs the
+   file in progress; a crash that needs a CODE FIX costs the corpus in
+   progress, because the checkpoint header hashes the code and a resume with
+   other code is refused. Nothing else runs on the box until it finishes. The
+   watchdog is proven attached before the run starts (above), and the driver
+   stops the run if it disappears. Resident at launch and left as they are:
+   twl-llama.service (llama-server, idle during labels) and spotifyd; stopping
+   them is Ali's call.
+2. TURNS MATCH LIVE. An internal silence of at least 0.8 s ends the turn there;
+   the remainder is a new turn with its own final. A word is labelled from the
+   final of its own turn. The number of split files is reported. A label from a
+   turn that could not exist live is not a label. IMPLEMENTED
+   (twl.label_replay.live_turns): Silero spans at the live threshold, used as
+   both the speech and the silence threshold, and the live minimum speech,
+   unpadded; a turn opens vad.start_secs into its speech; its audio begins
+   PREROLL_S (0.6 s, stt.py's pre-roll ring) before that, with silence before
+   the file's start when the speech starts near it (live's ring is always
+   full); it ends
+   vad.stop_secs after the speech. The committer and issuer start over each
+   turn, and the clock and idle time start at the open, with the pre-roll
+   already buffered, as live.
+3. THE LABEL is survival under the WER scorer's own normalizer (twl/wer.py,
+   normalize): every one of the word's tokens matched in the turn's final.
+   Kept as columns: label_exact (Word.key: lowercase, punctuation other than
+   the apostrophe stripped) and label_num (number words zero to ninety to
+   digits, one token at a time, so "twenty five" is not "25" and hundreds,
+   decimals and ordinals are not merged; thousands separators and currency
+   signs dropped; % as percent). The column twl/wer.py corresponds to is
+   label_wer (named `label` in this decision; renamed by the next entry).
+
+### FLAGGED: twl/wer.py does not normalize numbers
+
+normalize() lowercases, splits on every non-word character and spells 0-10.
+It does not normalize other numbers: "12" against "twelve", "1,000" (read as
+"one 000") against "1000", and "10%" against "10 percent" all count as errors.
+On the Spoken-MQA math sets this is a scorer question, to settle before P4 is
+scored on math. Open for Ali.
+
+### OBSERVED, for Ali: the live pre-roll is never cleared between turns
+
+stt.py appends to and trims its pre-roll ring but never clears it. When two
+turns are less than stop_secs + preroll_s - start_secs (1.2 s) apart, the live
+turn therefore starts with stale audio from before the previous turn opened,
+including that turn's speech onset. The replay cuts contiguous file audio
+instead; the step-1 report counts the turns this affects. The live code is
+not changed.
+
+## 2026-11-19 — DECISIONS (Ali): the scorer for numbers, and the training label
+
+Recorded as given:
+
+1. Add a full English number and text normalizer to the WER path
+   (Whisper-style: digits and words, thousands separators, percent, ordinals,
+   currency), torch-free, with tests. The registered scorer (twl/wer.py)
+   stays as it is; the new one is a second, named scorer.
+2. Going forward (the committer phase, its labels, its pre-registration, and
+   P4 for step 5), the number-normalized scorer is the registered one. The
+   training label is the number-normalized column.
+3. Backward: P4 for pass 2 and pass 2k is re-scored with the new scorer and
+   appended beside the registered verdicts, labelled as a post-hoc
+   sensitivity. The registered verdicts are not changed. If the sign or the
+   bar outcome differs under the new scorer, the ledger qualifier and the
+   paper's Limitations say so plainly.
+4. Then step 1 is launched as planned.
+
+ORDER (approved by Ali): nothing else runs on the box during step 1, so the
+normalizer, its tests and the P4 re-scoring come after the run. Before the
+launch, the replay keeps every hypothesis's decoded words (text, start_s,
+end_s) and each turn's final words, so label_num can be recomputed under the
+new scorer without decoding again. The columns are now label_num (the
+training label; an interim normalizer until the recomputation), label_wer
+(twl/wer.py) and label_exact; a word a normalizer gives no token is -1 in
+that column.
+

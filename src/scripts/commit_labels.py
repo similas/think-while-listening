@@ -72,11 +72,11 @@ from twl.label_io import (
     refuse_dirty,
     require_approval,
 )
-from twl.label_replay import ReplaySettings, replay
+from twl.label_replay import ReplaySettings, live_turns, merge_spans, replay
 from twl.pacing import PARTIAL_INTERCEPT_MS, PARTIAL_MS_PER_S
 from twl.provenance import build_run_meta, new_run_id
 from twl.seal import SEAL_SHA256
-from twl.stt_engine import MIN_DECODE_S, POLL_S, load_pinned, transcribe_words_scored
+from twl.stt_engine import MIN_DECODE_S, POLL_S, PREROLL_S, load_pinned, transcribe_words_scored
 from twl.survival_labels import GAP_COST, MATCH_TOL_S, SUB_COST, WINDOW_S, HypWord
 from twl.wer import normalize, wer
 
@@ -89,8 +89,13 @@ FETCH = Path("src/scripts/fetch_corpora.sh")
 OUT = Path("results/raw/commit_labels")
 RAW = Path("results/raw")
 RUN_LOCK = RAW / ".run.lock"
-LABEL_COLUMNS = ("label", "label_wer_norm", "match_offset_s")  # read the final
-ID_COLUMNS = ("utt", "hyp_index", "word_index", "text", "key", "issued_s", "start_s", "end_s")
+LABEL_COLUMNS = ("label_num", "label_wer", "label_exact", "match_offset_s")  # read the final
+TRAINING_LABEL = "label_num"  # Ali's scorer decision, 2026-11-19
+ID_COLUMNS = (
+    "utt", "turn", "turn_origin_s", "hyp_index", "word_index", "text", "key", "issued_s",
+    "start_s", "end_s",
+)  # fmt: skip
+BATCH = 50  # utterances per incremental parquet part
 STACK = ("faster-whisper", "ctranslate2", "numpy", "onnxruntime", "pyarrow", "av")
 SR = 16000
 PROMPT_CHARS = 200  # LocalAgreementCommitter.prompt's default, as live
@@ -350,28 +355,50 @@ def settings_record(cfg: TwlConfig, s: ReplaySettings) -> dict[str, object]:
             "buffer_s",
             "since_commit_s",
         ],
+        "training_label": TRAINING_LABEL,
         "labels": {
-            "label": "the word matches the final at its position under Word.key "
-            "(lowercase, punctuation stripped), centres within match_tol_s",
-            "label_wer_norm": "the same alignment on twl.wer.normalize's tokens "
-            "(punctuation split, 0-10 spelled); which one is THE label is Ali's choice",
-            "match_offset_s": "derived from label: NaN exactly when label is 0",
+            "label_num": "THE TRAINING LABEL (Ali's scorer decision, 2026-11-19): every one of "
+            "the word's tokens under the number normalizer matches the turn's final, centres "
+            "within match_tol_s. INTERIM normalizer here: number words to digits (zero to "
+            "ninety) one token at a time, so 'twenty five' is not '25' and hundreds, decimals "
+            "and ordinals are not merged; thousands separators and currency signs dropped; "
+            "% as percent. Recomputed after step 1 with the full number normalizer (the new "
+            "registered scorer) from the words each hypothesis record keeps",
+            "label_wer": "the same alignment on twl.wer.normalize, the registered scorer of the "
+            "passes so far (lowercase, non-word characters split, 0-10 spelled; it does not "
+            "normalize other numbers: 12/twelve, 1,000/1000, 10%/10 percent are errors)",
+            "label_exact": "the same alignment on Word.key (lowercase, punctuation other than "
+            "the apostrophe stripped)",
+            "unscored": "-1 where a normalizer gives the word no token",
+            "match_offset_s": "derived from label_num: NaN unless it is 1",
+        },
+        "turns": {
+            "rule": "a silence of at least vad.stop_secs ends the turn; each turn has its own "
+            "final, and the committer and issuer start over (Ali, 2026-11-19)",
+            "speech_spans": "faster-whisper's Silero at vad.confidence as both the speech and "
+            "the silence threshold (neg_threshold), min silence vad.stop_secs, min speech "
+            "vad.start_secs, no padding; gaps still under vad.stop_secs merged",
+            "opens_and_clock": "the turn's clock and idle time start at the open; the buffer "
+            "then already holds the pre-roll",
+            "opens": "speech start + vad.start_secs",
+            "origin": "opens - preroll_s; silence before the file's start (live's pre-roll "
+            "ring is always full)",
+            "endpoint": "speech end + vad.stop_secs",
+            "start_secs": cfg.vad.start_secs,
+            "preroll_s": PREROLL_S,
         },
         "departures": [
             "word timestamps on the hypotheses: LA-2 agrees and commits per word "
             "(live, deployed: per segment), so buffers, prompts and trim points differ",
-            "final = base on the full utterance with word timestamps (live: the tail, "
+            "final = base on the whole turn with word timestamps (live: the uncommitted tail, "
             "no word times)",
-            "turn time origin = the file's first sample (live: the VAD start less its pre-roll)",
-            "the whole file is one turn: live, a pause of vad.stop_secs or more inside it ends "
-            "the turn and the next one starts with the committer and issuer reset; each "
-            "utterance records the internal silences of at least vad.stop_secs that "
-            "faster-whisper's Silero finds at the live threshold, unpadded (vad_silences_ge_stop, "
-            "vad_max_silence_s; not Pipecat's detector, no min_volume), and, separately, the "
-            "gaps between the final's word timestamps (word_gaps_ge_stop, max_word_gap_s)",
-            "endpoint = the final's last word end + vad.stop_secs (live: Silero's), with silence "
-            "appended past the file's end; a hypothesis still decoding then is frozen, never "
-            "offered, and has no rows (at_endpoint stop)",
+            "turns from faster-whisper's Silero, not Pipecat's detector; no min_volume",
+            "the pre-roll is the contiguous audio before the open; live, stt.py never clears "
+            "its pre-roll ring between turns, so a turn less than stop_secs + preroll_s - "
+            "start_secs after the previous one starts with stale audio (counted in the report)",
+            "a turn's audio is cut from the file, with silence appended past the file's end; "
+            "a hypothesis still decoding at the endpoint is frozen, never offered, and has no "
+            "rows (at_endpoint stop)",
         ],
     }
 
@@ -381,6 +408,8 @@ def settings_record(cfg: TwlConfig, s: ReplaySettings) -> dict[str, object]:
 ROW_SCHEMA = pa.schema(
     [
         ("utt", pa.string()),
+        ("turn", pa.int32()),
+        ("turn_origin_s", pa.float64()),
         ("hyp_index", pa.int32()),
         ("word_index", pa.int32()),
         ("text", pa.string()),
@@ -400,8 +429,9 @@ ROW_SCHEMA = pa.schema(
         ("start_s", pa.float64()),
         ("end_s", pa.float64()),
         ("match_offset_s", pa.float64()),
-        ("label", pa.int8()),
-        ("label_wer_norm", pa.int8()),
+        ("label_num", pa.int8()),
+        ("label_wer", pa.int8()),
+        ("label_exact", pa.int8()),
     ]
 )
 
@@ -429,23 +459,67 @@ def boot_ratio(num: list[float], den: list[float], seed: int = 0) -> str:
     )
 
 
-def vad_silences(pcm: Pcm, cfg: TwlConfig) -> tuple[int, float]:
-    """Internal silences of at least vad.stop_secs by Silero, and the longest.
-
-    faster-whisper's Silero, at the live confidence threshold and minimum
-    silence, with no padding: the closest offline measure of where the live
-    endpoint rule would end a turn inside the file. Not the live detector
-    itself (Pipecat's Silero, which also applies min_volume).
-    """
+def speech_spans(pcm: Pcm, cfg: TwlConfig) -> list[tuple[float, float]]:
+    """Speech spans (s) by faster-whisper's Silero at the live VAD settings, unpadded."""
     opts = VadOptions(
         threshold=cfg.vad.confidence,
         min_silence_duration_ms=int(cfg.vad.stop_secs * 1000),
+        min_speech_duration_ms=int(cfg.vad.start_secs * 1000),
         speech_pad_ms=0,
+        neg_threshold=cfg.vad.confidence,  # Pipecat: any frame under it is silence
     )
-    spans = get_speech_timestamps(pcm, opts, sampling_rate=SR)
-    gaps = [(b["start"] - a["end"]) / SR for a, b in itertools.pairwise(spans)]
-    long = [g for g in gaps if g >= cfg.vad.stop_secs]
-    return len(long), max(gaps, default=0.0)
+    return [
+        (d["start"] / SR, d["end"] / SR) for d in get_speech_timestamps(pcm, opts, sampling_rate=SR)
+    ]
+
+
+def turn_audio(pcm: Pcm, origin_s: float, endpoint_s: float) -> Pcm:
+    """The file's audio from origin to endpoint: silence before its start (an
+    origin below 0) and after its end."""
+    a, b = round(origin_s * SR), round(endpoint_s * SR)
+    lead = max(0, -a)
+    seg = pcm[max(0, a) : max(0, b)]
+    tail = (b - a) - lead - len(seg)
+    return np.concatenate(
+        [np.zeros(lead, np.float32), seg, np.zeros(max(0, tail), np.float32)]
+    ).astype(np.float32)
+
+
+def write_part(parts: Path, records: list[dict[str, object]], prov: dict[str, object]) -> None:
+    """One incremental part: the rows and the utterance records of a batch.
+
+    Each file is written under a temporary name and renamed into place, so a
+    kill mid-write leaves no half part behind.
+    """
+    parts.mkdir(parents=True, exist_ok=True)
+    seq = len(list(parts.glob("rows-*.parquet")))
+    rows = [
+        dict(r, utt=rec["utt"])
+        for rec in records
+        for r in rec["rows"]  # type: ignore[attr-defined]
+    ]
+    utts = [{k: v for k, v in rec.items() if k != "rows"} for rec in records]
+    for name, table in (
+        (
+            f"rows-{seq:05d}.parquet",
+            pa.Table.from_pylist(rows, schema=_with_meta(ROW_SCHEMA, prov)),
+        ),
+        (f"utts-{seq:05d}.parquet", pa.Table.from_pylist(utts)),
+    ):
+        tmp = parts / f".{name}.tmp"
+        pq.write_table(table, tmp)
+        os.replace(tmp, parts / name)
+
+
+def utts_in_parts(parts: Path) -> set[str]:
+    """Utterances already in a readable part; an unreadable one is logged and skipped."""
+    out: set[str] = set()
+    for f in sorted(parts.glob("utts-*.parquet")):
+        try:
+            out |= {str(u) for u in pq.read_table(f, columns=["utt"]).column(0).to_pylist()}
+        except (OSError, pa.ArrowInvalid) as e:
+            log.warning("skipping unreadable part %s (%s); its files are caught up again", f, e)
+    return out
 
 
 # ------------------------------------------------------------------ main
@@ -501,6 +575,9 @@ def run(args: argparse.Namespace) -> None:
             log.warning("dropping a checkpoint line cut short by an earlier crash")
             lines = ckpt.read_text().splitlines()[:-1]
             ckpt.write_text("".join(line + "\n" for line in lines))
+        elif not ckpt.read_text().endswith("\n"):
+            with ckpt.open("a") as fh:  # a complete last line without its newline
+                fh.write("\n")
     else:
         ckpt.write_text(json.dumps(header) + "\n")
         cp = read_checkpoint([json.dumps(header)], header)
@@ -524,57 +601,6 @@ def run(args: argparse.Namespace) -> None:
         )
         return [HypWord(Word(t, s0, s1), pr, alp, nsp) for t, s0, s1, pr, alp, nsp in raw], wordless
 
-    t_run = time.perf_counter_ns()
-    run_audio_s = 0.0
-    run_decode_ms = 0.0
-    with ckpt.open("a") as fh:
-        for n, (uid, pcm) in enumerate(corpus.stream(wanted), 1):
-            t0 = time.perf_counter_ns()
-            raw_final, final_wordless = transcribe_words_scored(
-                base, pcm, language=lang, base_s=0.0, initial_prompt=""
-            )
-            final_ms = (time.perf_counter_ns() - t0) / 1e6
-            final = [Word(t, s0, s1) for t, s0, s1, *_ in raw_final]
-            final_text = " ".join(w.text for w in final)
-            gaps = [b.start_s - a.end_s for a, b in itertools.pairwise(final)]
-            vad_n, vad_max = vad_silences(pcm, cfg)
-            res = replay(pcm, final, decode_hyp, settings)
-            reference = ref_of[uid]
-            hyp_ms = sum(float(h["wall_ms"] or 0.0) for h in res.hyps)
-            rec = {
-                "utt": uid,
-                "reference": reference,
-                "final": final_text,
-                "final_words": [
-                    {"text": w.text, "start_s": w.start_s, "end_s": w.end_s} for w in final
-                ],
-                "final_wordless_segments": final_wordless,
-                "wer": wer(reference, final_text),
-                "ref_words": len(normalize(reference)),
-                "dur_s": len(pcm) / SR,
-                "endpoint_s": res.endpoint_s,
-                "max_word_gap_s": max(gaps, default=0.0),
-                "word_gaps_ge_stop": sum(1 for g in gaps if g >= settings.stop_secs),
-                "vad_silences_ge_stop": vad_n,
-                "vad_max_silence_s": vad_max,
-                "hypotheses": res.hypotheses,
-                "frozen": res.frozen,
-                "empty_words": res.empty_words,
-                "hyp_wordless_segments": res.wordless_segments,
-                "hyps": res.hyps,
-                "final_wall_ms": final_ms,
-                "hyp_wall_ms_total": hyp_ms,
-                "rows": res.rows,
-            }
-            fh.write(json.dumps(rec) + "\n")
-            fh.flush()
-            run_audio_s += len(pcm) / SR
-            run_decode_ms += final_ms + hyp_ms
-            if n % 25 == 0 or n == len(wanted):
-                el = (time.perf_counter_ns() - t_run) / 1e9
-                log.info("  %d/%d in %.0f s", n, len(wanted), el)
-    run_wall_s = (time.perf_counter_ns() - t_run) / 1e9
-
     prov: dict[str, object] = {
         "invocations": invocations,
         "settings": record,
@@ -591,6 +617,103 @@ def run(args: argparse.Namespace) -> None:
         "utterances_in_corpus": len(corpus.refs),
         "drawn_uids": [u for u, _ in chosen],
     }
+    parts = args.out / f"{stem}.parts"
+    # Catch up: utterances checkpointed but not yet in a part (a crash between the two).
+    have = utts_in_parts(parts)
+    behind = [
+        json.loads(line)
+        for line in ckpt.read_text().splitlines()[1:]
+        if '"invocation"' not in line[:20] and json.loads(line).get("utt") not in have
+    ]
+    if behind:
+        write_part(parts, behind, prov)
+        log.info("caught up %d checkpointed utterances into a part", len(behind))
+
+    t_run = time.perf_counter_ns()
+    run_audio_s = 0.0
+    run_decode_ms = 0.0
+    pending: list[dict[str, object]] = []
+    with ckpt.open("a") as fh:
+        for n, (uid, pcm) in enumerate(corpus.stream(wanted), 1):
+            spans, merged = merge_spans(speech_spans(pcm, cfg), cfg.vad.stop_secs)
+            turns = live_turns(
+                spans,
+                start_secs=cfg.vad.start_secs,
+                stop_secs=cfg.vad.stop_secs,
+                preroll_s=PREROLL_S,
+            )
+            turn_recs: list[dict[str, object]] = []
+            rows: list[dict[str, object]] = []
+            final_ms = hyp_ms = 0.0
+            for k, t in enumerate(turns):
+                audio = turn_audio(pcm, t.origin_s, t.endpoint_s)
+                t0 = time.perf_counter_ns()
+                raw_final, final_wordless = transcribe_words_scored(
+                    base, audio, language=lang, base_s=0.0, initial_prompt=""
+                )
+                f_ms = (time.perf_counter_ns() - t0) / 1e6
+                final = [Word(w, s0, s1) for w, s0, s1, *_ in raw_final]
+                res = replay(
+                    audio,
+                    final,
+                    decode_hyp,
+                    settings,
+                    t.endpoint_s - t.origin_s,
+                    open_s=t.opens_s - t.origin_s,
+                )
+                h_ms = sum(float(h["wall_ms"] or 0.0) for h in res.hyps)
+                final_ms += f_ms
+                hyp_ms += h_ms
+                for r in res.rows:
+                    rows.append(dict(r, turn=k, turn_origin_s=t.origin_s))
+                turn_recs.append(
+                    {
+                        **asdict(t),
+                        "final": " ".join(w.text for w in final),
+                        "final_words": [
+                            {"text": w.text, "start_s": w.start_s, "end_s": w.end_s} for w in final
+                        ],
+                        "final_wordless_segments": final_wordless,
+                        "hypotheses": res.hypotheses,
+                        "frozen": res.frozen,
+                        "empty_words": res.empty_words,
+                        "hyp_wordless_segments": res.wordless_segments,
+                        "hyps": res.hyps,
+                        "rows": len(res.rows),
+                        "final_wall_ms": f_ms,
+                        "hyp_wall_ms_total": h_ms,
+                    }
+                )
+            reference = ref_of[uid]
+            final_text = " ".join(str(tr["final"]) for tr in turn_recs).strip()
+            rec: dict[str, object] = {
+                "utt": uid,
+                "reference": reference,
+                "final": final_text,
+                "wer": wer(reference, final_text),
+                "ref_words": len(normalize(reference)),
+                "dur_s": len(pcm) / SR,
+                "speech_spans": [list(sp) for sp in spans],
+                "spans_merged": merged,
+                "turns": turn_recs,
+                "n_turns": len(turns),
+                "rows": rows,
+            }
+            fh.write(json.dumps(rec) + "\n")
+            fh.flush()
+            pending.append(rec)
+            if len(pending) >= BATCH:
+                write_part(parts, pending, prov)
+                pending.clear()
+            run_audio_s += len(pcm) / SR
+            run_decode_ms += final_ms + hyp_ms
+            if n % 25 == 0 or n == len(wanted):
+                el = (time.perf_counter_ns() - t_run) / 1e9
+                log.info("  %d/%d in %.0f s", n, len(wanted), el)
+    if pending:
+        write_part(parts, pending, prov)
+    run_wall_s = (time.perf_counter_ns() - t_run) / 1e9
+
     summarize(
         args,
         ckpt,
@@ -616,11 +739,11 @@ def summarize(
     run_audio_s: float,
     run_decode_ms: float,
 ) -> None:
-    """Stream the checkpoint into the two parquet files and print LABELS and COST."""
+    """Stream the checkpoint into the two parquet files, drop the parts, print LABELS and COST."""
     stem = ckpt.name.removesuffix(".jsonl")
     utts: list[dict[str, object]] = []
-    pos: list[float] = []
-    pos_norm: list[float] = []
+    pos: dict[str, list[float]] = {"label_num": [], "label_wer": [], "label_exact": []}
+    scored: dict[str, list[float]] = {k: [] for k in pos}
     nwords: list[float] = []
     errs: list[float] = []
     refw: list[float] = []
@@ -638,12 +761,13 @@ def summarize(
             if rows:
                 writer.write_table(pa.Table.from_pylist(rows, schema=ROW_SCHEMA))
             utts.append(rec)
-            pos.append(float(sum(int(r["label"]) for r in rows)))
-            pos_norm.append(float(sum(int(r["label_wer_norm"]) for r in rows)))
+            for col, acc in pos.items():
+                acc.append(float(sum(1 for r in rows if int(r[col]) == 1)))
+                scored[col].append(float(sum(1 for r in rows if int(r[col]) >= 0)))
             nwords.append(float(len(rows)))
             errs.append(float(rec["wer"]) * float(rec["ref_words"]))
             refw.append(float(rec["ref_words"]))
-            offsets += [abs(float(r["match_offset_s"])) for r in rows if r["label"] == 1]
+            offsets += [abs(float(r["match_offset_s"])) for r in rows if r["label_num"] == 1]
     missing = set(ref_of) - {str(u["utt"]) for u in utts}
     if missing:
         raise LabelRunError(
@@ -654,35 +778,54 @@ def summarize(
         utt_table.replace_schema_metadata(_with_meta(utt_table.schema, prov).metadata),
         args.out / f"{stem}.utterances.parquet",
     )
+    parts = args.out / f"{stem}.parts"
+    if parts.is_dir():  # consolidated: the parts were only crash insurance
+        for f in parts.glob("*.parquet"):
+            f.unlink()
+        parts.rmdir()
 
-    def total(key: str) -> int:
-        return sum(int(str(u[key])) for u in utts)
+    turns = [tr for u in utts for tr in u["turns"]]  # type: ignore[attr-defined]
+
+    def tsum(key: str) -> int:
+        return sum(int(tr[key]) for tr in turns)
 
     words = int(sum(nwords))
     no_rows = sum(1 for n in nwords if n == 0)
+    split = sum(1 for u in utts if int(str(u["n_turns"])) > 1)
+    no_turn = sum(1 for u in utts if int(str(u["n_turns"])) == 0)
+    merged = sum(int(str(u["spans_merged"])) for u in utts)
     off_med = statistics.median(offsets) if offsets else float("nan")
     off_p95 = sorted(offsets)[int(0.95 * (len(offsets) - 1))] if offsets else float("nan")
-    with_vad = sum(1 for u in utts if int(str(u["vad_silences_ge_stop"])) > 0)
-    with_gap = sum(1 for u in utts if int(str(u["word_gaps_ge_stop"])) > 0)
     name = args.corpus + (f" {args.tag}" if args.tag else "")
+    rates = "; ".join(
+        f"{col} {int(sum(acc))}/{int(sum(scored[col]))} = {boot_ratio(acc, scored[col])}"
+        for col, acc in pos.items()
+    )
+    cfg = load_config(CONFIG)
+    stale_gap = cfg.vad.stop_secs + PREROLL_S - cfg.vad.start_secs
+    stale = 0
+    for u in utts:
+        ts = u["turns"]  # type: ignore[index]
+        for a, b in itertools.pairwise(ts):  # type: ignore[arg-type]
+            if float(b["speech_start_s"]) - float(a["speech_end_s"]) < stale_gap:
+                stale += 1
     print(
-        f"LABELS {name}: utterances {len(utts)} ({no_rows} without rows); partials "
-        f"{total('hypotheses')} (frozen {total('frozen')}); words {words} (punctuation-only "
-        f"tokens, not rows: {total('empty_words')}); positive {int(sum(pos))}/{words} = "
-        f"{boot_ratio(pos, nwords)}; under WER tokens {int(sum(pos_norm))}/{words} = "
-        f"{boot_ratio(pos_norm, nwords)} (bootstrap over utterances with rows); final WER "
-        f"{boot_ratio(errs, refw)} over {int(sum(refw))} reference words; |matched centre "
-        f"offset| median {off_med:.3f} s, p95 {off_p95:.3f} s (n={len(offsets)}); utterances "
-        f"with an internal silence >= vad.stop_secs: Silero {with_vad}/{len(utts)}, word "
-        f"timestamps {with_gap}/{len(utts)}; wordless segments: final "
-        f"{total('final_wordless_segments')}, hypotheses {total('hyp_wordless_segments')}"
+        f"LABELS {name}: files {len(utts)}; turns {len(turns)}; files split into more than one "
+        f"turn {split}/{len(utts)}; turns that live would start with stale pre-roll "
+        f"{stale}; files with no turn {no_turn}; spans merged {merged}; files "
+        f"without rows {no_rows}; partials {tsum('hypotheses')} (frozen {tsum('frozen')}); "
+        f"words {words} (unscored tokens, not rows: {tsum('empty_words')}); {rates} (bootstrap "
+        f"over files with rows); final WER {boot_ratio(errs, refw)} over {int(sum(refw))} "
+        f"reference words; |matched centre offset| median {off_med:.3f} s, p95 {off_p95:.3f} s "
+        f"(n={len(offsets)}); wordless segments: final {tsum('final_wordless_segments')}, "
+        f"hypotheses {tsum('hyp_wordless_segments')}"
     )
     rss_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
     proj = f"{run_wall_s / run_n * corpus_n / 3600:.2f} h" if run_n else "n/a (nothing run here)"
     print(
-        f"COST {name}: this run {run_n} utterances, audio {run_audio_s / 3600:.3f} h, wall "
+        f"COST {name}: this run {run_n} files, audio {run_audio_s / 3600:.3f} h, wall "
         f"{run_wall_s:.0f} s, decode {run_decode_ms / 1000:.0f} s; whole corpus ({corpus_n} "
-        f"utterances) at this run's wall per utterance: {proj}; peak RSS {rss_mb:.0f} MB"
+        f"files) at this run's wall per file: {proj}; peak RSS {rss_mb:.0f} MB"
     )
 
 

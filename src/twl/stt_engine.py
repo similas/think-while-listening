@@ -22,6 +22,9 @@ VAD_PARAMS = {"min_silence_duration_ms": 250}
 POLL_S = 0.05
 # A buffer shorter than this is never decoded (stt.py's hypothesis loop).
 MIN_DECODE_S = 0.2
+# Audio kept from before the VAD opens a turn (stt.py's pre-roll ring): it
+# recovers the ~0.2 s of speech the VAD consumes before it fires.
+PREROLL_S = 0.6
 
 
 def load_pinned(

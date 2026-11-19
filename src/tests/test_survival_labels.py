@@ -11,9 +11,12 @@ from twl.survival_labels import (
     HypContext,
     HypWord,
     align_labels,
-    align_pairs,
+    align_words,
+    exact_tokens,
+    num_tokens,
     rows,
     text_hash,
+    wer_tokens,
 )
 
 
@@ -27,6 +30,14 @@ FINAL = words("Paige raised seven goldfish and twelve catfish in the pond")
 
 def hw(text: str, start: float, end: float, p: float = 0.9) -> HypWord:
     return HypWord(Word(text, start, end), p, -0.2, 0.01)
+
+
+def test_the_tokenizers() -> None:
+    assert exact_tokens("Four.") == ["four"] and exact_tokens("?") == []
+    assert wer_tokens("37.4") == ["37", "four"] and wer_tokens("7") == ["seven"]
+    assert wer_tokens("12") == ["12"]  # the scorer spells only 0-10
+    assert num_tokens("Twelve") == ["12"] and num_tokens("$1,000") == ["1000"]
+    assert num_tokens("10%") == ["10", "percent"]
 
 
 def test_a_hypothesis_identical_to_the_final_over_its_span_is_all_ones() -> None:
@@ -47,7 +58,6 @@ def test_an_inserted_word_is_zero_without_shifting_the_rest() -> None:
 
 
 def test_an_inserted_word_beside_the_edge_costs_no_neighbour_its_match() -> None:
-    # Ties between two substitutions and gap-match-gap used to drop a match.
     a = [Word("paige", 0.0, 0.4), Word("raised", 0.5, 0.9), Word("uh", 0.95, 1.0)]
     a.append(Word("seven", 1.0, 1.4))
     assert align_labels(a, FINAL) == [1, 1, 0, 1]
@@ -64,16 +74,31 @@ def test_a_truncated_last_word_is_zero() -> None:
 
 def test_the_same_token_beyond_the_tolerance_but_inside_the_window_is_zero() -> None:
     final = [Word("seven", 1.0, 1.4)]
-    off = MATCH_TOL_S + 0.2  # centre 1.2 + off: still inside the window
+    off = MATCH_TOL_S + 0.2
     assert off < MATCH_TOL_S + WINDOW_S
-    hyp = [Word("seven", 1.0 + off, 1.4 + off)]
-    assert align_labels(hyp, final) == [0]
+    assert align_labels([Word("seven", 1.0 + off, 1.4 + off)], final) == [0]
     near = MATCH_TOL_S - 0.2
     assert align_labels([Word("seven", 1.0 + near, 1.4 + near)], final) == [1]
 
 
-def test_align_pairs_returns_the_reference_index() -> None:
-    assert align_pairs(words("raised seven", start=0.5), FINAL) == [1, 2]
+def test_a_word_survives_only_when_all_its_tokens_do() -> None:
+    # The WER sees "37.4" as "37 four": base's "37" ".4" carries both tokens.
+    final = [Word("37", 1.0, 1.3), Word(".4", 1.3, 1.5)]
+    assert align_labels([Word("37.4", 1.0, 1.5)], final) == [1]
+    assert align_labels([Word("37.5", 1.0, 1.5)], final) == [0]
+
+
+def test_the_three_labels_differ_where_the_normalizers_do() -> None:
+    final = [Word("seven", 0.0, 0.4), Word("twelve", 0.5, 0.9), Word("1,000", 1.0, 1.4)]
+    hyp = [Word("7", 0.0, 0.4), Word("12", 0.5, 0.9), Word("1000", 1.0, 1.4)]
+    assert align_labels(hyp, final, exact_tokens) == [0, 0, 1]  # the key drops the comma
+    # The scorer spells 0-10 only, and splits "1,000" into "one" "000".
+    assert align_labels(hyp, final, wer_tokens) == [1, 0, 0]
+    assert align_labels(hyp, final, num_tokens) == [1, 1, 1]
+
+
+def test_align_words_returns_the_reference_index() -> None:
+    assert align_words(words("raised seven", start=0.5), FINAL) == [1, 2]
 
 
 def test_an_empty_hypothesis_has_no_labels() -> None:
@@ -99,18 +124,18 @@ def ctx(**kw: object) -> HypContext:
     return HypContext(**base)  # type: ignore[arg-type]
 
 
-def test_rows_skip_committed_and_empty_words_and_carry_features_and_labels() -> None:
+def test_rows_skip_committed_and_unscored_words_and_carry_features_and_labels() -> None:
     hyp = [
         hw("raised", 0.5, 0.9),  # before committed_end: not fresh
         hw("seven", 1.0, 1.4, p=0.8),
-        hw(".", 1.42, 1.45),  # punctuation only: no row
+        hw(".", 1.42, 1.45),  # no token under any normalizer: no row
         hw("eleven", 1.5, 1.9, p=0.5),
     ]
     out = rows(hyp, ctx(la2_committed=1), FINAL)
     assert [r["key"] for r in out] == ["seven", "eleven"]
-    assert [r["label"] for r in out] == [1, 0]
+    assert [r["label_num"] for r in out] == [1, 0]
     assert [r["la2_commit"] for r in out] == [1, 0]
-    assert [r["word_index"] for r in out] == [0, 2]  # index among fresh words
+    assert [r["word_index"] for r in out] == [0, 2]
     first = out[0]
     assert first["partials_seen"] == 3
     assert abs(float(first["pos_from_end_s"]) - (2.4 - 1.4)) < 1e-9
@@ -123,14 +148,20 @@ def test_rows_skip_committed_and_empty_words_and_carry_features_and_labels() -> 
 
 
 def test_agreed_prev_matches_the_previous_hypothesis_in_time_not_by_position() -> None:
-    # The previous remainder starts one word earlier: positions differ, times agree.
     prev = tuple(words("raised seven goldfish", start=0.5))
     hyp = [hw("seven", 1.0, 1.4), hw("goldfish", 1.5, 1.9), hw("eleven", 2.0, 2.4)]
     out = rows(hyp, ctx(previous_remainder=prev), FINAL)
     assert [r["agreed_prev"] for r in out] == [1, 1, 0]
 
 
-def test_label_wer_norm_matches_spelled_numbers_where_the_key_does_not() -> None:
+def test_rows_carry_all_three_labels() -> None:
     final = [Word("seven", 1.0, 1.4)]
     out = rows([hw("7", 1.0, 1.4)], ctx(committed_end_s=0.9), final)
-    assert out[0]["label"] == 0 and out[0]["label_wer_norm"] == 1
+    assert (out[0]["label_num"], out[0]["label_wer"], out[0]["label_exact"]) == (1, 1, 0)
+
+
+def test_a_word_no_normalizer_tokenizes_the_same_way_gets_minus_one() -> None:
+    final = [Word("10", 1.0, 1.4), Word("percent", 1.4, 1.8)]
+    out = rows([hw("%", 1.4, 1.8)], ctx(committed_end_s=0.9), final)
+    # "%" has no Word.key and no WER token, but the number normalizer reads "percent".
+    assert (out[0]["label_num"], out[0]["label_wer"], out[0]["label_exact"]) == (1, -1, -1)

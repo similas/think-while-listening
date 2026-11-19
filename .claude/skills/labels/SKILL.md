@@ -74,8 +74,8 @@ The deployed treatment is `src/configs/commit_wl_stop_gate.yaml`
 Departures, each stated wherever labels are used:
 - `word_timestamps: true` for the hypotheses. Per-word labels need word times;
   the deployed arm uses `false` (segments), chosen 2026-09-23.
-- The final for labelling is base on the FULL utterance, with word
-  timestamps (the alignment needs them). The live final (`_transcribe`) has no
+- The final for labelling is base on the whole TURN, with word timestamps
+  (the alignment needs them). The live final (`_transcribe`) has no
   word times and no `initial_prompt`; under COMMIT-WL it decodes only the
   uncommitted tail, and the committed text is prepended (stt.py). The
   departures are the full utterance and the word times.
@@ -95,11 +95,31 @@ decode-time model; the gate off. As implemented:
 - the feasibility gate is OFF during label generation (`duration_prior_s`
   0.0), so no corpus-dependent prior enters the labels.
 
-## The label
+## Turns (Ali, 2026-11-19)
 
-Align each partial's words to the final by timestamp-aware edit alignment on
-normalized tokens (`twl.commit.Word.key`: lowercase, punctuation stripped).
-label = 1 if the word appears unchanged in the final at that position, else 0.
+A file is split into the turns the live endpoint rule makes
+(`twl.label_replay.live_turns`): Silero spans at `vad.confidence`, minimum
+silence `vad.stop_secs`, minimum speech `vad.start_secs`, unpadded (gaps still
+under `stop_secs` merged and counted). A turn opens `start_secs` into its
+speech; its audio starts `PREROLL_S` (0.6 s) before that (silence before the
+file's start when needed: live's ring is always full) and ends `stop_secs`
+after the speech. Each turn has its own final; the committer and issuer start
+over, and the clock and idle time start at the open, with the pre-roll
+already buffered. Silero's silence threshold is the live confidence too. Words are labelled against their own turn's final. The report
+gives the files split, the turns, and the files with no turn.
+
+## The labels (Ali, 2026-11-19)
+
+Every token of the word must be matched in the turn's final, by a
+timestamp-aware alignment on tokens (gap 1, substitution 2, match 0 when the
+tokens are equal and the centres are within `MATCH_TOL_S`). Three columns,
+one per normalizer, -1 where a normalizer gives the word no token:
+- `label_num`, THE TRAINING LABEL: numbers normalized. An interim normalizer
+  until the full number normalizer (the new registered scorer) exists; then
+  it is recomputed from the words every hypothesis record keeps.
+- `label_wer`: `twl.wer.normalize`, the registered scorer of the earlier
+  passes (spells 0-10 only).
+- `label_exact`: `Word.key`.
 
 ## Features, one row per partial word (Ali's list)
 
