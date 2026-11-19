@@ -8665,3 +8665,56 @@ NOT FIXABLE IN THE REPOSITORY: the token was pasted into a working session
 on 2026-11-18. It is in plain text in that session's local log, outside the
 repository, and it left the box with that session. Revoking it and issuing a
 new one is Ali's.
+
+## 2026-11-18 — DECISIONS on 7642e87 (Ali): token risk accepted, credentials, corpora, labels, venv
+
+Recorded as given. Items 5-8 are Ali's "proceed with items 2-5" of the report
+on 7642e87. That report numbered three items (the token; three
+recommendations blocking step 1; the venv). "2-5" is read as their flat
+count: Common Voice 2, corpora 3, labels 4, venv 5. The reading is mine, for
+Ali to correct.
+
+1. THE OVERLEAF TOKEN STAYS AS IS, by Ali's decision: an accepted risk,
+   recorded once, here. It appeared in plain text in a working session on
+   2026-11-18 and sits in that session's local log.
+2. FILE MODES. IMPLEMENTED: ~/.config/overleaf/credentials 600 (its directory
+   700). ~/.claude/projects and every directory under it 700: that is the
+   guard. The files that existed were set to 600; files created later arrive
+   at 664 under umask 002 and are protected by the 700 directories above
+   them. Ali asked for 600 on the log directory; a directory needs its execute
+   bit to be opened at all, so 600 would lock out the session that writes
+   there. 700 is the owner-only mode that still works.
+3. ~/.claude IS NEVER DEPOSITED, NOR IN ANY ARCHIVE OF THE HOME DIRECTORY.
+   IMPLEMENTED: release_bundle.py refuses any path component named .claude
+   under --raw, in --raw itself or in --out, and anything resolving inside
+   $HOME/.claude; tests cover a copied .claude directory, --raw and --out.
+   The release skill gives one tar and one zip invocation for an archive of
+   the home directory, each with an anchored listing check.
+4. RULE, standing: no credential is ever echoed or pasted inside a session.
+   In CLAUDE.md §1 and the overleaf skill.
+5. COMMON VOICE: the phase starts without it. LibriSpeech and People's Speech
+   train; Common Voice joins only if access arrives before training.
+6. THE CORPORA live in ~/corpora, outside the repository and the deposit,
+   fetched by src/scripts/fetch_corpora.sh (pinned); every label file cites
+   their SHA256SUMS. In CLAUDE.md §1 as an exception to "keep them under
+   results/raw/".
+7. LABEL GENERATION (step 1), as recommended: LocalAgreement-2 trims the
+   buffer; a simulated clock driven by the live decode-time model; the gate
+   off. IMPLEMENTED (src/scripts/commit_labels.py, the labels skill): audio
+   arrives at 1x; each hypothesis decode advances the clock by
+   twl.pacing.modelled_decode_ms (1410 + 15.2 ms per second of buffer;
+   2026-09-22d), the issuer's own in-pipeline model, and the issuer is told
+   that cost; duration_prior_s 0.0.
+8. ~/.venvs/twl-learn is kept.
+
+Still open from the phase entry: single_step as the selection set; the
+offline prediction's comparator; new runs entering P2; the compile path;
+φ0/φ1 and the review plan; the measurement freeze; the existing partial
+logs' role; the People's Speech subset.
+
+## 2026-11-18 — CORRECTION to "The learned-committer phase opens": the venv size
+
+Appended, not edited. Found by the reviewer of the report on 7642e87. The
+entry gives ~/.venvs/twl-learn as "764 MB", read from `du -sh`, which prints
+"764M" in binary units. `du -sB1 ~/.venvs/twl-learn` prints 800890880 bytes
+on disk; `du -sB1 --apparent-size` prints 762633679.

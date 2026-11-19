@@ -31,8 +31,24 @@ committed.
   nor a weights suffix. Those derived from People's Speech carry CC BY-SA and
   CC BY terms, not CC BY 4.0 alone. Any build after label generation needs
   Ali's decision first: an exclusion rule, or a licence basis.
-- The corpora's audio lives outside `results/raw` (where, finally, is Ali's
-  decision; NOTES, the learned-committer phase entry).
+- The corpora live in `~/corpora`, outside `results/raw` and outside the
+  deposit (CLAUDE.md §1, Ali, 2026-11-18).
+- `~/.claude`, the coding tool's home (session logs, settings), is NEVER in the
+  deposit or in any archive of the home directory (Ali, 2026-11-18). The build
+  refuses any path component named `.claude` under `--raw`, in `--raw` itself
+  or in `--out`, and anything resolving inside `$HOME/.claude`. An archive of
+  the home directory is made only with one of these, and its listing checked
+  before it leaves the box (each check must print 0):
+
+  ```bash
+  tar -czf <a>.tar.gz -C "$HOME" --exclude=./.claude .
+  tar -tzf <a>.tar.gz | grep -cE '^(\./)?\.claude(/|$)'
+  (cd "$HOME" && zip -qr <z>.zip . -x '.claude/*')
+  unzip -Z1 <z>.zip | grep -cE '^\.claude(/|$)'
+  ```
+
+  The pattern is anchored: a repository's own `.claude/` deeper in the tree
+  (its skills, its agents) is not the tool's home.
 
 ## Order
 
@@ -51,9 +67,12 @@ committed.
    - `SECRET SCAN  <k> text files, 0 hits`: the token shapes are
      `twl/secret_shapes.py`'s, shared with the git hooks;
    - the left-out list: audio by suffix, `segments/` dirs, `.git`, model
-     weights, credential-named files, symlinks.
+     weights, credential-named files, symlinks;
+   - no refusal naming `~/.claude`.
 4. Build (only once the preconditions hold): `make release`.
-5. Check, in the output directory: `sha256sum -c --ignore-missing SHA256SUMS`
+5. Check that no `.claude` directory is inside:
+   `tar -tzf dist/release-<date>/*.tar.gz | grep -cE '(^|/)\.claude(/|$)'` prints 0.
+   Then, in the output directory: `sha256sum -c --ignore-missing SHA256SUMS`
    (the members are listed by repository path, and only the archive is in the
    directory). Then a second build from the same commit into another
    directory must give the same archive sha256 under the same zlib:

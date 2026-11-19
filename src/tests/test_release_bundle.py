@@ -343,3 +343,38 @@ def test_audio_withheld_needs_the_item_file_and_never_covers_a_glob() -> None:
     assert idx.status(f"{raw}/s").state == "audio_withheld"  # item file archived
     assert idx.status(f"{raw}/t").state == "missing"  # audio only, no item file
     assert idx.status(f"{raw}/s/*.json").state == "missing"  # a glob is never "withheld"
+
+
+def test_nothing_under_the_tool_home_is_ever_deposited(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = repo / "results/raw/sessions"
+    _write(home / ".claude/projects/log.jsonl", '{"kind": "session"}\n')
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    with pytest.raises(BundleError) as err:
+        run_build(repo, tmp_path / "out")
+    assert "members lie in a .claude directory" in str(err.value)
+
+
+def test_a_copied_tool_home_is_refused_whatever_home_is(repo: Path, tmp_path: Path) -> None:
+    # The realistic route: a copy under results/raw, with the real $HOME.
+    _write(repo / "results/raw/backup/.claude/projects/log.jsonl", '{"kind": "session"}\n')
+    with pytest.raises(BundleError) as err:
+        run_build(repo, tmp_path / "out")
+    assert "results/raw/backup/.claude/projects/log.jsonl" in str(err.value)
+
+
+def test_an_out_inside_a_tool_home_is_refused(repo: Path, tmp_path: Path) -> None:
+    with pytest.raises(BundleError) as err:
+        run_build(repo, tmp_path / ".claude" / "out")
+    assert "--out" in str(err.value) and ".claude" in str(err.value)
+
+
+def test_a_raw_reached_through_a_tool_home_is_refused(repo: Path, tmp_path: Path) -> None:
+    link = tmp_path / ".claude" / "raw"
+    link.parent.mkdir()
+    link.symlink_to(repo / "results/raw")
+    claims, sources = registry(RUN, args=(DATASET_ITEMS,))
+    with pytest.raises(BundleError) as err:
+        build(repo, link, tmp_path / "out", PROV, claims, sources, allow_dirty=False, now=NOW)
+    assert "--raw" in str(err.value)

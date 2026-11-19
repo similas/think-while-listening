@@ -32,7 +32,15 @@ than silently deviating.
   `git push origin main`. If push fails, stop and report; never force-push.
 - Never rewrite history. Never commit secrets, model weights, or raw audio
   containing real people other than Ali. `.gitignore` these and keep them under
-  `results/raw/` locally.
+  `results/raw/` locally. ONE EXCEPTION (Ali, 2026-11-18): the third-party
+  corpora of the learned-committer phase live in `~/corpora`, outside the
+  repository and the deposit, fetched by `src/scripts/fetch_corpora.sh` (pinned
+  revisions and sha256s); every label file cites their `SHA256SUMS`.
+- NO CREDENTIAL IS EVER ECHOED OR PASTED INSIDE A SESSION (Ali, 2026-11-18):
+  not printed, not typed into a prompt, not on a command line, not in a URL. A
+  credential goes into its file by hand, outside any session. The coding tool's
+  home, `~/.claude` (session logs and settings), is never deposited and is
+  excluded from any archive of the home directory.
 
 ## 2. Scientific integrity — non-negotiable
 

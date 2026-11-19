@@ -29,9 +29,8 @@ the label set records whatever was used.
   Pilot first, on a bounded sample, to measure its cost.
 - No measured run is in progress: label generation is compute on the box (the
   fence).
-- The corpora's audio stays out of `results/raw/` until Ali decides where it
-  lives (OPEN). The deposit's suffix rule would not catch audio inside a
-  parquet file.
+- The corpora live in `~/corpora`, outside `results/raw/` and the deposit
+  (CLAUDE.md §1; Ali, 2026-11-18). Every label file cites their `SHA256SUMS`.
 
 ## Corpora and their roles
 
@@ -39,7 +38,7 @@ the label set records whatever was used.
 |---|---|---|---|
 | LibriSpeech test-clean, test-other | `~/corpora/librispeech/*.tar.gz` | 2620, 2939 | train |
 | People's Speech clean/test, shards 0-1 of 9 | `~/corpora/peoples_speech/*.parquet` | 7756 | train (the subset is Ali's to define, OPEN) |
-| Common Voice en | not fetched: Mozilla Data Collective only | — | train, if Ali obtains it (OPEN) |
+| Common Voice en | not fetched: Mozilla Data Collective only | — | not used: the phase starts without it, and it joins training only if access arrives before training (Ali, 2026-11-18) |
 | Spoken-MQA single_step | `~/corpora/spoken_mqa/` | 594 | validation and selection. OPEN: NOTES 2026-10-01 says "single_step_reasoning is no longer naive and is not used as a selection set again" |
 | Spoken-MQA short_digit, long_digit | `~/corpora/spoken_mqa/` | 100, 173 | offline evaluation, per corpus (step 3) |
 | Spoken-MQA multi_step, minus the 80 sealed | `~/corpora/spoken_mqa/` | 1402 − 80 | offline evaluation only, per corpus (step 3); never train or validate |
@@ -81,12 +80,20 @@ Departures, each stated wherever labels are used:
   uncommitted tail, and the committed text is prepended (stt.py). The
   departures are the full utterance and the word times.
 
-OPEN, for Ali: the clock model as a whole, meaning whether the replay runs on
-a simulated clock and which decode cost advances it; which committer trims
-the buffer during the replay; and whether the feasibility gate is on
-(`duration_prior_s: -1.0` derives the prior from each set's median duration at
-run start, a corpus-dependent constant under CLAUDE.md §6), with which prior
-per corpus.
+DECIDED (Ali, 2026-11-18; NOTES "2026-11-18 — DECISIONS on 7642e87 (Ali): token risk accepted,
+credentials, corpora, labels, venv"):
+LocalAgreement-2 trims the buffer; a simulated clock driven by the live
+decode-time model; the gate off. As implemented:
+- the replay runs on a SIMULATED CLOCK. Audio arrives at 1x. After each
+  hypothesis decode the clock advances by the issuer's own in-pipeline model,
+  `twl.pacing.modelled_decode_ms(buffer_s)` (1410 + 15.2 ms per second of
+  buffer, NOTES 2026-09-22d), which is also what the issuer is told the
+  decode cost (`note_decode`). The real decode runs as fast as it can; its
+  wall time is logged, not used for pacing;
+- LocalAgreement-2 (`agreement_n` 2, `tail_guard_s` 0.3), the deployed
+  committer, trims the buffer;
+- the feasibility gate is OFF during label generation (`duration_prior_s`
+  0.0), so no corpus-dependent prior enters the labels.
 
 ## The label
 

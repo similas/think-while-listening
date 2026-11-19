@@ -706,6 +706,33 @@ def preflight(
             "half-written. Wait for it to finish."
         )
     plan = make_plan(repo, raw)
+    # The coding tool's home (~/.claude: session logs, settings) is never
+    # deposited, whatever route leads into it (Ali, 2026-11-18). Two rules,
+    # neither trusting the other: a path COMPONENT named .claude anywhere in
+    # --raw, --out or a member (catches a copy, and does not depend on $HOME),
+    # and a path that resolves inside $HOME/.claude.
+    tool_home = (Path.home() / ".claude").resolve()
+
+    def in_tool_home(p: Path) -> bool:
+        return (
+            ".claude" in p.parts
+            or ".claude" in p.resolve().parts
+            or p.resolve().is_relative_to(tool_home)
+        )
+
+    for flag, where in (("--raw", raw), ("--out", out)):
+        if in_tool_home(where):
+            problems.append(f"{flag} {where} lies in a .claude directory, which is never deposited")
+    inside = [
+        m.arcname
+        for m in plan.members
+        if ".claude" in Path(m.arcname).parts or in_tool_home(m.path)
+    ]
+    if inside:
+        problems.append(
+            f"{len(inside)} members lie in a .claude directory, which is never deposited: "
+            + ", ".join(inside[:5])
+        )
     resolution = resolve(repo, plan, claims, sources)
     problems.extend(resolution.problems)
     headings = _notes_headings(plan)

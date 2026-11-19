@@ -21,8 +21,12 @@ repository before the next push, so they are never overwritten.
 | bundle | `dist/overleaf/paper/` (gitignored) |
 
 THE TOKEN: never print it, paste it, put it in a URL, a command line, a commit,
-a NOTES entry or a report. If it is ever seen in a session, Ali revokes it and
-writes a new one into the credentials file by hand, outside any session.
+a NOTES entry or a report. No credential is ever echoed or pasted inside a
+session (CLAUDE.md §1). If it is ever seen in a session, Ali revokes it and
+writes a new one into the credentials file by hand, outside any session. The
+one exception: the token seen on 2026-11-18 stays, as Ali's accepted risk
+(NOTES "2026-11-18 — DECISIONS on 7642e87 (Ali): token risk accepted,
+credentials, corpora, labels, venv").
 
 ## 1. Pull first, always, and bring Ali's edits back
 
