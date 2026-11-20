@@ -24,7 +24,10 @@ the label set records whatever was used.
   indices, and stops if the check fails. Making `run_reactive.py` refuse them
   too is proposed, pending Ali. Older scripts (prefix_probe.py, p2k_score.py,
   p7_score.py, ...) do not read the seal, and are not run on these items.
-- NEVER train or validate on multi_step (Ali's step 2).
+- The PRIMARY model never trains on or is selected on multi_step; the
+  SECONDARY model trains on its 1322 unsealed files, labelled in-domain (Ali,
+  2026-11-20). The sealed 80 are never trained or selected on. Whether the
+  primary is EVALUATED on the 1322 is Ali's pre-registration (OPEN).
 - A label run longer than 30 minutes needs Ali's approval (CLAUDE.md §6).
   Pilot first, on a bounded sample, to measure its cost.
 - No measured run is in progress: label generation is compute on the box (the
@@ -37,11 +40,11 @@ the label set records whatever was used.
 | corpus | where | rows | role (Ali's step 2) |
 |---|---|---|---|
 | LibriSpeech test-clean, test-other | `~/corpora/librispeech/*.tar.gz` | 2620, 2939 | train |
-| People's Speech clean/test, shards 0-1 of 9 | `~/corpora/peoples_speech/*.parquet` | 7756 | train (the subset is Ali's to define, OPEN) |
+| People's Speech clean/test, shards 0-1 of 9 | `~/corpora/peoples_speech/*.parquet` | 7756 | train: both shards, all 7756 files (Ali, 2026-11-19) |
 | Common Voice en | not fetched: Mozilla Data Collective only | — | not used: the phase starts without it, and it joins training only if access arrives before training (Ali, 2026-11-18) |
-| Spoken-MQA single_step | `~/corpora/spoken_mqa/` | 594 | validation and selection. OPEN: NOTES 2026-10-01 says "single_step_reasoning is no longer naive and is not used as a selection set again" |
-| Spoken-MQA short_digit, long_digit | `~/corpora/spoken_mqa/` | 100, 173 | offline evaluation, per corpus (step 3) |
-| Spoken-MQA multi_step, minus the 80 sealed | `~/corpora/spoken_mqa/` | 1402 − 80 | offline evaluation only, per corpus (step 3); never train or validate |
+| Spoken-MQA single_step | `~/corpora/spoken_mqa/` | 594 | selection (Ali, 2026-11-20). OPEN: whether the single_step items used before (single_step_reasoning.json, single_step_set.json) are left out |
+| Spoken-MQA short_digit, long_digit | `~/corpora/spoken_mqa/` | 100, 173 | evaluation only, reported separately (Ali, 2026-11-20) |
+| Spoken-MQA multi_step, minus the 80 sealed | `~/corpora/spoken_mqa/` | 1402 − 80 | SECONDARY model's training, labelled in-domain (Ali, 2026-11-20); never the PRIMARY model's training or selection; its evaluation role for the primary is OPEN |
 | existing partial logs | `results/raw/reactive/*/` | — | step 1 names them as a source. A `partial_record` holds the hypothesis text, its offset and decode timing, but no word times, log-probabilities or `no_speech_prob`, so most features cannot be computed from it: their role is OPEN. Many are multi_step and fall under the multi_step rule |
 
 `src/scripts/fetch_corpora.sh` fetches the corpora, pinned to revisions and

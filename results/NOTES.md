@@ -8837,3 +8837,163 @@ training label; an interim normalizer until the recomputation), label_wer
 (twl/wer.py) and label_exact; a word a normalizer gives no token is -1 in
 that column.
 
+## 2026-11-20 — STEP 1 LABELS COMPLETE (build 017b3f7); LA-2's operating point; DECISIONS (Ali): pre-roll, services, training data, metric
+
+### The run
+
+results/raw/script_snapshots/labels_full_20261119.sh through
+labels_full_launch_20261119.sh, build 017b3f7 (clean), 2026-11-19 10:39:50
+to 2026-11-20 07:32:33, logs in results/raw/run_logs/20261119_labels_full/.
+The watchdog was armed on the driver's own pid and process group (756165)
+and logged "guarded pid 756165 exited; peak tj 66.7 C over 37536 samples":
+no breach. The driver's log ends with "STOP: the watchdog (pid 756166) is
+gone", 7 s after "=== done": the driver's watchdog check outlived the driver
+and fired after the run had completed. twl-llama.service and spotifyd stayed
+resident (Ali, below). From the LABELS lines (label_num, the training label,
+under the interim number normalizer; bootstrap over the files with rows):
+
+    corpus                files turns split no-turn no-rows   words  label_num                  final WER (all files)
+    mqa-short_digit         100   100     0       0       0     601  0.3977 [0.2189, 0.6794]    0.1580 [0.1207, 0.2011]
+    mqa-long_digit          173   176     3       0       0     738  0.6599 [0.6187, 0.7008]    0.1521 [0.1242, 0.1832]
+    mqa-single_step         594   638    39       0       0   24147  0.8869 [0.8609, 0.9089]    0.0480 [0.0400, 0.0566]
+    mqa-multi_step         1322  1458   115       0       0  118891  0.8710 [0.8442, 0.8920]    0.0359 [0.0334, 0.0385]
+    librispeech-test-clean 2620  2838   175       0     117   73046  0.8538 [0.8277, 0.8763]    0.0604 [0.0565, 0.0656]
+    librispeech-test-other 2939  3350   343       0     211   67274  0.7637 [0.7438, 0.7827]    0.1360 [0.1300, 0.1433]
+    peoples-speech         7756  9023  1047     139    1975  147984  0.7433 [0.7290, 0.7575]    0.2890 [0.2796, 0.2997]
+
+The LABELS lines carry label_wer and label_exact beside label_num; the
+widest difference is multi_step's label_exact, 0.8539 against 0.8710.
+People's Speech's 1975 files without rows include the 139 with no turn.
+Turns that live would start with stale pre-roll (the defect recorded
+2026-11-19), of the table's turns: 0/100, 3/176, 29/638, 101/1458, 187/2838,
+338/3350, 833/9023. multi_step excludes the 80 sealed items.
+
+### LA-2's operating point: the gap the committer has to beat
+
+src/scripts/la_operating_point.py at build bbf6e68 (clean), logged with the
+label files' sha256 in results/raw/run_logs/20261120_la_point/la_point.log. LA-2
+PER WORD: the replay gives the hypotheses word times (a stated departure);
+the deployed LA-2 commits per segment. Definitions (twl.la_baseline):
+- committed: LA-2's commits before the endpoint / scored words in the turns'
+  finals, false commits included;
+- precision: surviving commits / commits;
+- never-committed survival: the word INSTANCES LA-2 declines and never
+  commits later (one per hypothesis) that survive / those instances.
+Pooled over word instances; bootstrap CI over the files with a non-zero
+denominator; "all" and without RUNAWAY hypotheses (at least 20 scored words,
+one key 50 % or more of them):
+
+    corpus                 committed (all)          precision all            precision no-runaway     never-committed all      never-committed no-runaway
+    mqa-short_digit        0.0606 [0.0344, 0.0884]  0.8571 [0.6429, 1.0000]  0.8571 [0.6429, 1.0000]  0.3510 [0.1876, 0.6364]  0.5833 [0.5205, 0.6472]
+    mqa-long_digit         0.0944 [0.0704, 0.1194]  0.9412 [0.8659, 1.0000]  0.9412 [0.8659, 1.0000]  0.5779 [0.5374, 0.6227]  0.5779 [0.5374, 0.6227]
+    mqa-single_step        0.4629 [0.4457, 0.4796]  0.9580 [0.9515, 0.9639]  0.9580 [0.9514, 0.9639]  0.7637 [0.7084, 0.8132]  0.7931 [0.7509, 0.8233]
+    mqa-multi_step         0.6116 [0.5988, 0.6245]  0.9516 [0.9371, 0.9599]  0.9578 [0.9550, 0.9605]  0.6939 [0.6502, 0.7360]  0.7467 [0.7051, 0.7855]
+    librispeech-test-clean 0.3712 [0.3532, 0.3908]  0.9145 [0.8714, 0.9453]  0.9420 [0.9233, 0.9532]  0.7623 [0.7345, 0.7886]  0.7845 [0.7623, 0.8019]
+    librispeech-test-other 0.2373 [0.2261, 0.2488]  0.8944 [0.8799, 0.9063]  0.8945 [0.8800, 0.9064]  0.6731 [0.6469, 0.6988]  0.6830 [0.6567, 0.7066]
+    peoples-speech         0.2217 [0.2136, 0.2300]  0.8954 [0.8871, 0.9035]  0.8996 [0.8935, 0.9051]  0.6398 [0.6201, 0.6572]  0.6680 [0.6518, 0.6842]
+
+Counts and file numbers for each figure, the correct-committed fraction and
+the later-committed split are in the LA2 lines of the log. The digit
+precisions rest on 28 commits (18 files) and 85 commits (47 files). All
+declined instances (later-committed and never-committed together), without
+runaway hypotheses: 0.6057, 0.6233, 0.8732, 0.8701, 0.8521, 0.7417, 0.7326 in
+the table's order.
+
+RUNAWAY HYPOTHESES (RUNAWAY lines): 1 of 121 hypotheses on short_digit holds
+223 of its 601 rows (file short_digit:6, one token repeated); on the other
+corpora they hold 0 to 4263 rows. On librispeech-test-clean they hold 570 of
+LA-2's 1670 false commits (34 %): precision 0.9145 with them, 0.9420 without.
+
+NUMBERS (NUMBERS lines, without runaway hypotheses; paired difference
+number - other, bootstrap over the same files):
+
+    corpus                 number words             other words              difference
+    mqa-short_digit        0.5759 [0.4935, 0.6579]  0.6591 [0.5727, 0.7463]  -0.0831 [-0.1922, +0.0244]
+    mqa-long_digit         0.6287 [0.5674, 0.6868]  0.6869 [0.6247, 0.7459]  -0.0582 [-0.1470, +0.0294]
+    mqa-multi_step         0.9306 [0.9216, 0.9391]  0.8945 [0.8772, 0.9091]  +0.0361 [+0.0201, +0.0537]
+
+On the digit sets a number deficit is NOT DETECTABLE: the point estimates
+lean that way, and the design excludes deficits larger than 0.19
+(short_digit) and 0.15 (long_digit). On multi_step numbers survive better.
+The earlier short_digit survival of 0.3977 is pulled down by file
+short_digit:6: its runaway hypothesis holds 220 of the 362 non-surviving
+rows, and without it survival is 236/378 = 0.6243. To be re-run under the
+full normalizer.
+
+LA_CHECK: LA-2 re-simulated on its own recorded hypotheses, matched by
+position, reproduces la2_commit on every row of every corpus. An earlier
+version matched rows by time and missed 104 rows whose word shares its
+timestamp with another word of the same hypothesis (89 of them in runaway
+hypotheses): key collisions, not simulator error.
+
+LA-3 IS NOT MEASURED. It cannot be read off LA-2's stream: a word LA-2
+commits is trimmed from the buffer and never reaches a third hypothesis, so
+LA-3's third agreement is observed only for words the tail guard held back.
+An off-policy simulation run before this entry, which also carried the
+key-collision bug, is not used. LA-3's operating point needs an LA-3 replay.
+
+### DECISIONS (Ali), quoted
+
+2026-11-19: "1. Pre-roll defect: do not touch src/ during the run. After it
+finishes: (a) audit every scored pass for valid turns that opened < 1.2 s
+after the previous turn's audio — with the gate's pause they should only be
+split halves, which are already excluded; report the count; (b) fix stt.py
+to clear the pre-roll at turn close, with a test that reproduces the
+stale-audio case; (c) record it in NOTES as a defect found by the replay,
+with the audit result. If any valid scored turn is affected, that pass's
+result gets a qualifier. 2. Services: leave both running. Labels depend on
+what was decoded, not how fast — the clock is simulated — so an idle
+llama-server and spotifyd change the run's duration slightly and nothing
+else. Don't touch the box."
+
+2026-11-20: "1. In the step-1 report, add the baseline's operating point from
+these labels, per corpus: for LocalAgreement-2 and -3, the fraction of words
+they would commit and the survival rate of those commits (precision), plus
+the survival rate of the words they decline. That is the gap the committer
+has to beat, and it's computable now. 2. Training data, registered before
+any model is fit: PRIMARY model: trained on LibriSpeech + People's Speech
+only (out-of-domain); selected on single_step; tested on the sealed 80.
+SECONDARY model: the same plus the 1,322 unsealed multi_step files
+(in-domain), labelled as such everywhere. The headline claim rests on the
+primary. short_digit and long_digit: evaluation only; report them
+separately — numbers are where partials don't hold, and that's a finding.
+3. Evaluation metric is the Pareto (committed fraction vs WER at the
+endpoint) and calibration of P(survive), not accuracy or AUC: the classes
+are 74–89 % positive, so accuracy is uninformative and the cost is in the
+false commits. Then proceed in your order: NOTES, /report with the reviewer,
+pre-roll audit and fix, the full normalizer and label_num recomputation, P4
+re-scoring. Step 2 (the model) starts only after my pre-registration of the
+offline evaluation is committed."
+
+OUTCOME of request 1: LA-2 delivered (above); LA-3 not computable from these
+labels (above). Decision 2 answers the first half of open item 4 of the phase
+entry (single_step is the selection set); the second half, whether the
+single_step items used before are left out, stays open. The role recorded in
+mqa-multi_step's label provenance ("offline evaluation only; never train or
+validate") predates decision 2.
+
+The pre-roll audit's criterion, in its reference points: a turn whose speech
+starts less than 1.2 s (stop_secs + PREROLL_S - start_secs) after the
+previous turn's speech ended, that is, which opens less than PREROLL_S (0.6
+s) after the previous turn closed.
+
+### OPEN, for Ali (each with a recommendation in the step-1 report)
+
+1. "Tested on the sealed 80": offline, live, or both.
+2. LA-3's operating point: an LA-3 replay, and on what.
+3. The comparator: LA-2 per word (these labels) or the deployed LA-2 per
+   segment (open item 5 of the phase entry).
+4. The offline evaluation is on LA-2's stream: a committer that commits
+   differently would trim differently, and the features la2_commit,
+   since_commit_s, buffer_s, agreed_prev and partials_seen follow LA-2's
+   trimming.
+5. The Pareto: pooled over words or averaged per file, and how runaway
+   hypotheses are handled.
+6. Whether the 20 single_step items used before (rows 0-19, in both
+   single_step_reasoning.json and single_step_set.json) are left out of
+   selection, as NOTES 2026-10-01 says ("is not used as a selection set
+   again"); that leaves 574.
+
+People's Speech: decision 2 trains the primary model on it, and Ali approved
+it "at both parts" on 2026-11-19: the subset is both downloaded shards, all
+7756 files. Closed.
