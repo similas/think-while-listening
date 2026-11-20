@@ -154,9 +154,10 @@ def live_turns(
         if end - start < start_secs:
             continue  # too short for the VAD to open a turn
         opens = start + start_secs
-        # Live, the pre-roll ring is always full, so a turn whose speech starts
-        # near the file's start still begins preroll_s before the open: the
-        # caller pads that audio with silence (origin_s < 0).
+        # A full pre-roll before the open, padded with silence before the file's
+        # start (origin_s < 0). Since stt.py clears its ring at each close
+        # (2026-11-20), live holds less for a turn opening under preroll_s after
+        # the previous close; that difference is a stated departure (NOTES).
         turns.append(Turn(start, end, opens, opens - preroll_s, end + stop_secs))
     return turns
 

@@ -851,15 +851,35 @@ class StreamingWhisperSTT(STTService):
         self._playback_since_stop = True
         self._maybe_cont("playback_done")
 
+    def _open_turn_audio(self) -> None:
+        """Start the turn's buffer with the pre-roll: the audio heard just before
+        the VAD fired, which recovers the speech it consumed deciding."""
+        with self._lock:
+            if self._preroll:
+                self._audio = np.concatenate(list(self._preroll))
+            else:
+                self._audio = np.zeros(0, dtype=np.float32)
+
+    def _close_turn_audio(self) -> None:
+        """End the turn: audio goes to the pre-roll ring again, which starts EMPTY.
+
+        The ring is filled only between turns, so at a close it still holds the
+        audio from before THIS turn opened. Left in place, a turn opening less
+        than PREROLL_S after this close would start with that stale audio,
+        including this turn's speech onset (found by the committer-label replay,
+        NOTES 2026-11-20). Both changes happen under the lock run_stt takes, so
+        no chunk lands between them.
+        """
+        with self._lock:
+            self._speaking = False
+            self._preroll.clear()
+            self._preroll_samples = 0
+
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
 
         if isinstance(frame, _STARTED):
-            with self._lock:
-                if self._preroll:
-                    self._audio = np.concatenate(list(self._preroll))
-                else:
-                    self._audio = np.zeros(0, dtype=np.float32)
+            self._open_turn_audio()
             self._speaking = True
             self._maybe_cont("vad_start")
             worker_ok = True
@@ -907,7 +927,7 @@ class StreamingWhisperSTT(STTService):
                 self._partial_task = asyncio.get_running_loop().create_task(self._partial_loop())
 
         elif isinstance(frame, _STOPPED):
-            self._speaking = False
+            self._close_turn_audio()
             # The endpoint this final will answer, in raw ns. The stage marks
             # cannot pair them across a split (endpoint on turn N, final on
             # N+1), and P9b's validity check missed exactly those windows.
