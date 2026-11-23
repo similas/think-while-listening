@@ -57,6 +57,7 @@ from twl.commit import LocalAgreementCommitter, Word
 from twl.config import SttConfig
 from twl.hypothesis_worker import HypothesisWorker, WorkerPool
 from twl.pacing import FixedTickIssuer, SelfPacedIssuer
+from twl.runaway import longest_run, runaway_reason
 from twl.stt_engine import MIN_DECODE_S, POLL_S, PREROLL_S
 from twl.telemetry import (
     read_faults,
@@ -500,7 +501,10 @@ class StreamingWhisperSTT(STTService):
             self._issuer.note_decode(decode_ms)
             self._turns.mark("stt_partial_done", at_ns=done_ns)
             before = self._committer.committed_end_s
-            kept = self._committer.offer(words, buffer_end_s)
+            # THE RUNAWAY GUARD (twl.runaway): a stuck decode never reaches the
+            # committer. Off unless the config turns it on.
+            runaway = runaway_reason(words) if commit.runaway_guard else ""
+            kept = [] if runaway else self._committer.offer(words, buffer_end_s)
             if commit.two_tier and kept:
                 span = Span(
                     start_s=before,
@@ -527,6 +531,8 @@ class StreamingWhisperSTT(STTService):
                 committed_end_s=self._committer.committed_end_s,
                 idle_ms=decision.idle_ms,
                 required_idle_ms=decision.required_idle_ms,
+                runaway=runaway,
+                longest_run=longest_run(words),
             )
             if emitted:
                 # Downstream sees committed text plus this hypothesis's tail,

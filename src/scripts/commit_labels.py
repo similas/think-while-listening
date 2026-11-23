@@ -354,6 +354,9 @@ def settings_record(cfg: TwlConfig, s: ReplaySettings) -> dict[str, object]:
             "alignment rule (same token, centres within match_tol_s)",
             "la2_commit": "LA-2 committed this word on this offer",
             "partials_seen": "the hypothesis's 1-based index in the utterance",
+            "hyp_longest_run": "the most times one token occurs in a row in the whole "
+            "hypothesis (twl.survival_labels.longest_run): the runaway guard's repetition "
+            "count, kept as a feature (Ali's decision 7 on 7257b7f)",
             "since_commit_s": "issue time minus the end of the decode that last committed",
             "word_index": "index among the fresh words (punctuation-only tokens counted, not rows)",
         },
@@ -362,6 +365,7 @@ def settings_record(cfg: TwlConfig, s: ReplaySettings) -> dict[str, object]:
         "descriptor_columns": {"num_unit": NUM_UNIT_DESCRIPTION},
         "id_columns": list(ID_COLUMNS),
         "feature_columns": [
+            "hyp_longest_run",
             "text_hash",
             "pos_from_end_s",
             "word_dur_s",
@@ -450,6 +454,7 @@ ROW_SCHEMA = pa.schema(
         ("label_wer", pa.int8()),
         ("label_exact", pa.int8()),
         ("num_unit", pa.int8()),
+        ("hyp_longest_run", pa.int32()),
     ]
 )
 

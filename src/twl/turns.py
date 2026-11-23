@@ -598,6 +598,8 @@ class TurnManager:
         committed_end_s: float,
         idle_ms: float,
         required_idle_ms: float,
+        runaway: str = "",
+        longest_run: int = -1,
     ) -> None:
         """One COMMIT-WL hypothesis, written immediately.
 
@@ -624,6 +626,8 @@ class TurnManager:
                 required_idle_ms=round(required_idle_ms, 1),
                 cadence_ms=round(cadence_ms, 1),
                 duty=round(decode_ms / cadence_ms, 3) if cadence_ms > 0 else -1.0,
+                runaway=runaway,
+                longest_run=longest_run,
             ),
         )
         self.hypotheses_written += 1

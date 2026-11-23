@@ -97,6 +97,11 @@ class CommitConfig:
     # (NOTES 2026-09-23d). Cadence is an OUTPUT of this, not a parameter.
     duty_max: float = 0.6
     naive_tick_s: float = 1.0
+    # The runaway guard (twl.runaway; Ali's decision 7 on 7257b7f): a runaway
+    # hypothesis is discarded before the committer sees it. Off for every arm
+    # registered before the learned-committer phase, so their configs keep
+    # their behaviour; on for that phase's arms, LA and learned alike.
+    runaway_guard: bool = False
     # "race": start the tail final immediately and discard any hypothesis still
     # decoding. "wait": let it finish and commit it first. Chosen from the
     # smoke and recorded there.

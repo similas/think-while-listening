@@ -69,6 +69,23 @@ from whisper_normalizer.english import EnglishNumberNormalizer
 from twl.commit import Word
 from twl.wer import normalize, normalize_num
 
+
+def longest_run(words: Sequence[Word]) -> int:
+    """The most times one token (Word.key) occurs in a row; words with no key
+    (punctuation) neither count nor break a run. The repetition-count feature
+    of the runaway guard (twl.runaway; Ali's decision 7 on 7257b7f)."""
+    best = run = 0
+    last = ""
+    for w in words:
+        k = w.key
+        if not k:
+            continue
+        run = run + 1 if k == last else 1
+        last = k
+        best = max(best, run)
+    return best
+
+
 # Decided here, recorded with every label set, and checked against the data:
 # the step-1 report gives the median and p95 centre offset of matched pairs.
 WINDOW_S = 1.0
@@ -435,6 +452,7 @@ def rows(
     """
     fresh = fresh_words(hyp, ctx.committed_end_s)
     words = [h.word for h in fresh]
+    run = longest_run([h.word for h in hyp])  # the whole hypothesis, as the guard sees it
     agreed = align_words(words, ctx.previous_remainder, exact_tokens)
     by_wer = align_words(words, final, wer_tokens)
     by_exact = align_words(words, final, exact_tokens)
@@ -462,6 +480,7 @@ def rows(
                 "seg_avg_logprob": h.seg_avg_logprob,
                 "no_speech_prob": h.no_speech_prob,
                 "partials_seen": ctx.hyp_index,
+                "hyp_longest_run": run,
                 "agreed_prev": int(agreed[k] is not None),
                 "la2_commit": int(k < ctx.la2_committed),
                 "buffer_s": ctx.issued_s - ctx.committed_end_s,
