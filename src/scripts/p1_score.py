@@ -29,8 +29,10 @@ Sets and runs:
 
 With --audit (preroll_audit.py --out): per set, the turns whose pre-roll
 the audit flagged (stale, unverifiable) or could not check (unchecked),
-named; the turns dropped for a missing mark, with their class; and the
-median share without the flagged ones (a post-hoc sensitivity).
+named; the turns dropped for a missing mark, with their class; the median
+share without the flagged ones (a post-hoc sensitivity); and the check the
+item CIs rest on: each turn index is one played file (playback_timeline.json
+at the audit's open chunk), the same in every rep, no file holding two.
 
     p1_score.py [--audit results/raw/run_logs/20261122_preroll_audit/turns.jsonl] [--log FILE]
 """
@@ -147,6 +149,25 @@ def by_item(rows: list[tuple[str, int, float, float, float]]) -> list[list[float
     return list(g.values())
 
 
+def item_files(runs: tuple[str, ...], opens: dict[tuple[str, int], int]) -> str:
+    """The played file of each located turn, checked to be one per turn index."""
+    files: dict[int, set[str]] = defaultdict(set)
+    for r in runs:
+        tl = json.loads((RAW / f"reactive-{r}" / "playback_timeline.json").read_text())
+        for (run, turn), o in opens.items():
+            if run != f"reactive-{r}":
+                continue
+            hit = [str(path) for path, a, n in tl if int(a) <= o < int(a) + int(n)]
+            if len(hit) != 1:
+                raise SystemExit(f"{run} t{turn}: open chunk {o} in {len(hit)} files")
+            files[turn].add(hit[0])
+    split = sorted(t for t, f in files.items() if len(f) > 1)
+    shared = len(files) - len({next(iter(f)) for f in files.values()})
+    if split or shared:
+        raise SystemExit(f"{runs}: turn indices {split} differ across reps; {shared} files shared")
+    return f"{len(files)} located turn indices, each one file in every rep, no file holding two"
+
+
 def item_draws(items: list[list[float]], rng: random.Random) -> list[float]:
     return [
         statistics.median([x for _ in items for x in items[rng.randrange(len(items))]])
@@ -187,10 +208,13 @@ def main() -> None:
     if args.log and build.endswith("-dirty"):
         raise SystemExit(f"build {build} is dirty: a logged run needs a clean tree")
     cls: dict[tuple[str, int], str] = {}
+    opens: dict[tuple[str, int], int] = {}
     if args.audit:
         for raw in args.audit.read_text().splitlines():
             r = json.loads(raw)
             cls[(str(r["run"]), int(r["turn"]))] = str(r["cls"])
+            if r.get("open") is not None:
+                opens[(str(r["run"]), int(r["turn"]))] = int(r["open"])
     lines = [
         f"# p1_score.py build {build}; {' '.join(sys.argv[1:])}; scorer written after the data"
     ]
@@ -225,6 +249,8 @@ def main() -> None:
                     f"{x[0][-6:]} t{x[1]} {k}" for x, k in zip(rows, c, strict=True) if k in flagged
                 ]
                 kept = [x for x, k in zip(rows, c, strict=True) if k not in flagged]
+                located = {(x[0], x[1]): opens[(x[0], x[1])] for x in rows if (x[0], x[1]) in opens}
+                unlocated = [f"{x[0][-6:]} t{x[1]}" for x in rows if (x[0], x[1]) not in opens]
                 dropped_flags = [
                     f"{r[-6:]} t{t} {cls.get((f'reactive-{r}', t), '?')}"
                     for r, g in zip(runs, got, strict=True)
@@ -235,7 +261,8 @@ def main() -> None:
                     f" unchecked {c.count('unchecked')} ({', '.join(named) or 'none'}); the turns "
                     f"dropped for a mark: {', '.join(dropped_flags) or 'none'}; without the "
                     f"flagged n={len(kept)}, stt share {median_ci([x[2] for x in kept])} over "
-                    f"turns, {item_ci(by_item(kept))} over items (post hoc)"
+                    f"turns, {item_ci(by_item(kept))} over items (post hoc); items: "
+                    f"{item_files(runs, located)} (not located: {', '.join(unlocated) or 'none'})"
                 )
             lines.append(line)
     p1, n1, wd = "P1 pass 1 (REACTIVE)", "P1 re-scored on NOPARTIAL (pass 1n)", "word density"
