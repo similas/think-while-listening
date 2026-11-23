@@ -116,9 +116,10 @@ def test_live_turns_refuse_spans_that_would_be_one_turn() -> None:
         live_turns([(1.0, 0.5)], start_secs=0.2, stop_secs=0.8, preroll_s=0.6)
 
 
-def test_only_localagreement_2_is_accepted() -> None:
+def test_only_localagreement_2_or_3_is_accepted() -> None:
+    ReplaySettings(**{**SETTINGS.__dict__, "agreement_n": 3})  # LA-3's operating point
     with pytest.raises(ValueError):
-        ReplaySettings(**{**SETTINGS.__dict__, "agreement_n": 3})
+        ReplaySettings(**{**SETTINGS.__dict__, "agreement_n": 4})
 
 
 def test_la2_commits_appear_as_agreed_words() -> None:

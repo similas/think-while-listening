@@ -108,7 +108,7 @@ def boot_diff(a_num: list[int], a_den: list[int], b_num: list[int], b_den: list[
     return f"{diff(units):+.4f} [{lo:+.4f}, {hi:+.4f}] (files {len(units)})"
 
 
-def la2_line(corpus: str, tag: str, per_file: list[Counts]) -> str:
+def la2_line(corpus: str, tag: str, per_file: list[Counts], order: int = 2) -> str:
     def col(attr: str) -> list[int]:
         return [int(getattr(c, attr)) for c in per_file]
 
@@ -118,7 +118,7 @@ def la2_line(corpus: str, tag: str, per_file: list[Counts]) -> str:
     never = [d - lt for d, lt in zip(dec, later, strict=True)]
     nsurv = [d - lt for d, lt in zip(dsurv, lsurv, strict=True)]
     return (
-        f"LA2 {corpus} [{tag}]: committed {boot(com, fin)}; correct committed "
+        f"LA{order} {corpus} [{tag}]: committed {boot(com, fin)}; correct committed "
         f"{boot(surv, fin)}; precision {boot(surv, com)}; declined survival "
         f"{boot(dsurv, dec)}; of them later committed {boot(lsurv, later)}; never "
         f"committed {boot(nsurv, never)}"
@@ -151,7 +151,7 @@ def corpus_report(labels: Path, corpus: str) -> list[str]:
         )
     replay = prov["settings"]["replay"]  # type: ignore[index]
     tail_guard, order = float(replay["tail_guard_s"]), int(replay["agreement_n"])
-    if order != 2:
+    if order not in (2, 3):
         raise SystemExit(f"{corpus}: the replay's committer is LA-{order}, not LA-2")
     by_utt: dict[str, list[dict[str, object]]] = defaultdict(list)
     for r in pq.read_table(rows_path, columns=ROW_COLS).to_pylist():
@@ -198,7 +198,7 @@ def corpus_report(labels: Path, corpus: str) -> list[str]:
             checked += 1
             reproduced += int((key in sim) == (int(r["la2_commit"]) == 1))
     for tag, counts in per.items():
-        out.append(la2_line(corpus, tag, counts))
+        out.append(la2_line(corpus, tag, counts, order))
     for tag in per:
         n, o = nums[tag]["num"], nums[tag]["other"]
         out.append(
@@ -212,7 +212,7 @@ def corpus_report(labels: Path, corpus: str) -> list[str]:
         f"{rows_n}; files {len(runaway_files)}; largest: {top or 'none'}"
     )
     out.append(
-        f"LA_CHECK {corpus}: LA-2 re-simulated (tail guard {tail_guard}) reproduces "
+        f"LA_CHECK {corpus}: LA-{order} re-simulated (tail guard {tail_guard}) reproduces "
         f"la2_commit on {reproduced}/{checked} rows, matched by position"
     )
     return out
@@ -222,6 +222,12 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     p.add_argument("--labels", type=Path, default=Path("results/raw/commit_labels/num"))
     p.add_argument("--log", type=Path, default=None, help="also write the output here")
+    p.add_argument(
+        "--corpus",
+        action="append",
+        default=None,
+        help="a label file's stem, e.g. mqa-single_step.la3 (repeatable; default the seven)",
+    )
     args = p.parse_args()
     commit = subprocess.run(
         ["git", "describe", "--always", "--dirty", "--abbrev=40"],
@@ -235,11 +241,12 @@ def main() -> None:
         f"# la_operating_point.py build {commit}; whisper-normalizer {NORMALIZER}; "
         f"{' '.join(sys.argv[1:])}"
     ]
-    for corpus in CORPORA:
+    corpora = tuple(args.corpus) if args.corpus else CORPORA
+    for corpus in corpora:
         for suffix in (".parquet", ".utterances.parquet"):
             f = args.labels / f"{corpus}{suffix}"
             lines.append(f"# sha256 {hashlib.sha256(f.read_bytes()).hexdigest()} {f}")
-    for corpus in CORPORA:
+    for corpus in corpora:
         lines += corpus_report(args.labels, corpus)
     text = "\n".join(lines) + "\n"
     sys.stdout.write(text)

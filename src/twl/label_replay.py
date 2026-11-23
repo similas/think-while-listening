@@ -88,12 +88,12 @@ class ReplaySettings:
     runaway_guard: bool = False
 
     def __post_init__(self) -> None:
-        if self.agreement_n != 2:
-            # The agreed-with-previous feature and the label set's name both
-            # assume LocalAgreement-2: one stored remainder.
-            raise ValueError(
-                f"the label replay is LocalAgreement-2; got agreement_n {self.agreement_n}"
-            )
+        # LA-2 is the label stream; LA-3 is replayed only for its operating
+        # point (Ali's decision 2 on 7257b7f). Under LA-3 the agreed-with-
+        # previous feature still compares with the ONE previous hypothesis,
+        # and the rows' la2_commit column holds LA-3's commits.
+        if self.agreement_n not in (2, 3):
+            raise ValueError(f"the label replay is LA-2 or LA-3; got {self.agreement_n}")
 
 
 @dataclass(frozen=True)

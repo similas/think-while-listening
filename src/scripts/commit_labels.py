@@ -286,13 +286,13 @@ def draw(refs: list[tuple[str, str]], limit: int, seed: int) -> list[tuple[str, 
 # ------------------------------------------------------------------ settings
 
 
-def replay_settings(cfg: TwlConfig) -> ReplaySettings:
+def replay_settings(cfg: TwlConfig, agreement_n: int = 0) -> ReplaySettings:
     """The live parameters, read from the deployed config and twl.stt_engine."""
     c = cfg.stt.commit
     return ReplaySettings(
         duty_max=c.duty_max,
         min_uncommitted_s=c.min_uncommitted_s,
-        agreement_n=c.agreement_n,
+        agreement_n=agreement_n or c.agreement_n,
         tail_guard_s=c.tail_guard_s,
         use_initial_prompt=c.use_initial_prompt,
         poll_s=POLL_S,
@@ -564,6 +564,13 @@ def main() -> None:
     p.add_argument("--tag", default="", help="suffix for the output names, e.g. pilot")
     p.add_argument("--out", type=Path, default=OUT)
     p.add_argument("--approved", default="", help="Ali's GO for a whole-corpus run, quoted")
+    p.add_argument(
+        "--agreement",
+        type=int,
+        default=0,
+        help="LocalAgreement-n of the replay (0 = the config's, 2); 3 for LA-3's operating "
+        "point (Ali's decision 2 on 7257b7f)",
+    )
     args = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     logging.getLogger("faster_whisper").setLevel(logging.WARNING)  # one line per decode
@@ -579,7 +586,9 @@ def run(args: argparse.Namespace) -> None:
     """One label run; every guard raises LabelRunError."""
     lock_fd = hold_run_lock(REPO / RUN_LOCK)  # held until exit: the fence, both ways
     cfg = load_config(CONFIG)
-    settings = replay_settings(cfg)
+    settings = replay_settings(cfg, args.agreement)
+    if settings.agreement_n != cfg.stt.commit.agreement_n and not args.tag:
+        raise SystemExit("an LA-n replay other than the config's needs --tag (its own file names)")
     corpus = open_corpus(args.corpus, args.corpora)
     if any(not ref.strip() for _, ref in corpus.refs):
         raise LabelRunError(f"{args.corpus}: an empty reference; WER would drop its insertions")
