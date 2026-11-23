@@ -9798,3 +9798,109 @@ recorded the test as weak (a duration account allowed 46 to 62 %).
   post hoc, in the entry above); word density is not shown either way.
 - The Fig. 1 advice in that entry ("show the shares per set and NOT fit a
   line through them") is left to Ali.
+
+## 2026-11-23 — PRE-ROLL AUDIT of the remaining ledger rows (pass 2's P4 and P7, P5, P9b, P2b's 1.41x): no flagged turn's audio enters their numbers, and every re-run without them prints the same; P5 counts 27 flagged turn records by their file index; PROVENANCE GAP closed (P5's corrected figures)
+
+Ali (2026-11-20): "P2 carries the qualifier and the re-score without the
+affected turns as a sensitivity; if any other pass's registered population
+contains an affected turn, same treatment." This entry covers the rows on
+the reviewer's list of 2026-11-22 that the entries above leave open.
+
+src/scripts/preroll_ledger.py at d19c17b, post hoc:
+results/raw/run_logs/20261123_preroll_ledger/preroll_ledger.log. For each
+row:
+- the turns whose values enter its numbers, read with the scorer's own
+  functions, and their classes in the audit (NOTES 2026-11-22);
+- for the scorers that map turns to files by transcript (pass 2, P2b), the
+  turns that map reads;
+- the scorer re-run on a shadow with the flagged turns (stale,
+  unverifiable) marked invalid (SENS), and, where a map reads transcripts,
+  with the flagged turns' transcripts blanked (GATE).
+
+    row                    turns entering     flagged among them   re-run without them
+    pass 2 P4 (wer)        96, 120, 108, 372  0                    SENS identical
+    pass 2 P7 (energy_j)   96, 118, 101, 371  0                    SENS identical
+      (sixteen, short_digit, long_digit, multi_step; both arms)
+    pass 2 item map        96, 120, 126, 563  0, 0, 6, 59          GATE identical,
+      [gate]                                  (6 and 63            every line
+                                              unchecked)
+    P9b                    100 surviving      0                    SENS identical
+    P9b re-run             99 surviving       0                    SENS identical
+    P2b's 1.41x, values    350 rows           0                    -
+    P2b item map [gate]    282 transcripts    30 (9 stale,         GATE identical,
+                                              21 unverifiable;     1.41x n=50
+                                              33 unchecked)
+    P5                     116 turn records   27 (3 stale,         not re-run
+                                              24 unverifiable;     (below)
+                                              25 unchecked)
+
+PASS 2, P4 AND P7. The runs hold flagged turns, but the scorer's own rules
+leave none of them in either metric's population. Its item map reads every
+turn record's transcript, and so reads 65 flagged ones: long_digit t3 in
+all six runs, and 9 or 10 per multi_step run. Marking the flagged turns
+invalid (SENS) or blanking their transcripts (GATE) changes no printed
+figure on any set. Both rows reproduce the 2026-10-06 entry:
+- P4: multi_step mean +0.0082 (17 worse, 7 better, 38 same, n = 62); the
+  other sets 0.
+- P7: multi_step +24.221 J [+21.458, +25.797], n = 62.
+
+P9b. None of the flagged turns (t7, t16 and t21 of every run) is among
+p9_score's surviving turns, the ones p9b_score.py reads. Since 8d8a854,
+p9_score.py has changed only its arm label (it also reads "stop" configs as
+the treatment arm; by reading the diff), so the same turns survived when the
+first run was scored. That holds for the first run's withdrawn 0.94x and
++435 ms [+161, +652]. Those figures are recorded in the 2026-10-06 entry as
+p9b_score.py's output at 8d8a854, and are not re-run here. The scorer at
+HEAD voids every KILL run of that set by check 1 and prints no paired
+number, on the repository and on the shadow alike. The re-run's 0.94x
+[0.91, 0.96] and +250 ms [+8, +650], n = 16 (the 1-vs-3 figures, not
+reported as a pass) reproduce and do not move.
+
+P2b'S 1.41x. Its values hold no flagged turn. Its item map reads 30 flagged
+transcripts, and with them blanked the line is unchanged: 1.41x, n = 50.
+p2_score.py prints the point and n only. The ledger's [1.23, 1.54] comes
+from the withdrawn scorer (677537d, NOTES 2026-10-13), and no committed
+script at HEAD prints it.
+
+P5. p5_score.py has no validity filter: it counts every turn record, so its
+29 turns per arm, its 15/29 split turns and its 0 of 20 discordant items
+include flagged records. Across the four arms' 116 turn records (29 each),
+27 are flagged (6 or 7 per arm: 3 stale, 24 unverifiable) and 25
+unchecked. It is not re-scored without them: marking a turn invalid removes
+nothing from its count, and deleting a turn would un-split its file. What
+bounds the defect's reach instead:
+- Disjunct (a) counts a turn's file by the driver's utterance index, which
+  the turn's pre-roll content cannot change.
+- Duty is decode_ms / cadence_ms, and a decode reads the recognizer's
+  buffer. The hypotheses on flagged turns number 5 (NAIVE-1.0), 2
+  (CONTROLLED-0.6) and 5 (CONTROLLED-0.8); none carries a duty > 0, the
+  only duties the quartiles take (log, DUTY lines).
+- A load effect of the decodes on the VAD is the route P5 itself tests.
+  The hypotheses' share of that load, the stale heads they decoded
+  included, does not separate the arms: 0 of 20 items discordant,
+  excluding a per-item difference above about 16 points (the
+  CORRECTION's bound). A load effect shared by every arm is not tested by
+  this comparison: the finals decode the flagged heads in all four arms,
+  the baseline's included. It would move every arm alike and leave the
+  verdict (the criterion cannot separate the arms) unchanged.
+Disjunct (b) was already unscoreable.
+
+PROVENANCE GAP closed (P5). No committed script printed the figures that
+the 2026-10-06 CORRECTION to the P5 entry and the ledger cite.
+p5_score.py --report (post hoc, b549355; the default output is unchanged)
+prints them, and all reproduce:
+- split turns 15/29 = 0.52 [0.34, 0.69] in all four arms;
+- 15/28 = 0.54 [0.36, 0.70] without turn 1;
+- 0 of 20 items with a turn count different from the baseline's
+  [0.00, 0.16];
+- duty medians 0.950, 0.791, 0.609, with the recorded quartiles.
+One correction to that record: the duty quartiles are over the hypotheses
+with duty > 0 (321, 251, 174), not over the 348, 278, 197 records the
+2026-10-06 table gives as n. The first hypothesis of each turn records
+-1 (no cadence yet).
+
+Every row on the reviewer's 2026-11-22 list is now audited. A flagged
+turn's audio enters the numbers of only two rows: P1's multi_step (3
+unverifiable per pass) and word density (3 stale), both covered in the
+entries above, and neither changes a verdict. P5 counts 27 flagged turn
+records, by their file index only.

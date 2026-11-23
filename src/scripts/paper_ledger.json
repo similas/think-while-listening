@@ -190,7 +190,8 @@
   "corrections": [
    "2026-10-13 — CORRECTION to \"P2a AND P2b SCORED\""
   ],
-  "qualifier": "structural: each item played once per run; the 1.41x cross-run ratio is descriptive only"
+  "qualifier": "structural: each item played once per run; the 1.41x cross-run ratio is descriptive only",
+  "notes": "Pre-roll audit (NOTES 2026-11-23): its values hold no flagged turn; with the item map's 30 flagged transcripts blanked, 1.41x n=50 is unchanged. The [1.23, 1.54] is the withdrawn scorer's (677537d); p2_score.py at HEAD prints the point and n only."
  },
  {
   "id": "P3",
@@ -242,7 +243,7 @@
   "corrections": [
    "2026-10-13 — DECISIONS on f5e1b8f (user): P4 reconciled, Spoken-MQA, planner, P2a"
   ],
-  "notes": "Selection-time estimate on the 16-item selection set (median 10.6 s): tiny a=2 median dWER +0.028 (+0.009..+0.042), reported as FAILED in the 2026-10-02/05 decisions; prior evidence that did not carry. The 'option 2' rule was Ali's instruction of 2026-10-01, not a NOTES registration. Post-hoc re-score: p4_rescore.py (NOTES 2026-11-23).",
+  "notes": "Selection-time estimate on the 16-item selection set (median 10.6 s): tiny a=2 median dWER +0.028 (+0.009..+0.042), reported as FAILED in the 2026-10-02/05 decisions; prior evidence that did not carry. The 'option 2' rule was Ali's instruction of 2026-10-01, not a NOTES registration. Post-hoc re-score: p4_rescore.py (NOTES 2026-11-23). Pre-roll audit (NOTES 2026-11-23): no flagged turn in its population; its item map reads 65 flagged transcripts; every line unchanged without them (marked invalid, or transcripts blanked).",
   "qualifier": "selection-set estimate +0.028 (median 10.6 s items) did not carry; number-normalized scorer (post-hoc sensitivity): multi_step mean +0.0077 (16 worse, 6 better), n=62, passes; other sets 0 by inertness (no commits)"
  },
  {
@@ -269,9 +270,10 @@
   "verdict": "FAILS (criterion cannot separate arms): split turns 15/29 = 0.52 [0.34, 0.69] in all four arms incl. NOPARTIAL; disjunct (b) unscoreable; duty manipulation 0.61/0.79/0.95 worked; per-item difference > ~16 points excluded",
   "corrections": [
    "2026-10-06 — CORRECTION to the P5 entry above. Four errors, appended not edited",
-   "2026-10-06 — DECISIONS taken on 873339b (user)"
+   "2026-10-06 — DECISIONS taken on 873339b (user)",
+   "2026-11-23 — PRE-ROLL AUDIT of the remaining ledger rows (pass 2's P4 and P7, P5, P9b, P2b's 1.41x): no flagged turn's audio enters their numbers, and every re-run without them prints the same; P5 counts 27 flagged turn records by their file index; PROVENANCE GAP closed (P5's corrected figures)"
   ],
-  "notes": "First P5 run voided: '2026-10-06 — P5 RUN VOIDED BY MY OWN COMPUTE ON THE BOX. Cause, scope, and the fence'. DECISIONS on 873339b: P5 STANDS FAILED."
+  "notes": "First P5 run voided: '2026-10-06 — P5 RUN VOIDED BY MY OWN COMPUTE ON THE BOX. Cause, scope, and the fence'. DECISIONS on 873339b: P5 STANDS FAILED. Its corrected figures are printed by p5_score.py --report from 2026-11-23 (post hoc). Pre-roll audit (NOTES 2026-11-23): its counts include 27 flagged turn records, read by file index only; no duty-bearing hypothesis lies on a flagged turn."
  },
  {
   "id": "P6",
@@ -298,7 +300,7 @@
   "scored": "2026-10-06 — PASS 2 SCORED. P3 FAILS, P7 FALSIFIED, P4 PASSES, P6 NOT MET ON TWO SETS",
   "verdict": "FALSIFIED: raw +24.2 J/turn [+21.5, +25.8] on multi_step (higher on every set); net-of-idle form unusable",
   "corrections": [],
-  "notes": "Restated (not re-scored) as J per ms saved in the P9 pre-registration."
+  "notes": "Restated (not re-scored) as J per ms saved in the P9 pre-registration. Pre-roll audit (NOTES 2026-11-23): no flagged turn in its population; every line unchanged without them, its item map included."
  },
  {
   "id": "P7 (pass 2k)",
@@ -376,7 +378,8 @@
   "verdict": "NOT TESTABLE: validity check 1 failed in all three KILL runs (spawn on a split's pending final) -> all KILL runs void; 'P9b HOLDS' (0.94x; +435 ms [+161, +652] n=16) WITHDRAWN as a verdict",
   "corrections": [
    "2026-10-06 — CORRECTION to \"P9b HOLDS\": validity check 1 FAILED in every KILL run"
-  ]
+  ],
+  "notes": "Pre-roll audit (NOTES 2026-11-23): no flagged turn among p9_score's surviving turns, the withdrawn figures' included."
  },
  {
   "id": "P9b re-run",
@@ -387,7 +390,8 @@
   "verdict": "DESIGN NOT MET (2 of 3 KILL runs void by check 1); scorer's 1-vs-3 'holds' (+250 ms [+8, +650] n=16) not reported as a pass; decision referred to user",
   "corrections": [
    "2026-10-06 — CORRECTION to the re-run entry above (reviewer, 4 findings)"
-  ]
+  ],
+  "notes": "Pre-roll audit (NOTES 2026-11-23): no flagged turn among its surviving turns; unchanged without them."
  },
  {
   "id": "P9c",
