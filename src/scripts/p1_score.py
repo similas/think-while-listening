@@ -10,20 +10,27 @@ numbers before their counts are used."
 The quantity: per VALID turn (not warm-up, not washout, with the four
 marks), the recognizer's share of TTFA,
     (stt_final - vad_user_stopped) / (audio_out_first - speech_end_est),
-its median per set, with a percentile bootstrap CI over turns (2000
-resamples, seed 0), and the median TTFA. The recorded points and n are
-reproduced exactly; the recorded CIs' method (resamples, seed) was not
-recorded, so the CIs are printed as this script computes them.
+its median per set (the median of the per-turn ratios; the ratio of the
+medians printed beside it) and the median TTFA. Two percentile bootstrap
+CIs, each 4000 resamples, seed 0 (stage_decomposition.boot_ci at 4b59f1e):
+over turns, as recorded, and over items (every rep of a resampled item:
+a turn index is the same file in each rep, so the turns are not
+independent). The recorded points and n are reproduced; the turn-level CIs
+reproduce 8 of the 9 recorded (pass 1n short_digit's lower bound is 46.5
+against the recorded 46.4; the recorded script is not committed, so the
+cause is not resolved). DIFF lines: the order differences, each set's items
+resampled independently.
 
 Sets and runs:
 - P1, pass 1 (REACTIVE, three reps per set): sixteen (dev), short_digit,
   long_digit, multi_step;
 - P1 re-scored on NOPARTIAL (pass 1n, 2026-10-02);
-- word density: the 17-item single_step set, three reps.
+- word density: the 20-item single_step_reasoning set, three reps.
 
 With --audit (preroll_audit.py --out): per set, the turns whose pre-roll
-the audit flagged (stale, unverifiable) or could not check (unchecked), and
-the median share without the flagged ones (a post-hoc sensitivity).
+the audit flagged (stale, unverifiable) or could not check (unchecked),
+named; the turns dropped for a missing mark, with their class; and the
+median share without the flagged ones (a post-hoc sensitivity).
 
     p1_score.py [--audit results/raw/run_logs/20261122_preroll_audit/turns.jsonl] [--log FILE]
 """
