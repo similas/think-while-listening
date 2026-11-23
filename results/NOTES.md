@@ -9428,3 +9428,69 @@ long_digit 0.1521 -> 0.1760, single_step 0.0480 -> 0.0434, multi_step
 People's Speech 0.2890 -> 0.2725 (CIs in the log). On the digit sets the
 number scorer has fewer reference tokens (a spoken number is one), so each
 error weighs more: 519 -> 361 reference words on short_digit.
+
+## 2026-11-23 — RUNAWAY GUARD added (decision 7): off by default, to be on for the learned-committer phase's arms (step 4 configs); on step 1's hypotheses it would discard every runaway step 1's definition flags, and more; readings put to Ali
+
+Ali's decision 7 on 7257b7f (2026-11-20), quoted: "Runaway guard: a
+hypothesis whose compression ratio exceeds faster-whisper's default
+threshold, or that repeats one token ≥ 5 times, is discarded before any
+committer sees it — LA and learned alike. Keep repetition count as a
+feature."
+
+src/twl/runaway.py at 7828bef (first at c6697bf; the reviewer's fixes in
+7828bef). The compression ratio is faster-whisper's own
+(get_compression_ratio) of the hypothesis's words joined as the transcript
+writes them; the threshold is faster-whisper's default for transcribe(),
+read from its signature (2.4). A departure from faster-whisper's own use:
+it computes the ratio per 30 s window and only to trigger a temperature
+fallback (inactive at this project's temperature 0), never to discard.
+Here: the same function and threshold, per hypothesis, as a discard. On
+step 1's stream no decoded buffer was over 30 s (census below).
+
+Two readings are the code's, for Ali to confirm: "repeats one token >= 5
+times" as a RUN (the same token 5 or more times in a row), and "token" as a
+whitespace word (Word.key), counted inside each word's text so a
+per-segment decode (word_timestamps off, the deployed LA arm) counts as its
+words would.
+
+Where it acts (commit.runaway_guard, False by default, so every arm
+registered before this phase keeps its behaviour):
+- live: stt.py computes the verdict on every hypothesis; with the guard on,
+  a failing hypothesis reaches neither the committer nor downstream (no
+  interim frame). Every hypothesis record logs the verdict, whether it was
+  discarded, the compression ratio and the run, guard on or off;
+- offline: twl.label_replay.ReplaySettings.runaway_guard and
+  twl.la_baseline.simulated_commits(runaway_guard=...), False by default.
+  Step 1's labels, LA-2's tables, and the oracle and LA-3 work next run on
+  step 1's UNGUARDED stream unless a guarded replay is made: whether step
+  2's labels come from a guarded replay is Ali's question (below);
+- the two-tier base-span decodes are not guarded (outside decision 7's
+  wording; not used in this phase);
+- labels: rows gain hyp_longest_run, the repetition-count feature, and
+  hyp_compression_ratio (a descriptor, not a feature) from the next replay.
+  Step 1's rows have neither; both are functions of the hypothesis words
+  each utterance record keeps.
+
+What it would discard on step 1's stream (src/scripts/guard_census.py at
+7828bef: results/raw/run_logs/20261123_guard/guard_census.log, with the
+inputs' sha256 and the versions in its header; counts of what the guard
+WOULD remove from the unguarded stream, not a guarded replay):
+
+    corpus                  offered  discarded (compression, run)  vs step 1's definition
+    mqa-short_digit         121      1 (1, 0)                      both 1
+    mqa-long_digit          228      0                             -
+    mqa-single_step         2346     14 (11, 3)                    both 2, guard only 12
+    mqa-multi_step          8375     60 (59, 1)                    both 35, guard only 25
+    librispeech-test-clean  6635     21 (21, 0)                    both 13, guard only 8
+    librispeech-test-other  6188     23 (22, 1)                    both 6, guard only 17
+    peoples-speech          13764    86 (78, 8)                    both 37, guard only 49
+
+Step 1's definition flags no hypothesis the guard passes (step-1 only: 0 on
+every corpus). The guard-only hypotheses hold 259, 3188, 1023, 2710 and
+5394 label rows (single_step, multi_step, test-clean, test-other, People's
+Speech). Under the other readings of the 5, the guard (compression or the
+reading) would discard, in the order above: one token 5+ times anywhere 1,
+0, 17, 125, 48, 58, 150; a run of 6+ 1, 0, 12, 60, 21, 22, 81. Buffers over
+30 s: 0 on every corpus. This bears on the open question of decision 5
+(NOTES 2026-11-22): under the guard's definition, the "without runaways"
+Pareto leaves out more rows than under step 1's.
