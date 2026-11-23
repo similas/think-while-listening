@@ -28,6 +28,7 @@ def to_jsonl(
     | DecisionRecord
     | HypothesisRecord
     | SpanRecord
+    | SttOpen
     | WorkerEvent,
 ) -> str:
     """One record → one JSON line (no trailing newline)."""
@@ -47,6 +48,7 @@ def write_jsonl(
     | DecisionRecord
     | HypothesisRecord
     | SpanRecord
+    | SttOpen
     | WorkerEvent,
 ) -> None:
     """Append one record to an open text file and flush (crash-safe logs)."""
@@ -186,6 +188,11 @@ class TurnRecord:
     runqueue: float = -1.0
     ctxt_switches: dict[str, int] = field(default_factory=dict)
     stt_audio_s: float = -1.0
+    # The pre-roll at the head of the turn's buffer whose final this record
+    # holds, in seconds, carried with the buffer from its open (the saved
+    # segment starts committed_end_s into that buffer). Also logged at the
+    # open itself as an stt_open record. -1 before 2026-11-22.
+    preroll_s: float = -1.0
     # Mechanism counters for the STT decode of this turn. majflt rising under a
     # co-resident process is the signature of page-cache eviction: the model's
     # weights being re-read from NVMe rather than found in memory.
@@ -254,6 +261,24 @@ class TurnRecord:
     origin_ns: int = 0
 
     kind: str = field(default="turn_record", init=False)
+
+
+@dataclass(frozen=True)
+class SttOpen:
+    """The recognizer opened a turn's buffer: the pre-roll at its head.
+
+    Written at the open, on the turn the observer has just opened (Ali,
+    2026-11-20: "Pre-roll length logged at turn open"). PREROLL_S, or less
+    when the buffer opened less than PREROLL_S of delivered audio after the
+    previous close (17a50c7) or after the run's first chunk.
+    """
+
+    run_id: str
+    turn: int
+    ns: int
+    t_ms: float  # offset on the open turn's clock, -1.0 if no turn is open
+    preroll_s: float
+    kind: str = field(default="stt_open", init=False)
 
 
 @dataclass(frozen=True)

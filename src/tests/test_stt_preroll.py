@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections import deque
+from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
@@ -33,6 +34,7 @@ class Ring:
         self._preroll: deque[npt.NDArray[np.float32]] = deque()
         self._preroll_samples = 0
         self._preroll_max = int(PREROLL_S * SR)
+        self._audio_preroll = 0
 
     run_stt = StreamingWhisperSTT.run_stt
     _open_turn_audio = StreamingWhisperSTT._open_turn_audio
@@ -49,9 +51,10 @@ class Ring:
 
         asyncio.run(go())
 
-    def open(self) -> None:
-        self._open_turn_audio()
+    def open(self) -> int:
+        n = self._open_turn_audio()
         self._speaking = True
+        return n
 
 
 def test_a_turn_opening_soon_after_a_close_holds_no_audio_from_before_it() -> None:
@@ -63,7 +66,7 @@ def test_a_turn_opening_soon_after_a_close_holds_no_audio_from_before_it() -> No
     r.feed(0.5, 2.0)  # turn 1's speech goes to the turn buffer
     r._close_turn_audio()
     r.feed(0.75, 0.3)  # 0.3 s after the close, less than PREROLL_S
-    r.open()
+    assert r.open() == int(0.3 * SR)  # the length the turn record logs
     # Only what was heard since the close: no 0.25 from before turn 1 opened.
     assert len(r._audio) == int(0.3 * SR)
     assert np.allclose(r._audio, 0.75, atol=1e-3)
@@ -74,8 +77,7 @@ def test_a_full_preroll_after_a_long_enough_gap() -> None:
     r.open()
     r._close_turn_audio()
     r.feed(0.75, 1.0)
-    r.open()
-    assert len(r._audio) == int(PREROLL_S * SR)
+    assert r.open() == len(r._audio) == int(PREROLL_S * SR)
 
 
 def test_the_stopped_handler_closes_through_the_ring_clearing_path() -> None:
@@ -87,3 +89,43 @@ def test_the_stopped_handler_closes_through_the_ring_clearing_path() -> None:
     stopped = src[src.index("isinstance(frame, _STOPPED)") :]
     assert "self._close_turn_audio()" in stopped.split("\n", 2)[1]
     assert "self._speaking = False" not in src
+
+
+def test_the_preroll_length_travels_with_the_buffer_to_its_final() -> None:
+    # Taken with the audio under the lock at _STOPPED and written with the
+    # segment, so it describes the saved buffer even when the final lands on
+    # a later record (reviewer, 2026-11-22).
+    import inspect
+
+    src = inspect.getsource(StreamingWhisperSTT.process_frame)
+    stopped = src[src.index("isinstance(frame, _STOPPED)") :]
+    started = src[src.index("isinstance(frame, _STARTED)") :].split("\n", 4)[:4]
+    assert (
+        "self._turns.note_stt_open(ns=now_ns(), preroll_s=opened / self.sample_rate)"
+        in (started[3])
+    )
+    take = "preroll, self._audio_preroll = self._audio_preroll, 0"
+    assert take in stopped and stopped.index(take) < stopped.index("await ")
+    assert "preroll_s=preroll / self.sample_rate" in stopped
+    r = Ring()
+    r.feed(0.25, 0.2)
+    assert r.open() == r._audio_preroll == int(0.2 * SR)  # the run's first turn: short
+
+
+def test_the_turn_record_carries_the_preroll_its_final_reported(tmp_path: Path) -> None:
+    from test_partial_boundaries import manager, records
+
+    from twl.clock import now_ns
+
+    m = manager(tmp_path)
+    m.turn_started(now_ns())
+    m.note_stt_open(ns=now_ns(), preroll_s=0.3)
+    m.set_stt_counters(minflt=0, majflt=0, page_cache_mb=0.0, segment_wav="x", preroll_s=0.3)
+    m.finish_turn()
+    m.turn_started(now_ns())  # the next turn starts with no pre-roll reported
+    m.finish_turn()
+    m.close()
+    first, second = records(tmp_path, "turn_record")
+    assert (first["preroll_s"], second["preroll_s"]) == (0.3, -1.0)
+    (opened,) = records(tmp_path, "stt_open")  # logged at the open, on turn 1
+    assert (opened["turn"], opened["preroll_s"]) == (1, 0.3)

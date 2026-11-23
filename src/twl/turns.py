@@ -34,6 +34,7 @@ from twl.records import (
     RunMeta,
     SpanRecord,
     StageEvent,
+    SttOpen,
     TurnRecord,
     WorkerEvent,
     endpoint_after_final,
@@ -183,6 +184,7 @@ class TurnManager:
         self._turn = 0
         self._transcript = ""
         self._stt_audio_s = -1.0
+        self._preroll_s = -1.0
         self._stt_minflt = -1
         self._stt_majflt = -1
         self._page_cache_mb = -1.0
@@ -330,6 +332,23 @@ class TurnManager:
         clock = self._clock
         return clock is not None and clock.first("vad_user_stopped") is None
 
+    def note_stt_open(self, *, ns: int, preroll_s: float) -> None:
+        """The recognizer opened its buffer: logged at once, on the open turn."""
+        if self._closed:  # an onset after the log closed, during teardown
+            return
+        clock = self._clock
+        t_ms = (ns - clock.origin_ns) / 1e6 if clock is not None else -1.0
+        write_jsonl(
+            self._fh,
+            SttOpen(
+                run_id=self._run_id,
+                turn=self._turn,
+                ns=ns,
+                t_ms=round(t_ms, 1),
+                preroll_s=round(preroll_s, 3),
+            ),
+        )
+
     def note_worker_event(
         self, event: str, *, ns: int, pid: int = -1, extra: dict[str, Any] | None = None
     ) -> None:
@@ -414,6 +433,7 @@ class TurnManager:
         self._worker_stopped_at_open = -1
         self._transcript = ""
         self._stt_audio_s = -1.0
+        self._preroll_s = -1.0
         self._stt_minflt = -1
         self._stt_majflt = -1
         self._page_cache_mb = -1.0
@@ -821,8 +841,12 @@ class TurnManager:
         rss_after_mb: float = -1.0,
         anon_huge_before_mb: float = -1.0,
         anon_huge_after_mb: float = -1.0,
+        preroll_s: float = -1.0,
     ) -> None:
-        """Mechanism counters measured around this turn's final STT decode."""
+        """Mechanism counters measured around this turn's final STT decode.
+        ``preroll_s``: the pre-roll at the head of the turn's buffer this final
+        came from, carried from its open (the saved segment starts
+        committed_end_s into that buffer)."""
         self._stt_minflt = minflt
         self._stt_majflt = majflt
         self._page_cache_mb = page_cache_mb
@@ -832,6 +856,7 @@ class TurnManager:
         self._rss_after_mb = rss_after_mb
         self._anon_huge_before_mb = anon_huge_before_mb
         self._anon_huge_after_mb = anon_huge_after_mb
+        self._preroll_s = preroll_s
 
     def set_phase2(
         self,
@@ -1020,6 +1045,7 @@ class TurnManager:
             gpu_freq_mhz=read_gpu_freq_mhz(),
             power_mw=read_power_rails_mw(),
             stt_audio_s=round(self._stt_audio_s, 3),
+            preroll_s=round(self._preroll_s, 3),
             stt_minflt=self._stt_minflt,
             stt_majflt=self._stt_majflt,
             page_cache_mb=round(self._page_cache_mb, 1),

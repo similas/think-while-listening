@@ -12,6 +12,11 @@ src = ["src"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 
+[tool.ruff.lint.per-file-ignores]
+# The pre-roll audit's populations replicate scorer filters verbatim, with
+# their line lengths and their unused unpackings (2026-11-22).
+"src/scripts/preroll_pop/*" = ["E501", "RUF059"]
+
 [tool.mypy]
 strict = true
 files = ["src/twl"]

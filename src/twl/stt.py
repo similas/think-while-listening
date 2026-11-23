@@ -116,6 +116,7 @@ class StreamingWhisperSTT(STTService):
         self._preroll: deque[npt.NDArray[np.float32]] = deque()
         self._preroll_samples = 0
         self._preroll_max = int(PREROLL_S * sample_rate)
+        self._audio_preroll = 0  # samples of pre-roll at the head of _audio
         self._partial_task: asyncio.Task[None] | None = None
         self._decode_lock = asyncio.Lock()
         # Touched from the thread pool, so it needs a threading lock, not the
@@ -851,14 +852,18 @@ class StreamingWhisperSTT(STTService):
         self._playback_since_stop = True
         self._maybe_cont("playback_done")
 
-    def _open_turn_audio(self) -> None:
+    def _open_turn_audio(self) -> int:
         """Start the turn's buffer with the pre-roll: the audio heard just before
-        the VAD fired, which recovers the speech it consumed deciding."""
+        the VAD fired, which recovers the speech it consumed deciding. Returns
+        its length in samples: short when the turn opens less than PREROLL_S of
+        delivered audio after the previous close."""
         with self._lock:
             if self._preroll:
                 self._audio = np.concatenate(list(self._preroll))
             else:
                 self._audio = np.zeros(0, dtype=np.float32)
+            self._audio_preroll = len(self._audio)  # travels with the buffer
+            return self._audio_preroll
 
     def _close_turn_audio(self) -> None:
         """End the turn: audio goes to the pre-roll ring again, which starts EMPTY.
@@ -879,8 +884,9 @@ class StreamingWhisperSTT(STTService):
         await super().process_frame(frame, direction)
 
         if isinstance(frame, _STARTED):
-            self._open_turn_audio()
+            opened = self._open_turn_audio()
             self._speaking = True
+            self._turns.note_stt_open(ns=now_ns(), preroll_s=opened / self.sample_rate)
             self._maybe_cont("vad_start")
             worker_ok = True
             if self._pool is not None:
@@ -969,6 +975,7 @@ class StreamingWhisperSTT(STTService):
                 self._partial_task = None
             with self._lock:
                 audio, self._audio = self._audio, np.zeros(0, dtype=np.float32)
+                preroll, self._audio_preroll = self._audio_preroll, 0
             if len(audio) < 0.08 * self.sample_rate:
                 # No final will come for this endpoint.
                 self._final_pending = False
@@ -1047,6 +1054,7 @@ class StreamingWhisperSTT(STTService):
                 majflt=faults_after[1] - faults_before[1],
                 page_cache_mb=read_page_cache_mb(),
                 segment_wav=self._save_segment(audio),
+                preroll_s=preroll / self.sample_rate,
                 vmstat_delta={k: vm_after.get(k, 0) - vm_before.get(k, 0) for k in vm_after},
                 rss_before_mb=sm_before["rss_mb"],
                 rss_after_mb=sm_after["rss_mb"],
@@ -1061,7 +1069,14 @@ class StreamingWhisperSTT(STTService):
         """Write the decoded segment so it can be re-decoded in isolation."""
         if self._segment_dir is None or len(audio) == 0:
             return ""
+        # A final lands on the record current when it completes, which can be
+        # one already written; a second final there must not overwrite the
+        # first one's audio (found by the pre-roll audit, 2026-11-22).
         path = self._segment_dir / f"turn_{self._turns.turn:03d}.wav"
+        k = 1
+        while path.exists():
+            k += 1
+            path = self._segment_dir / f"turn_{self._turns.turn:03d}_{k}.wav"
         try:
             with wave.open(str(path), "wb") as w:
                 w.setnchannels(1)

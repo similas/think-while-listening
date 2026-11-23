@@ -182,6 +182,10 @@ async def test_pipeline_on_synthetic_turn(tmp_path: Path) -> None:
     turns.close()
 
     records = [r for r in read_jsonl(str(turns_log)) if r.get("kind") == "turn_record"]
+    # The recognizer's open is logged on the turn the observer opened: the two
+    # run on different tasks, so this pins their order (reviewer, 2026-11-22).
+    opens = [r for r in read_jsonl(str(turns_log)) if r.get("kind") == "stt_open"]
+    assert [(r["turn"], r["t_ms"] >= 0) for r in opens] == [(1, True)]
     assert len(records) == 1, "exactly one turn expected"
     rec = records[0]
     assert rec["transcript"] == MOCK_TRANSCRIPT
