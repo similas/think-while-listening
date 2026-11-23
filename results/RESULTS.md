@@ -782,3 +782,85 @@ DP (no duty bound)     +46 ms [+25, +71] n=70; [report] mean +139 ms, Q3 +125 ms
 - runs: see the scorer's run list
 - NOTES: "2026-10-13 — CORRECTION to "LEVEL-2 PLANNER, SIMULATED" (reviewer, 6 findings)" (8b6bbca 2026-10-13)
 - caveat: Decoding back to back, not planning; the duty bound is a harness constant equal across arms.
+
+## Pre-roll defect: post-hoc sensitivity, beside the registered values (NOTES 2026-11-22)
+
+### P2a population without the turns the pre-roll audit flagged (post-hoc sensitivity)
+
+```
+SENS p2a_pop (invalid): P2a population (as registered): 957 turns, 43 runs
+```
+
+- command: `src/scripts/preroll_sensitivity.py --audit results/raw/run_logs/20261122_preroll_audit/turns.jsonl`
+- runs: see the scorer's run list
+- NOTES: "2026-11-22 — PRE-ROLL DEFECT found by the label replay: content audit (3 stale turns in P2a's population; P2a and pass 6 qualified; no re-scored verdict changes), fix, pre-roll logged; DECISIONS on 7257b7f (Ali): sealed 80, LA-3, comparator, off-policy, Pareto, selection set, runaway guard, oracle ceiling, order" (d910b5f 2026-11-22)
+
+### P2a verdict without the flagged turns (post-hoc sensitivity)
+
+```
+SENS p2a (invalid): P2a (c in [500, 1500] ms/s; falsified if CI entirely below 300): BELOW THE REGISTERED BAND, NOT FALSIFIED
+```
+
+- command: `src/scripts/preroll_sensitivity.py --audit results/raw/run_logs/20261122_preroll_audit/turns.jsonl`
+- runs: see the scorer's run list
+- NOTES: "2026-11-22 — PRE-ROLL DEFECT found by the label replay: content audit (3 stale turns in P2a's population; P2a and pass 6 qualified; no re-scored verdict changes), fix, pre-roll logged; DECISIONS on 7257b7f (Ali): sealed 80, LA-3, comparator, off-policy, Pareto, selection set, runaway guard, oracle ceiling, order" (d910b5f 2026-11-22)
+
+### Listener overlap penalty c without the flagged turns (post-hoc sensitivity)
+
+```
+SENS listener_c (invalid): final_ms = a + b*audio_s + c*overlap_s + arm (REACTIVE one arm):  a 1157 ms, b 88.6 ms/s, c 492 ms/s [440, 577] (2000/2000 draws)
+```
+
+- command: `src/scripts/preroll_sensitivity.py --audit results/raw/run_logs/20261122_preroll_audit/turns.jsonl`
+- runs: see the scorer's run list
+- NOTES: "2026-11-22 — PRE-ROLL DEFECT found by the label replay: content audit (3 stale turns in P2a's population; P2a and pass 6 qualified; no re-scored verdict changes), fix, pre-roll logged; DECISIONS on 7257b7f (Ali): sealed 80, LA-3, comparator, off-policy, Pareto, selection set, runaway guard, oracle ceiling, order" (d910b5f 2026-11-22)
+
+### Stage decomposition, multi_step, without the flagged turns (post-hoc sensitivity)
+
+```
+SENS stages_multi_step (invalid): Fig1 multi_step (80): TTFA median 4353 ms, STT final 2639 ms = 62% of the stage sum, LLM first token 214 ms = 5%, n=210 turns, 3 runs
+```
+
+- command: `src/scripts/preroll_sensitivity.py --audit results/raw/run_logs/20261122_preroll_audit/turns.jsonl`
+- runs: see the scorer's run list
+- NOTES: "2026-11-22 — PRE-ROLL DEFECT found by the label replay: content audit (3 stale turns in P2a's population; P2a and pass 6 qualified; no re-scored verdict changes), fix, pre-roll logged; DECISIONS on 7257b7f (Ali): sealed 80, LA-3, comparator, off-policy, Pareto, selection set, runaway guard, oracle ceiling, order" (d910b5f 2026-11-22)
+
+### Stage decomposition, 20 longest, without the flagged turns (post-hoc sensitivity)
+
+```
+SENS stages_longest (invalid): Fig1 20 longest (20): TTFA median 4305 ms, STT final 2700 ms = 64% of the stage sum, LLM first token 138 ms = 3%, n=14 turns, 1 runs
+```
+
+- command: `src/scripts/preroll_sensitivity.py --audit results/raw/run_logs/20261122_preroll_audit/turns.jsonl`
+- runs: see the scorer's run list
+- NOTES: "2026-11-22 — PRE-ROLL DEFECT found by the label replay: content audit (3 stale turns in P2a's population; P2a and pass 6 qualified; no re-scored verdict changes), fix, pre-roll logged; DECISIONS on 7257b7f (Ali): sealed 80, LA-3, comparator, off-policy, Pareto, selection set, runaway guard, oracle ceiling, order" (d910b5f 2026-11-22)
+
+### Stale decode cost without the decodes of flagged turns (post-hoc sensitivity)
+
+```
+SENS stale (drop): STALE DECODE COST: 55 discarded, 55 measured; per decode raw median 2.764 J, net median 0.512 J; total raw 262.92 J over 3 STOP runs
+```
+
+- command: `src/scripts/preroll_sensitivity.py --audit results/raw/run_logs/20261122_preroll_audit/turns.jsonl`
+- runs: see the scorer's run list
+- NOTES: "2026-11-22 — PRE-ROLL DEFECT found by the label replay: content audit (3 stale turns in P2a's population; P2a and pass 6 qualified; no re-scored verdict changes), fix, pre-roll logged; DECISIONS on 7257b7f (Ali): sealed 80, LA-3, comparator, off-policy, Pareto, selection set, runaway guard, oracle ceiling, order" (d910b5f 2026-11-22)
+
+### Stale decodes, net energy, without the decodes of flagged turns (post-hoc sensitivity)
+
+```
+SENS stale_net (drop): [report] stale net: mean 1.58 J, total 86.9 J; 0 windows overlap another turn's [open, playback done]; excluding them: n=55, median 0.51 J, mean 1.58 J, total 86.9 J
+```
+
+- command: `src/scripts/preroll_sensitivity.py --audit results/raw/run_logs/20261122_preroll_audit/turns.jsonl`
+- runs: see the scorer's run list
+- NOTES: "2026-11-22 — PRE-ROLL DEFECT found by the label replay: content audit (3 stale turns in P2a's population; P2a and pass 6 qualified; no re-scored verdict changes), fix, pre-roll logged; DECISIONS on 7257b7f (Ali): sealed 80, LA-3, comparator, off-policy, Pareto, selection set, runaway guard, oracle ceiling, order" (d910b5f 2026-11-22)
+
+### Allocator decisions without the flagged turn (post-hoc sensitivity)
+
+```
+SENS alloc_counts (drop): ALLOCATOR decisions 575 over 80 turns; below_break_even 536; infeasible 39; spends 0; drafts issued 0; break_even 0.1412; ms_per_token [34.0]; run reactive-20261009-120309-a4f48d
+```
+
+- command: `src/scripts/preroll_sensitivity.py --audit results/raw/run_logs/20261122_preroll_audit/turns.jsonl`
+- runs: see the scorer's run list
+- NOTES: "2026-11-22 — PRE-ROLL DEFECT found by the label replay: content audit (3 stale turns in P2a's population; P2a and pass 6 qualified; no re-scored verdict changes), fix, pre-roll logged; DECISIONS on 7257b7f (Ali): sealed 80, LA-3, comparator, off-policy, Pareto, selection set, runaway guard, oracle ceiling, order" (d910b5f 2026-11-22)

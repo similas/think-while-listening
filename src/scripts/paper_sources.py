@@ -57,6 +57,12 @@ SOURCES: dict[str, Source] = {
     "tax": Source("occupancy_tax.py"),
     "worker": Source("worker_memory.py"),
     "alloc": Source("allocator_decisions.py", PASS6),
+    # Post-hoc sensitivity: the claims whose population held a turn the pre-roll
+    # audit flagged, re-scored without those turns (NOTES 2026-11-22).
+    "preroll_sens": Source(
+        "preroll_sensitivity.py",
+        ("--audit", "results/raw/run_logs/20261122_preroll_audit/turns.jsonl"),
+    ),
     # Phase 3-4 value side (thesis chapter 5): the seeded replication, scored one
     # file per source so every printed line is unique (NOTES 2026-09-22).
     "probe_sampled": Source(
@@ -243,6 +249,12 @@ class Claim:
         return line(self.source, self.pattern).string.strip()
 
 
+H_PREROLL = (
+    "2026-11-22 — PRE-ROLL DEFECT found by the label replay: content audit (3 stale turns in "
+    "P2a's population; P2a and pass 6 qualified; no re-scored verdict changes), fix, pre-roll "
+    "logged; DECISIONS on 7257b7f (Ali): sealed 80, LA-3, comparator, off-policy, Pareto, "
+    "selection set, runaway guard, oracle ceiling, order"
+)
 H_P1N = (
     "2026-10-02 — PASS 1n COMPLETE. The partial-decode cost is real, smaller than predicted, "
     "and scales with in-flight rate"
@@ -803,5 +815,61 @@ CLAIMS: tuple[Claim, ...] = (
         "tax",
         r"TAX D full pipeline - B.*121140-74e10a$",
         H_THP,
+    ),
+    Claim(
+        "p2a_pop_preroll",
+        "P2a population without the turns the pre-roll audit flagged (post-hoc sensitivity)",
+        "preroll_sens",
+        r"^SENS p2a_pop \(",
+        H_PREROLL,
+    ),
+    Claim(
+        "p2a_preroll",
+        "P2a verdict without the flagged turns (post-hoc sensitivity)",
+        "preroll_sens",
+        r"^SENS p2a \(",
+        H_PREROLL,
+    ),
+    Claim(
+        "listener_c_preroll",
+        "Listener overlap penalty c without the flagged turns (post-hoc sensitivity)",
+        "preroll_sens",
+        r"^SENS listener_c \(",
+        H_PREROLL,
+    ),
+    Claim(
+        "stages_multi_step_preroll",
+        "Stage decomposition, multi_step, without the flagged turns (post-hoc sensitivity)",
+        "preroll_sens",
+        r"^SENS stages_multi_step \(",
+        H_PREROLL,
+    ),
+    Claim(
+        "stages_longest_preroll",
+        "Stage decomposition, 20 longest, without the flagged turns (post-hoc sensitivity)",
+        "preroll_sens",
+        r"^SENS stages_longest \(",
+        H_PREROLL,
+    ),
+    Claim(
+        "stale_preroll",
+        "Stale decode cost without the decodes of flagged turns (post-hoc sensitivity)",
+        "preroll_sens",
+        r"^SENS stale \(",
+        H_PREROLL,
+    ),
+    Claim(
+        "stale_net_preroll",
+        "Stale decodes, net energy, without the decodes of flagged turns (post-hoc sensitivity)",
+        "preroll_sens",
+        r"^SENS stale_net \(",
+        H_PREROLL,
+    ),
+    Claim(
+        "alloc_counts_preroll",
+        "Allocator decisions without the flagged turn (post-hoc sensitivity)",
+        "preroll_sens",
+        r"^SENS alloc_counts \(",
+        H_PREROLL,
     ),
 )

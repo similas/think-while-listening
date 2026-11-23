@@ -348,6 +348,19 @@ SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "The Level-2 planner, simulated (no measured run)",
         ("planner_validation", "planner_dp", "planner_noduty"),
     ),
+    (
+        "Pre-roll defect: post-hoc sensitivity, beside the registered values (NOTES 2026-11-22)",
+        (
+            "p2a_pop_preroll",
+            "p2a_preroll",
+            "listener_c_preroll",
+            "stages_multi_step_preroll",
+            "stages_longest_preroll",
+            "stale_preroll",
+            "stale_net_preroll",
+            "alloc_counts_preroll",
+        ),
+    ),
 )
 
 CAVEATS = {
