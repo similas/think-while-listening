@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from twl.la_baseline import is_number, la2_counts, runaway_hyps, simulated_commits
+from twl.la_baseline import la2_counts, runaway_hyps, scored_words, simulated_commits
 
 
 def row(
@@ -64,9 +64,11 @@ def test_runaway_hypotheses_are_those_stuck_on_one_token() -> None:
     assert runaway_hyps(stuck + normal + short) == {(0, 3)}
 
 
-def test_number_words() -> None:
-    assert is_number("12") and is_number("seven") and is_number("$1,000")
-    assert not is_number("cookies") and not is_number("percent")
+def test_scored_words_count_tokened_words_in_tokened_units() -> None:
+    # "um" has no token under the number scorer but is a Word.key: scored by
+    # is_scored, yet its unit has no token; "-" attaches to "20" and has none.
+    assert scored_words(["twenty", "five", "apples"]) == 3
+    assert scored_words(["um", "20", "-", "cats"]) == 2
 
 
 def words(*spec: tuple[str, float]) -> list[dict[str, object]]:

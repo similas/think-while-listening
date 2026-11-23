@@ -100,7 +100,7 @@ Licences: the logs and data are CC BY 4.0; the code is MIT
 | device | NVIDIA Jetson Orin Nano Super developer kit, 8 GB unified memory |
 | OS | JetPack 6.2.1 (L4T R36.4.4), power mode MAXN_SUPER, clocks pinned per run; desktop session usually running (the board is driven remotely), recorded per run and held equal across the arms of a comparison |
 | huge pages | THP enabled `always`, defrag `madvise` (recorded in run headers from 2026-09-16 11:52 onward) |
-| Python | 3.10.12; `pipecat-ai` 0.0.108, `faster-whisper` 1.2.1, `ctranslate2` 4.8.1, `onnxruntime` 1.23.2, `piper-tts` 1.6.0, `numpy` 2.2.6, `PyAudio` 0.2.14 |
+| Python | 3.10.12; `pipecat-ai` 0.0.108, `faster-whisper` 1.2.1, `ctranslate2` 4.8.1, `onnxruntime` 1.23.2, `piper-tts` 1.6.0, `numpy` 2.2.6, `PyAudio` 0.2.14; scoring: `whisper-normalizer` 0.1.15 (with `more-itertools` 11.1.0 and `regex` 2026.9.10, installed `--no-deps`) |
 | recognizer | Whisper `tiny` (hypotheses) and `base` (final), int8, 3 shared CPU cores |
 | language model | Gemma 4 E2B, 4-bit (`gemma-4-E2B-q4_0.gguf`, sha256 `fa401b55b07ee70a54c6dae3903c783a6e65064312529ea57175cb5f8dec6634`), llama.cpp server build `b4d6c7d8f`, `--ctx-size 2048 --n-gpu-layers 99 --threads 3 --parallel 1 --cache-reuse 0 --reasoning off --reasoning-budget 0`, 3 CPU cores |
 | synthesizer | Piper `en_US-lessac-medium` (onnx sha256 `5efe09e69902187827af646e1a6e9d269dee769f9877d17b16b1b46eeaaf019f`) |

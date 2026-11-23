@@ -10,26 +10,29 @@ non-zero (2000 resamples, seed 0), and that file count:
 - RUNAWAY: hypotheses stuck on one token (at least 20 scored words, one key
   50 % or more of them), and their share of rows; every LA2
   and NUMBERS line is printed with them ("all") and without ("no-runaway").
-- NUMBERS: survival of number words (twl.la_baseline.is_number) against the
-  other words, and their paired difference over the same files.
+- NUMBERS: survival of words in number units (the rows' num_unit column,
+  twl.survival_labels.is_number_unit: a one-word "one", "ones", "oh" or "o"
+  is not counted, being a pronoun or interjection as often as a number)
+  against the other words, and their paired difference over the same files.
 - LA_CHECK: LA-2 re-simulated on its own recorded hypotheses, matched by
   position, against the logged la2_commit.
 LA-3 is not reported: it cannot be read off LA-2's stream (twl.la_baseline).
 
 The replay's tail guard and agreement order are read from each label file's
-provenance, not assumed. label_num uses the interim number normalizer until
-the full one exists (NOTES 2026-11-19); this is re-run after the
-recomputation.
+provenance, not assumed. The label files' label_num must be the current
+version (twl.survival_labels.LABEL_VERSION, from relabel_num.py or a
+replay under this code): the number-normalized scorer on number units.
 
 Run in ~/.venvs/twl-learn with PYTHONPATH=src, from the repository root:
 
-    la_operating_point.py [--labels results/raw/commit_labels] [--log FILE]
+    la_operating_point.py [--labels results/raw/commit_labels/num] [--log FILE]
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import random
 import subprocess
@@ -42,12 +45,12 @@ import pyarrow.parquet as pq
 from twl.la_baseline import (
     LABEL,
     Counts,
-    is_number,
     la2_counts,
     runaway_hyps,
+    scored_words,
     simulated_commits,
 )
-from twl.survival_labels import num_tokens
+from twl.survival_labels import LABEL_VERSION
 
 CORPORA = (
     "mqa-short_digit",
@@ -60,9 +63,10 @@ CORPORA = (
 )
 ROW_COLS = [
     "utt", "turn", "hyp_index", "word_index", "start_s", "end_s", "key", "text",
-    "la2_commit", LABEL,
+    "la2_commit", LABEL, "num_unit",
 ]  # fmt: skip
 BOOT = 2000
+NORMALIZER = importlib.metadata.version("whisper-normalizer")
 
 
 def boot(num: list[int], den: list[int], seed: int = 0) -> str:
@@ -129,7 +133,23 @@ def provenance(path: Path) -> dict[str, object]:
 
 def corpus_report(labels: Path, corpus: str) -> list[str]:
     rows_path = labels / f"{corpus}.parquet"
-    replay = provenance(rows_path)["settings"]["replay"]  # type: ignore[index]
+    prov = provenance(rows_path)
+    relabel = prov.get("relabel")
+    version = (relabel if isinstance(relabel, dict) else prov.get("settings", {})).get(
+        "label_num_version"
+    )
+    if version != LABEL_VERSION:
+        raise SystemExit(f"{rows_path}: label_num version {version!r}, not {LABEL_VERSION!r}")
+    recorded = (
+        relabel.get("whisper_normalizer")
+        if isinstance(relabel, dict)
+        else prov.get("settings", {}).get("packages", {}).get("whisper-normalizer")
+    )
+    if recorded != NORMALIZER:  # finals' scored words are recomputed with the installed one
+        raise SystemExit(
+            f"{rows_path}: labelled under whisper-normalizer {recorded}, not {NORMALIZER}"
+        )
+    replay = prov["settings"]["replay"]  # type: ignore[index]
     tail_guard, order = float(replay["tail_guard_s"]), int(replay["agreement_n"])
     if order != 2:
         raise SystemExit(f"{corpus}: the replay's committer is LA-{order}, not LA-2")
@@ -151,7 +171,7 @@ def corpus_report(labels: Path, corpus: str) -> list[str]:
         uid = str(u["utt"])
         rows = by_utt.get(uid, [])
         turns = u["turns"]
-        finals = sum(1 for t in turns for w in t["final_words"] if num_tokens(str(w["text"])))
+        finals = sum(scored_words([str(w["text"]) for w in t["final_words"]]) for t in turns)
         stuck = runaway_hyps(rows)
         clean = [r for r in rows if (int(r["turn"]), int(r["hyp_index"])) not in stuck]
         hyps_n += len({(r["turn"], r["hyp_index"]) for r in rows})
@@ -166,7 +186,7 @@ def corpus_report(labels: Path, corpus: str) -> list[str]:
             for kind in ("num", "other"):
                 sel = [
                     r for r in rs
-                    if int(r[LABEL]) >= 0 and is_number(str(r["text"])) == (kind == "num")
+                    if int(r[LABEL]) >= 0 and int(r["num_unit"]) == (kind == "num")
                 ]  # fmt: skip
                 nums[tag][kind][0].append(sum(int(r[LABEL]) for r in sel))
                 nums[tag][kind][1].append(len(sel))
@@ -200,7 +220,7 @@ def corpus_report(labels: Path, corpus: str) -> list[str]:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    p.add_argument("--labels", type=Path, default=Path("results/raw/commit_labels"))
+    p.add_argument("--labels", type=Path, default=Path("results/raw/commit_labels/num"))
     p.add_argument("--log", type=Path, default=None, help="also write the output here")
     args = p.parse_args()
     commit = subprocess.run(
@@ -211,7 +231,10 @@ def main() -> None:
     ).stdout.strip()
     if args.log and commit.endswith("-dirty"):
         raise SystemExit(f"build {commit} is dirty: a logged run needs a clean tree")
-    lines = [f"# la_operating_point.py build {commit}; {' '.join(sys.argv[1:])}"]
+    lines = [
+        f"# la_operating_point.py build {commit}; whisper-normalizer {NORMALIZER}; "
+        f"{' '.join(sys.argv[1:])}"
+    ]
     for corpus in CORPORA:
         for suffix in (".parquet", ".utterances.parquet"):
             f = args.labels / f"{corpus}{suffix}"

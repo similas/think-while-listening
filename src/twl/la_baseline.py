@@ -5,8 +5,9 @@ count for LA-2 PER WORD (the replay's departure: the deployed LA-2 commits per
 segment) the commits made before the endpoint and how many survive, and the
 declined word instances and how many survive, split into those LA-2 commits
 at a later hypothesis and those it never commits. Also flag RUNAWAY
-hypotheses (a decode stuck repeating one token) and NUMBER words. Pure: the
-caller reads the parquet files.
+hypotheses (a decode stuck repeating one token). Number words are the rows'
+own num_unit column (twl.survival_labels.num_labels). Pure: the caller reads
+the parquet files.
 
 DEFINITIONS (one per report column):
 - committed fraction: LA-2's commits before the endpoint / scored words in the
@@ -36,7 +37,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from twl.commit import LocalAgreementCommitter, Word
-from twl.survival_labels import num_tokens
+from twl.survival_labels import is_scored, num_units
 
 LABEL = "label_num"  # the training label (Ali's scorer decision, 2026-11-19)
 LATER_TOL_S = 0.3
@@ -82,9 +83,11 @@ def runaway_hyps(rows: Iterable[Row]) -> set[tuple[int, int]]:
     }
 
 
-def is_number(text: str) -> bool:
-    """A word whose number-normalized tokens include a digit string."""
-    return any(t.isdigit() for t in num_tokens(text))
+def scored_words(texts: Sequence[str]) -> int:
+    """How many of these words (a turn's final) LABEL scores: words a
+    normalizer gives a token (``is_scored``) whose number unit has tokens."""
+    units = num_units(texts)
+    return sum(1 for u in units if u[1] for i in u[0] if is_scored(Word(texts[i], 0.0, 0.0)))
 
 
 def la2_counts(rows: Sequence[Row], final_words: int) -> Counts:

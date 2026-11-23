@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from twl.wer import normalize, wer
+from twl.wer import normalize, normalize_num, wer, wer_num
 
 
 def test_identical_is_zero() -> None:
@@ -39,3 +39,26 @@ def test_empty_reference() -> None:
 
 def test_normalize_spells_small_integers() -> None:
     assert normalize("Count from 1 to 10!") == ["count", "from", "one", "to", "ten"]
+
+
+def test_the_number_scorer_merges_multi_word_numbers() -> None:
+    assert normalize_num("Twenty five dollars, please.") == ["$25", "please"]
+    assert normalize_num("ten percent of 1,000") == ["10%", "of", "1000"]
+    assert normalize_num("three and a half hours") == ["3.5", "hours"]
+    assert normalize_num("Calculate 699 minus 148.") == ["calculate", "699", "-148"]
+
+
+def test_the_number_scorer_scores_what_the_registered_one_counts_as_errors() -> None:
+    ref, hyp = "He paid twelve dollars for 1,000 stamps", "he paid $12 for one thousand stamps"
+    assert wer(ref, hyp) > 0.0
+    assert wer_num(ref, hyp) == 0.0
+
+
+def test_the_registered_scorer_is_unchanged_by_the_second() -> None:
+    assert normalize("Twenty five dollars") == ["twenty", "five", "dollars"]
+    assert wer("count from 1 to 10", "count from one to ten") == 0.0
+
+
+def test_the_number_scorer_drops_fillers_and_standardizes_spelling() -> None:
+    assert normalize_num("um the colour hmm") == ["the", "color"]
+    assert wer_num("", "uh") == 0.0

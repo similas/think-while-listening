@@ -77,7 +77,16 @@ from twl.pacing import PARTIAL_INTERCEPT_MS, PARTIAL_MS_PER_S
 from twl.provenance import build_run_meta, new_run_id
 from twl.seal import SEAL_SHA256
 from twl.stt_engine import MIN_DECODE_S, POLL_S, PREROLL_S, load_pinned, transcribe_words_scored
-from twl.survival_labels import GAP_COST, MATCH_TOL_S, SUB_COST, WINDOW_S, HypWord
+from twl.survival_labels import (
+    GAP_COST,
+    LABEL_VERSION,
+    MATCH_TOL_S,
+    NUM_UNIT_DESCRIPTION,
+    SUB_COST,
+    WINDOW_S,
+    HypWord,
+    join_words,
+)
 from twl.wer import normalize, wer
 
 log = logging.getLogger("commit_labels")
@@ -96,7 +105,15 @@ ID_COLUMNS = (
     "start_s", "end_s",
 )  # fmt: skip
 BATCH = 50  # utterances per incremental parquet part
-STACK = ("faster-whisper", "ctranslate2", "numpy", "onnxruntime", "pyarrow", "av")
+STACK = (
+    "faster-whisper",
+    "ctranslate2",
+    "numpy",
+    "onnxruntime",
+    "pyarrow",
+    "av",
+    "whisper-normalizer",  # label_num depends on it (twl.wer.normalize_num)
+)
 SR = 16000
 PROMPT_CHARS = 200  # LocalAgreementCommitter.prompt's default, as live
 BOOT = 2000
@@ -341,6 +358,8 @@ def settings_record(cfg: TwlConfig, s: ReplaySettings) -> dict[str, object]:
             "word_index": "index among the fresh words (punctuation-only tokens counted, not rows)",
         },
         "label_columns": list(LABEL_COLUMNS),
+        "label_num_version": LABEL_VERSION,
+        "descriptor_columns": {"num_unit": NUM_UNIT_DESCRIPTION},
         "id_columns": list(ID_COLUMNS),
         "feature_columns": [
             "text_hash",
@@ -357,13 +376,11 @@ def settings_record(cfg: TwlConfig, s: ReplaySettings) -> dict[str, object]:
         ],
         "training_label": TRAINING_LABEL,
         "labels": {
-            "label_num": "THE TRAINING LABEL (Ali's scorer decision, 2026-11-19): every one of "
-            "the word's tokens under the number normalizer matches the turn's final, centres "
-            "within match_tol_s. INTERIM normalizer here: number words to digits (zero to "
-            "ninety) one token at a time, so 'twenty five' is not '25' and hundreds, decimals "
-            "and ordinals are not merged; thousands separators and currency signs dropped; "
-            "% as percent. Recomputed after step 1 with the full number normalizer (the new "
-            "registered scorer) from the words each hypothesis record keeps",
+            "label_num": "THE TRAINING LABEL (Ali's scorer decision, 2026-11-19): every token "
+            "of the word's number unit under the number-normalized scorer (twl.wer."
+            "normalize_num, Whisper's English normalizer; units: twl.survival_labels."
+            "num_units) matches the turn's final, unit centres within match_tol_s. Step 1's "
+            "own files used an interim per-word normalizer, recomputed by relabel_num.py",
             "label_wer": "the same alignment on twl.wer.normalize, the registered scorer of the "
             "passes so far (lowercase, non-word characters split, 0-10 spelled; it does not "
             "normalize other numbers: 12/twelve, 1,000/1000, 10%/10 percent are errors)",
@@ -432,6 +449,7 @@ ROW_SCHEMA = pa.schema(
         ("label_num", pa.int8()),
         ("label_wer", pa.int8()),
         ("label_exact", pa.int8()),
+        ("num_unit", pa.int8()),
     ]
 )
 
@@ -669,7 +687,7 @@ def run(args: argparse.Namespace) -> None:
                 turn_recs.append(
                     {
                         **asdict(t),
-                        "final": " ".join(w.text for w in final),
+                        "final": join_words([w.text for w in final]),
                         "final_words": [
                             {"text": w.text, "start_s": w.start_s, "end_s": w.end_s} for w in final
                         ],
