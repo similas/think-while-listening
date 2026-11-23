@@ -20,6 +20,15 @@ Prints, per claim: REGISTERED (the registry's line), SENS (the same pattern
 on the shadow's output) and the flagged turns excluded. The claims re-scored
 must be exactly those preroll_exposure.py finds exposed.
 
+Two further variants, never run by the claim registry:
+- --with-unchecked: the unchecked turns (no saved segment, timeline or
+  played file: their pre-roll is unknown too) are removed with the flagged
+  ones; lines SENS+U;
+- --gates: the scorers whose item maps read transcripts (pass 2, P2b, the
+  planner) re-run with the flagged turns' transcripts blanked ("blank": the
+  records stay, so no split item is un-voided); lines GATE. Unchanged lines
+  mean the map does not lean on those transcripts.
+
     preroll_sensitivity.py --audit FILE.jsonl [--log FILE]
 """
 
@@ -43,6 +52,11 @@ from scripts.preroll_exposure import classes, describe, exposure
 
 FLAGGED = ("stale", "unverifiable")
 # source -> (mode, the claims whose population the exposure found flagged turns in)
+GATES = {
+    "pass2": ("blank", ("pass2",)),
+    "p2": ("blank", ("p2b",)),
+    "planner": ("blank", ("planner_validation", "planner_dp", "planner_noduty")),
+}
 EXPOSED = {
     "p2": ("invalid", ("p2a_pop", "p2a", "listener_c")),
     "figs": ("invalid", ("stages_multi_step", "stages_longest")),
@@ -51,11 +65,11 @@ EXPOSED = {
 }
 
 
-def flagged(audit: Path) -> dict[str, set[int]]:
+def flagged(audit: Path, which: tuple[str, ...] = FLAGGED) -> dict[str, set[int]]:
     out: dict[str, set[int]] = defaultdict(set)
     for raw in audit.read_text().splitlines():
         r = json.loads(raw)
-        if r["cls"] in FLAGGED:
+        if r["cls"] in which:
             out[str(r["run"])].add(int(r["turn"]))
     return out
 
@@ -65,6 +79,7 @@ def shadow(root: Path, flags: dict[str, set[int]], mode: str) -> int:
     shutil.copytree(REPO / "src", root / "src", ignore=shutil.ignore_patterns("__pycache__"))
     raw = root / "results/raw"
     raw.mkdir(parents=True)
+    (root / "results/tables").mkdir()  # a scorer's own table lands in the shadow
     for e in (REPO / "results/raw").iterdir():
         if e.name != "reactive":
             (raw / e.name).symlink_to(e)
@@ -83,7 +98,11 @@ def shadow(root: Path, flags: dict[str, set[int]], mode: str) -> int:
         for text in f.read_text().splitlines():
             r = json.loads(text) if text.strip() else None
             hit = r is not None and r.get("turn") in turns
-            if hit and r["kind"] == "turn_record" and mode == "invalid":
+            if hit and r["kind"] == "turn_record" and mode == "blank":
+                r["transcript"] = ""
+                text = json.dumps(r)
+                changed += 1
+            elif hit and r["kind"] == "turn_record" and mode == "invalid":
                 r["valid"] = False
                 r["invalid_reason"] = ";".join(x for x in (r.get("invalid_reason"), "preroll") if x)
                 text = json.dumps(r)
@@ -123,6 +142,8 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     p.add_argument("--audit", type=Path, required=True, help="preroll_audit.py --out")
     p.add_argument("--log", type=Path, default=None)
+    p.add_argument("--with-unchecked", action="store_true", help="also remove unchecked turns")
+    p.add_argument("--gates", action="store_true", help="re-run the transcript-mapped gates")
     args = p.parse_args()
     build = subprocess.run(
         ["git", "describe", "--always", "--dirty", "--abbrev=40"],
@@ -133,33 +154,44 @@ def main() -> None:
     ).stdout.strip()
     if args.log and build.endswith("-dirty"):
         raise SystemExit(f"build {build} is dirty: a logged run needs a clean tree")
-    flags = flagged(args.audit)
+    which = (*FLAGGED, "unchecked") if args.with_unchecked else FLAGGED
+    flags = flagged(args.audit, which)
     claims = {c.key: c for c in CLAIMS}
     with contextlib.redirect_stdout(io.StringIO()):
-        _, exposed, _ = exposure(classes(args.audit))
+        _, exposed, _ = exposure(classes(args.audit), which)
+    targets = GATES if args.gates else EXPOSED
     planned = {k for _, keys in EXPOSED.values() for k in keys}
-    if planned != set(exposed):
+    if not args.gates and planned != set(exposed):
         raise SystemExit(f"re-scored {sorted(planned)} but exposed {sorted(exposed)}")
+    tag = "GATE" if args.gates else ("SENS+U" if args.with_unchecked else "SENS")
     lines = [
-        f"# preroll_sensitivity.py build {build}; audit {args.audit}; flagged turns "
-        f"{sum(len(v) for v in flags.values())} in {len(flags)} runs"
+        f"# preroll_sensitivity.py build {build}; audit {args.audit}; removed classes "
+        f"{', '.join(which)}; turns {sum(len(v) for v in flags.values())} in {len(flags)} runs"
     ]
     with tempfile.TemporaryDirectory() as tmp:
         roots = {}
-        for mode in ("invalid", "drop"):
+        for mode in sorted({m for m, _ in targets.values()}):
             roots[mode] = Path(tmp) / mode
             n = shadow(roots[mode], flags, mode)
             lines.append(f"# shadow {mode}: {n} turn records changed")
-        for key, (mode, keys) in EXPOSED.items():
+        for key, (mode, keys) in targets.items():
             out = run_source(roots[mode], key)
             for ck in keys:
                 c = claims[ck]
                 hits = [ln for ln in out.splitlines() if re.search(c.pattern, ln)]
+                lines.append(f"REGISTERED {ck}: {line(key, c.pattern).string.strip()}")
+                if len(hits) != 1 and tag != "SENS":  # a variant: say so, go on
+                    voids = [ln.strip() for ln in out.splitlines() if "VOID" in ln]
+                    lines.append(
+                        f"{tag} {ck} ({mode}): no line on the shadow ({len(hits)} match); the "
+                        f"scorer's own lines with VOID: {' | '.join(voids) or 'none'}"
+                    )
+                    continue
                 if len(hits) != 1:
                     raise SystemExit(f"{ck}: {len(hits)} lines on the shadow match {c.pattern!r}")
-                lines.append(f"REGISTERED {ck}: {line(key, c.pattern).string.strip()}")
-                lines.append(f"SENS {ck} ({mode}): {hits[0].strip()}")
-                lines.append(f"EXCLUDED {ck}: {', '.join(describe(r) for r in exposed[ck])}")
+                lines.append(f"{tag} {ck} ({mode}): {hits[0].strip()}")
+                if ck in exposed:
+                    lines.append(f"EXCLUDED {ck}: {', '.join(describe(r) for r in exposed[ck])}")
     text = "\n".join(lines) + "\n"
     sys.stdout.write(text)
     if args.log:

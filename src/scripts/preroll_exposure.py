@@ -63,6 +63,7 @@ def describe(r: dict[str, object]) -> str:
 
 def exposure(
     cls: dict[tuple[str, int], dict[str, object]],
+    flagged: tuple[str, ...] = FLAGGED,
 ) -> tuple[list[str], dict[str, list[dict[str, object]]], dict[str, set[tuple[str, int]]]]:
     """(the EXPOSURE lines, the flagged rows per exposed claim, the gate sets)."""
     lines: list[str] = []
@@ -84,7 +85,7 @@ def exposure(
                 c[str(r["cls"])] += 1
                 if r["cls"] == "unchecked":
                     why[str(r["why"])] += 1
-                if r["cls"] in FLAGGED:
+                if r["cls"] in flagged:
                     flagged_rows.append(r)
             line = (
                 f"EXPOSURE {mod.removeprefix('pop_')} {key}{' [gate]' if is_gate(key) else ''}: "
