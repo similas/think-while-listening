@@ -170,10 +170,11 @@
   "scored": "2026-10-13 — P2a AND P2b SCORED (registered 2026-09-23g, never scored until now)",
   "verdict": "BELOW THE REGISTERED BAND, NOT FALSIFIED: c = 492 ms/s [439, 574], n=960 turns over 43 runs (run bootstrap)",
   "corrections": [
-   "2026-10-13 — CORRECTION to \"P2a AND P2b SCORED\""
+   "2026-10-13 — CORRECTION to \"P2a AND P2b SCORED\"",
+   "2026-11-22 — PRE-ROLL DEFECT found by the label replay: content audit (3 stale turns in P2a's population; P2a and pass 6 qualified; no re-scored verdict changes), fix, pre-roll logged; DECISIONS on 7257b7f (Ali): sealed 80, LA-3, comparator, off-policy, Pareto, selection set, runaway guard, oracle ceiling, order"
   ],
-  "notes": "Withdrawn first scoring (677537d) said HOLDS, c=572 [516, 620] n=503, on a population that broke the amendment. Reported with the band. The separate-arm coding (576 [518, 638], 1717/2000 draws) was added after the first scorer's numbers and is labelled post hoc. Scorer written after the data.",
-  "qualifier": "scorer written after the data; band [500, 1500] ms/s; separate-arm coding 576 is post hoc"
+  "notes": "Withdrawn first scoring (677537d) said HOLDS, c=572 [516, 620] n=503, on a population that broke the amendment. Reported with the band. The separate-arm coding (576 [518, 638], 1717/2000 draws) was added after the first scorer's numbers and is labelled post hoc. Scorer written after the data. Pre-roll qualifier: preroll_sensitivity.py, results/raw/run_logs/20261122_preroll_audit/sensitivity.log.",
+  "qualifier": "scorer written after the data; band [500, 1500] ms/s; separate-arm coding 576 is post hoc; pre-roll defect: 3 of its 960 turns held stale audio; without them c = 492 ms/s [440, 577] (post hoc)"
  },
  {
   "id": "P2b",
@@ -398,8 +399,11 @@
   "scored": "2026-10-09 — PASS 8 (f*), PASS 6 (ALLOCATOR), P8. Scored once, as registered in 71d1612 + amendments",
   "verdict": "every registered check passes: 576 decisions (537 below_break_even, 39 infeasible), 0 spends, 0 drafts",
   "corrections": [
-   "2026-10-09 — CORRECTION to \"PASS 8 (f*), PASS 6, P8\": pass 8's f* was on mixed clocks. Corrected, it lands on the prediction"
-  ]
+   "2026-10-09 — CORRECTION to \"PASS 8 (f*), PASS 6, P8\": pass 8's f* was on mixed clocks. Corrected, it lands on the prediction",
+   "2026-11-22 — PRE-ROLL DEFECT found by the label replay: content audit (3 stale turns in P2a's population; P2a and pass 6 qualified; no re-scored verdict changes), fix, pre-roll logged; DECISIONS on 7257b7f (Ali): sealed 80, LA-3, comparator, off-policy, Pareto, selection set, runaway guard, oracle ceiling, order"
+  ],
+  "qualifier": "pre-roll defect: of its 81 turns 71 cleared, 1 unverifiable, 9 unchecked (no saved segment); without the unverifiable one 575 decisions (536 below_break_even, 39 infeasible), 0 spends, 0 drafts (post hoc)",
+  "notes": "Pre-roll qualifier: preroll_sensitivity.py, results/raw/run_logs/20261122_preroll_audit/sensitivity.log."
  },
  {
   "id": "pass 7",

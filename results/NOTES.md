@@ -8997,3 +8997,227 @@ s) after the previous turn closed.
 People's Speech: decision 2 trains the primary model on it, and Ali approved
 it "at both parts" on 2026-11-19: the subset is both downloaded shards, all
 7756 files. Closed.
+
+## 2026-11-22 — PRE-ROLL DEFECT found by the label replay: content audit (3 stale turns in P2a's population; P2a and pass 6 qualified; no re-scored verdict changes), fix, pre-roll logged; DECISIONS on 7257b7f (Ali): sealed 80, LA-3, comparator, off-policy, Pareto, selection set, runaway guard, oracle ceiling, order
+
+Ali's instruction for the audit (2026-11-20), quoted: "Audit: your four
+steps, approved. The content check is the record; the timing method is
+withdrawn in place. Report per pass the affected-turn count under that
+pass's own filter, verified against the scorer's code, not its
+description. P2 carries the qualifier and the re-score without the affected
+turns as a sensitivity; if any other pass's registered population contains
+an affected turn, same treatment. Pre-roll length logged at turn open from
+the next run."
+
+### The defect
+
+stt.py fills its 0.6 s pre-roll ring (PREROLL_S, 30 delivered chunks of 20
+ms) only while no turn is open, and never emptied it at a turn's close. A
+turn opening fewer than 30 chunks of DELIVERED audio after the previous
+close therefore began with audio from before the previous turn opened.
+Step 1's replay found it (2026-11-19). The criterion is in delivered audio,
+not wall time: during the playback gate's wait no audio is delivered.
+
+### The timing audit: WITHDRAWN in place
+
+A first audit, drafted here and never committed, measured (next open -
+previous close) on the turn records' wall clock and concluded that no valid
+scored turn was affected. Withdrawn by Ali's instruction above. Its
+conclusion was false, for three reasons the reviewer found:
+- wall time is not delivered audio: its bound for gated runs (gate wait +
+  start_secs) counted a wait in which nothing reaches the ring;
+- it skipped turn pairs whose previous record has no vad_user_stopped,
+  which is where VAD splits put the stale turns;
+- its "valid and scored" (valid, not warm-up, not washout) is not the
+  filter of the scorers it was meant to stand for.
+
+### The content audit: the record
+
+src/scripts/preroll_audit.py at c746e14, run on that clean build:
+results/raw/run_logs/20261122_preroll_audit/audit.log, every turn's class
+in turns.jsonl beside it. Each final's saved buffer is located in the
+delivered stream rebuilt from the played files and playback_timeline.json
+(after the pipeline's own int16 -> float -> int16 conversion). With the
+head saved (no commit), its 30 head chunks are compared with what a fresh
+ring holds. With the head cut off by a commit, the gap to the previous
+close must be at least 30 chunks and silent (no chunk above -90 dBFS RMS in
+[previous close, open - stop_secs), stop_secs from a run config whose
+sha256 is the run's config_hash), or the turn is unverifiable. From the
+log:
+
+    PREROLL AUDIT: 318 runs, 9270 turn records
+    PREROLL CLASS fresh (content): 7010 records, of them valid 6927
+    PREROLL CLASS fresh (position): 852 records, of them valid 820
+    PREROLL CLASS stale (content): 130 records, of them valid 29
+    PREROLL CLASS unchecked (no saved segment): 867 records, of them valid 494
+    PREROLL CLASS unchecked (no timeline): 122 records, of them valid 113
+    PREROLL CLASS unchecked (played file missing): 54 records, of them valid 18
+    PREROLL CLASS unverifiable (gap under the pre-roll): 2 records, of them valid 0
+    PREROLL CLASS unverifiable (segment overwritten by a later final): 233 records, of them valid 57
+
+Checks, in the same log:
+- CROSSCHECK, on the 7140 turns with the head saved: no content-stale turn
+  passes the position rule (130 caught: 29 by the gap, 101 by sound in
+  it); zero misses in 130 excludes a miss rate above 3/130 at 95 % (the
+  rule of three); of the 82 whose position verdict uses an overwritten
+  buffer's close, none is content-stale.
+- SELFCHECK: head-saved buffers cut as a commit cuts them are found at the
+  same position 6759 times, elsewhere 0 times, not found 182 times.
+- POSITION_MAX: the loudest gap among the 852 turns cleared by position is
+  -101.4 dBFS.
+- Four (commit, recorded config_hash) combinations, over three commits, do
+  not hash to the config at that commit; no record's class rests on them
+  (no record is classed "run config unverified").
+
+A SECOND DEFECT, found by the audit's reviewer. A final saves its buffer as
+segments/turn_NNN.wav, NNN being the turn current when it completes; a
+later final under the same number overwrote the file after its record was
+written. 233 records (57 valid) point at a file that is not their own
+buffer (its length is not their stt_audio_s; the smallest difference among
+them is 5.0 chunks). An overwrite by a buffer of exactly the same length
+cannot be detected this way. Their own pre-roll is unknown: they are
+unverifiable, not stale. c746e14 writes a second final's segment beside
+the first (turn_NNN_2.wav).
+
+### Per pass, under each scorer's own filter: the claim registry
+
+src/scripts/preroll_exposure.py at c746e14:
+results/raw/run_logs/20261122_preroll_audit/exposure.log. One population
+module per registered scorer that reads live turns
+(src/scripts/preroll_pop/), each calling the scorer's own functions or
+copying an inline filter verbatim. Run with --verify, every module's checks
+exit 0 (in the log); they compare n, counts or values with the registry's
+own line or the scorer's own output. Eight of the 73 registered claims have
+no population: the six prefix-probe claims and worker_memory read no live
+turn, and llm_rate is a whole-run rate. Of the others, those whose
+population holds a flagged turn:
+
+    P2a, P2a population, listener c  3 stale (51ac10, 1d8be7, f43dae t16,
+                                     360 ms each) of 960 turns
+    stages_multi_step (Fig. 1)       6 unverifiable of 216
+    stages_longest (Fig. 1)          1 unverifiable of 15
+    stale, stale_net                 3 unverifiable and 6 unchecked (no
+                                     saved segment) of 58 frozen turns
+    alloc_counts (pass 6)            1 unverifiable and 9 unchecked (no
+                                     saved segment) of 81
+
+The other registered claims' populations hold no stale or unverifiable
+turn (exposure.log, line by line). Gates (turns that decide membership,
+pairing or the item, not the value):
+- transcript alignment (the log's category: "on the file their buffer
+  spans or unmapped"): every flagged turn the audit could locate (pass 2:
+  20, P2b: 9, the planner: 10; 69 more of the planner's are in runs mapped
+  by the recorded utterance) is on its own file or unmapped; 39, 21 and 19
+  are overwritten and could not be located, so the alignment of pass 2's
+  P3, P2b and the planner is unchecked for them; the same gates also hold
+  63, 33 and 102 unchecked turns (no saved segment);
+- stale_net's overlap windows (timing only): 7 stale, 22 unverifiable.
+The unchecked turns were not removed in the sensitivity: the shadow removes
+stale and unverifiable turns only. A second sensitivity with them removed,
+and the gates re-run with their flagged turns dropped from alignment, are
+next.
+
+NOT YET AUDITED: ledger rows outside the claim registry. The reviewer's
+list of those whose runs hold flagged turns: P1, word density, pass 2's P4
+and P7, P5, P9b, P2b's descriptive 1.41x (not yet computed from every
+ledger row's runs). P1 and word density have no committed scorer.
+
+### Sensitivity, post hoc: the exposed claims without the flagged turns
+
+src/scripts/preroll_sensitivity.py at c746e14:
+results/raw/run_logs/20261122_preroll_audit/sensitivity.log. Each exposed
+scorer re-run unchanged on a shadow of the repository with the stale and
+unverifiable turns marked invalid (or, for the scorers with no validity
+filter, deleted with their decision and stale-decode records). Registered,
+then sensitivity:
+
+    P2a population   960 turns, 43 runs -> 957 turns, 43 runs
+    listener c       c 492 ms/s [439, 574] -> c 492 ms/s [440, 577]
+    P2a              BELOW THE REGISTERED BAND, NOT FALSIFIED (unchanged)
+    Fig. 1 multi     TTFA 4353 ms, STT final 2639 ms (62%), LLM first
+                     token 215 ms (5%), n=216 -> 4353, 2639 (62%), 214 ms
+                     (5%), n=210
+    Fig. 1 longest   TTFA 4305, STT final 2700 (64%), LLM first token 148
+                     ms (4%), n=15 -> 4305, 2700 (64%), 138 ms (3%), n=14
+    stale            58 decodes, raw median 3.096 J, total raw 302.12 J ->
+                     55, 2.764 J, 262.92 J
+    stale_net        mean 1.74 J, total 101.1 J, median 0.60 J, n=58 ->
+                     1.58 J, 86.9 J, 0.51 J, n=55
+    pass 6           576 decisions over 81 turns, 537 below break-even ->
+                     575 over 80, 536
+
+Among the outputs re-scored, no verdict changes; the stale-decode costs
+move the most (above). The registered verdicts stand; the
+ledger qualifies P2a and pass 6. The sensitivity lines are to be added to
+the claim registry as source preroll_sens once this entry is committed,
+with a qualifier on Fig. 1 and the stale-decode text.
+
+### The fix, and the pre-roll logged
+
+17a50c7 empties the ring at every close (a test reproduces the stale
+case). c746e14, from the next run on: an stt_open record at every open of
+the recognizer's buffer, on the turn the observer opened (turn, t_ms,
+preroll_s; the integration test pins that it lands on turn 1), and
+preroll_s on the turn record with the final, carried with the buffer.
+Still not logged (reviewer): the delivered-sample index at each open and
+close, a hash of every buffer's head (867 records had no saved segment),
+and a snapshot of the run config (four configs could not be verified).
+Proposed before the next live run.
+
+### Step 1's labels
+
+They stand. They were made with contiguous file audio as each turn's
+pre-roll; live after the fix, a turn opening less than PREROLL_S after the
+previous close holds only the audio since the close. The extra audio
+starts after the previous close minus PREROLL_S, and the close comes
+stop_secs (0.8 s) of Silero non-speech after the previous turn's speech:
+so the extra audio is at least 0.2 s past that speech and non-speech to
+Silero at the live thresholds (a span shorter than start_secs could still
+sit in it; not measured). A stated departure.
+
+### DECISIONS on 7257b7f (Ali, 2026-11-20), quoted
+
+"1. Sealed 80: (d). Offline test only after step 5, everything frozen.
+2. LA-3: (b). Pilot on 20 files, then the single_step replay; ~1 h approved.
+3. Comparator: (a), per-word LA-2 offline (it commits more than the deployed
+per-segment one, so the comparison is conservative). The deployed
+per-segment point comes from the live arm in step 5.
+4. Off-policy: (b). Pareto on LA-2's stream, labelled as such; one
+closed-loop replay at the chosen τ on single_step. If the closed-loop
+committed fraction or precision falls short of the off-policy curve by more
+than the CI, do one on-policy relabel on LibriSpeech clean only and retrain;
+otherwise skip.
+5. Pareto: (a), pooled over words, with and without runaways, both
+registered.
+6. Selection set: (b), 574 items.
+7. Runaway guard: a hypothesis whose compression ratio exceeds
+faster-whisper's default threshold, or that repeats one token ≥ 5 times, is
+discarded before any committer sees it — LA and learned alike. Keep
+repetition count as a feature.
+8. Oracle ceiling: compute the oracle committer on the labels per corpus —
+commits every surviving word at its first appearance, never a non-survivor —
+committed fraction at the endpoint and commit lag. Report it beside LA-2.
+
+Order: pre-roll audit and stt.py fix → full number normalizer, label_num
+recomputation, step-1 tables regenerated → P4 re-scoring (post-hoc
+sensitivity, beside the registered verdicts) → runaway guard → oracle
+ceiling → LA-3 pilot and replay. Then draft the step-2 pre-registration with
+/preregister for me to rewrite and commit: prediction "at LA-2's
+false-commit rate, the committer closes at least half of the LA-2→oracle gap
+in committed fraction on the selection set; falsified below a quarter";
+primary model out-of-domain only, secondary adds unsealed multi_step; the
+Pareto as the metric; decisions 1–6 above. Step 2 does not start until my
+pre-registration is committed.
+
+Reviewer before every report. No compute on the box during a measured run."
+
+Decision 6 leaves out the 20 single_step items used before (rows 0-19); the
+selection set is the other 574. Decision 1 keeps the sealed 80 untouched
+until step 5.
+
+OPEN (Ali): decision 5 registers the Pareto "with and without runaways";
+decision 7 discards runaway hypotheses before any committer sees them. The
+two define a runaway differently: step 1's report (at least 20 scored
+words, one key 50 % or more of them) and the guard's (compression ratio
+above faster-whisper's default threshold, or one token repeated 5 times or
+more). Which one does decision 5 mean?
