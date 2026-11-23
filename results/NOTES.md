@@ -9562,3 +9562,62 @@ issued, unguarded: a committer that commits earlier changes later buffers,
 so this is the off-policy ceiling (decision 4). Words never reached by a
 hypothesis before the endpoint are out of reach on this stream, which
 bounds the ceiling below 1.
+
+## 2026-11-23 — LA-3 REPLAY on single_step (decision 2): LA-3 commits 0.1878 of the finals' words at precision 0.9620, against LA-2's 0.4629 at 0.9561; a fence breach during the run, VOID or qualified is Ali's call
+
+Ali's decision 2 on 7257b7f (2026-11-20), quoted: "LA-3: (b). Pilot on 20
+files, then the single_step replay; ~1 h approved."
+
+The label replay with LocalAgreement-3 (commit_labels.py --agreement 3,
+build 9862be3; make check green before launch, 445 passed, not logged),
+under the thermal watchdog proven attached:
+- pilot, 20 files, 13:29:05-13:31:13, results/raw/run_logs/20261123_la3_pilot/
+  (125 s, peak tj 64.2 C; la3_point.log: LA-3 re-simulated reproduces the
+  replay's commits on 824/824 rows);
+- all 594 single_step files, 13:34:20-14:38:11,
+  results/raw/run_logs/20261123_la3_full/ (3821 s wall, peak tj 67.2 C,
+  below the first trip at 74 C).
+Both driver.log files end with "STOP: the watchdog ... is gone" just after
+"=== done": the watchdog exits when the driver does, and the guard loop
+then fires on an already finished group (as on 2026-11-20). The replay saw
+the same turns as LA-2's (638 turns, 39 of 594 files split, final WER
+0.0480), so the finals' scored words, 15705, are a shared denominator.
+
+FENCE BREACH, reported by the reviewer: during the full run, at
+13:43:35-13:43:41, I created src/scripts/step2_anchors.py and ran ruff on it
+and a short in-place edit, seconds of CPU; log reads followed at 13:49,
+14:34 and 14:34. Ali's rule: "No compute on the box during a measured run."
+The replay runs on a simulated clock from modelled decode times, and the
+running commit_labels.py does not import the new file, so its labels and
+LA-3's commits cannot have changed; the wall time (3821 s) and the peak tj
+can have. VOID or qualified is Ali's decision.
+
+Departure from the run skill's "no swap in use": 675 MB of swap was in use
+when read before the pilot (13:28:57) and was not re-read before the full
+run; what held it was not measured at the time (read afterwards: none of it
+held by the llama server or spotifyd). Swap activity during the run was not
+logged; the next driver logs tj, swap used and vmstat si/so at start and
+through the run.
+
+LA-3's operating point (la_operating_point.py at e3db8f5:
+results/raw/run_logs/20261123_la3_full/la3_point.log; LA-3 re-simulated
+reproduces the replay's commits on all 28558 rows). [all], unguarded:
+
+    single_step                 committed                       correct committed               precision
+    LA-3, 594 files             2949/15705 = 0.1878             2837/15705 = 0.1806             2837/2949 = 0.9620 [0.9534, 0.9699] (484 files)
+                                [0.1738, 0.2027]                [0.1672, 0.1952]
+    LA-2, 594 files             7270/15705 = 0.4629             6951/15705 = 0.4426             6951/7270 = 0.9561 [0.9494, 0.9622] (581 files)
+                                [0.4457, 0.4796]                [0.4251, 0.4597]
+    LA-3, selection set (574)   2867/15220 = 0.1884             2755/15220 = 0.1810             2755/2867 = 0.9609 [0.9524, 0.9686] (466 files)
+                                [0.1732, 0.2040]                [0.1661, 0.1963]
+    LA-2, selection set (574)   7054/15220 = 0.4635             6743/15220 = 0.4430             6743/7054 = 0.9559 [0.9490, 0.9624] (561 files)
+                                [0.4451, 0.4816]                [0.4250, 0.4607]
+
+(LA-2: results/raw/run_logs/20261123_la_point_num/la_point.log, and for
+the selection set results/raw/run_logs/20261123_step2_anchors/la2_selection.log;
+95 % percentile bootstrap over files.) LA-3 commits 0.41 of what LA-2 does
+(0.1878 / 0.4629). The precision difference is not tested here: the two
+intervals cover different files (LA-3 commits on 484 files, LA-2 on 581).
+DESCRIPTIVE: LA-3 runs on its own stream (its commits trim its own
+buffers), so it pairs with LA-2 and the learned committer by file only,
+never by word. These figures are unguarded; step 2 scores guarded.
