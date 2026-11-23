@@ -9494,3 +9494,71 @@ reading) would discard, in the order above: one token 5+ times anywhere 1,
 30 s: 0 on every corpus. This bears on the open question of decision 5
 (NOTES 2026-11-22): under the guard's definition, the "without runaways"
 Pareto leaves out more rows than under step 1's.
+
+## 2026-11-23 — ORACLE CEILING (decision 8): on step 1's stream the oracle commits 0.36 to 0.85 of the finals' words against LA-2's correct-committed 0.05 to 0.58; on the words both commit, LA-2 commits 2.3 to 2.5 s later (median)
+
+Ali's decision 8 on 7257b7f (2026-11-20), quoted: "Oracle ceiling: compute
+the oracle committer on the labels per corpus — commits every surviving
+word at its first appearance, never a non-survivor — committed fraction at
+the endpoint and commit lag. Report it beside LA-2."
+
+src/scripts/oracle_ceiling.py at b84612f (first at d3964ea) on the
+relabelled files: results/raw/run_logs/20261123_oracle/oracle.log (inputs'
+sha256 in its header). Each offered hypothesis's fresh words are cut into
+number units and aligned to the turn's final as label_num is; the oracle
+commits a final unit at the first hypothesis it survives in, and nothing
+else (precision 1 by construction). Committed fraction: the scored words of
+the units it commits / the finals' scored words (LA-2's denominator).
+Beside it, LA-2's CORRECT-committed fraction (surviving commits, same
+denominator): the gap is taken against correct commits because the oracle
+never commits a non-survivor, and the step-2 prediction sets its bar at
+LA-2's false-commit rate. (LA-2's committed fraction with its false commits
+is in la_point.log of 2026-11-23.) Commit lag: the simulated clock at the
+committing hypothesis's issue minus the end of the committing hypothesis
+unit's last word, per committed word. ORACLE_CHECK: the oracle's alignment
+reproduces label_num on every row except those relabel_num.py set to -1
+(2 long_digit, 364 multi_step, 79 People's Speech).
+
+Files in parentheses; 95 % percentile bootstrap over files in brackets; the
+unguarded stream, [all]:
+
+    corpus                  oracle committed                LA-2 correct committed          paired lag, LA-2 - oracle (words, files)
+    mqa-short_digit         0.3983 [0.3551, 0.4470] (100)   0.0519 [0.0284, 0.0766] (100)   2.39 s [2.27, 2.41] (27, 16)
+    mqa-long_digit          0.3600 [0.3282, 0.3936] (173)   0.0889 [0.0658, 0.1131] (173)   2.30 s [1.46, 2.39] (104, 45)
+    mqa-single_step         0.7775 [0.7665, 0.7889] (594)   0.4426 [0.4251, 0.4597] (594)   2.47 s [2.47, 2.47] (6966, 577)
+      selection set (574)   0.7786 [0.7668, 0.7900] (574)   0.4430 [0.4250, 0.4607] (574)   2.47 s
+    mqa-multi_step          0.8529 [0.8473, 0.8585] (1322)  0.5812 [0.5698, 0.5922] (1322)  2.49 s [2.48, 2.49] (35057, 1306)
+    librispeech-test-clean  0.7104 [0.7021, 0.7180] (2620)  0.3398 [0.3276, 0.3512] (2620)  2.47 s [2.46, 2.47] (17885, 1528)
+    librispeech-test-other  0.6132 [0.6043, 0.6217] (2939)  0.2126 [0.2023, 0.2228] (2939)  2.45 s [2.45, 2.47] (11176, 1337)
+    peoples-speech          0.5480 [0.5394, 0.5560] (7587)  0.1988 [0.1916, 0.2058] (7587)  2.47 s [2.47, 2.47] (24681, 2716)
+
+The selection set is single_step items 20 and up (decision 6): the
+pre-registration's figure. Lag levels, medians over each committer's own
+words: oracle 0.73 to 0.97 s, LA-2 2.79 to 3.77 s (the log, with CIs and
+word counts). The LA-2 -> oracle gap in committed words (oracle minus
+LA-2's correct commits): 160 of 462, 244 of 900, 5259 of 15705, 16393 of
+60324, 19516 of 52650, 21078 of 52621, 43370 of 124194. Without the
+hypotheses the runaway guard would discard, the oracle moves at most
+0.0065 (short_digit 0.3918).
+
+Where the digit sets differ (ORACLE_CHECK and MISSED lines):
+- both columns credit part-heard numbers in a few units: words credited to
+  the oracle from a hypothesis unit with fewer tokens than its final unit
+  1 (short_digit), 14 (long_digit); words of units LA-2 committed only the
+  head of (counted correct by its row label) 6 and 48; elsewhere at most
+  311 (People's Speech oracle) and 159 (multi_step LA-2);
+- the words the oracle never commits, by unit and reach (a hypothesis unit
+  centred within 1.0 s of the final unit): short_digit numbers 155 reached
+  but never surviving, 104 never reached, other words 19 reached; long_digit
+  numbers 262 and 219, other words 78 and 17. On both sets numbers are the
+  majority of the misses (259 of 278, 481 of 576): heard but misheard or
+  only partly heard (a number heard in part does not survive: the
+  2026-11-22 report's decision 1, open), or never reached on this stream.
+- final units with two surviving LA-2 commits in different hypotheses: 0,
+  0, 3, 21, 6, 8, 26.
+
+Caveats: the oracle on step 1's stream, the hypotheses LA-2's replay
+issued, unguarded: a committer that commits earlier changes later buffers,
+so this is the off-policy ceiling (decision 4). Words never reached by a
+hypothesis before the endpoint are out of reach on this stream, which
+bounds the ceiling below 1.
