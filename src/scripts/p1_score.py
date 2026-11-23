@@ -36,6 +36,8 @@ import random
 import statistics
 import subprocess
 import sys
+from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 
 RAW = Path("results/raw/reactive")
@@ -77,7 +79,7 @@ SETS = {
         ),
     },
     "word density": {
-        "single_step (17)": (
+        "single_step_reasoning (20 items)": (
             "20261001-163635-51ac10",
             "20261001-164213-1d8be7",
             "20261001-164736-f43dae",
@@ -85,34 +87,83 @@ SETS = {
     },
 }
 MARKS = ("vad_user_stopped", "stt_final", "audio_out_first", "speech_end_est")
-BOOT = 2000
+BOOT = 4000  # stage_decomposition.boot_ci (4b59f1e), seed 0: reproduces 8 of the 9 recorded CIs
 
 
-def turns(run: str) -> list[tuple[str, int, float, float]]:
-    """(run, turn, share, ttfa_ms) per scored turn."""
-    out = []
-    for line in (RAW / f"reactive-{run}" / "turns.jsonl").open():
+@dataclass
+class Run:
+    rows: list[tuple[str, int, float, float, float]]  # run, turn, share, ttfa_ms, stt_ms
+    valid: int
+    no_marks: list[int]  # valid turns dropped for a missing mark
+    nonpositive: int  # valid turns dropped for TTFA <= 0
+    build: str
+    config_hash: str
+
+
+def read_run(run: str) -> Run:
+    path = RAW / f"reactive-{run}" / "turns.jsonl"
+    meta = json.loads(path.open().readline())
+    out = Run([], 0, [], 0, str(meta.get("git_commit", "")), str(meta.get("config_hash", ""))[:8])
+    for line in path.open():
         t = json.loads(line)
         if t.get("kind") != "turn_record" or not t.get("valid"):
             continue
         if t.get("warmup") or t.get("washout"):
             continue
+        out.valid += 1
         st = t.get("stages_ms") or {}
         if not all(k in st for k in MARKS):
+            out.no_marks.append(int(t["turn"]))
             continue
         ttfa = st["audio_out_first"] - st["speech_end_est"]
         if ttfa <= 0:
+            out.nonpositive += 1
             continue
-        share = (st["stt_final"] - st["vad_user_stopped"]) / ttfa
-        out.append((f"reactive-{run}", int(t["turn"]), share, ttfa))
+        stt = st["stt_final"] - st["vad_user_stopped"]
+        out.rows.append((f"reactive-{run}", int(t["turn"]), stt / ttfa, ttfa, stt))
     return out
 
 
 def median_ci(xs: list[float]) -> str:
+    """Median and percentile bootstrap over turns (the recorded method)."""
     rng = random.Random(0)
     d = sorted(statistics.median([xs[rng.randrange(len(xs))] for _ in xs]) for _ in range(BOOT))
     lo, hi = d[int(0.025 * BOOT)], d[int(0.975 * BOOT) - 1]
     return f"{100 * statistics.median(xs):.1f}% [{100 * lo:.1f}, {100 * hi:.1f}]"
+
+
+def by_item(rows: list[tuple[str, int, float, float, float]]) -> list[list[float]]:
+    """Shares grouped by item: a turn index is the same file in every rep."""
+    g: dict[int, list[float]] = defaultdict(list)
+    for _, turn, share, _, _ in rows:
+        g[turn].append(share)
+    return list(g.values())
+
+
+def item_draws(items: list[list[float]], rng: random.Random) -> list[float]:
+    return [
+        statistics.median([x for _ in items for x in items[rng.randrange(len(items))]])
+        for _ in range(BOOT)
+    ]
+
+
+def item_ci(items: list[list[float]]) -> str:
+    """Median, percentile bootstrap over items (all reps of a resampled item)."""
+    d = sorted(item_draws(items, random.Random(0)))
+    lo, hi = d[int(0.025 * BOOT)], d[int(0.975 * BOOT) - 1]
+    pooled = [x for v in items for x in v]
+    return f"{100 * statistics.median(pooled):.1f}% [{100 * lo:.1f}, {100 * hi:.1f}]"
+
+
+def diff_ci(a: list[list[float]], b: list[list[float]]) -> str:
+    """Median share a - b, each set's items resampled independently."""
+    rng = random.Random(0)
+    da, db = item_draws(a, rng), item_draws(b, rng)
+    d = sorted(x - y for x, y in zip(da, db, strict=True))
+    lo, hi = d[int(0.025 * BOOT)], d[int(0.975 * BOOT) - 1]
+    pa = statistics.median([x for v in a for x in v])
+    pb = statistics.median([x for v in b for x in v])
+    return f"{100 * (pa - pb):+.1f} points [{100 * lo:+.1f}, {100 * hi:+.1f}]"
 
 
 def main() -> None:
@@ -136,24 +187,61 @@ def main() -> None:
     lines = [
         f"# p1_score.py build {build}; {' '.join(sys.argv[1:])}; scorer written after the data"
     ]
+    items: dict[tuple[str, str], list[list[float]]] = {}
     for block, sets in SETS.items():
         for name, runs in sets.items():
-            rows = [x for r in runs for x in turns(r)]
-            shares = [s for _, _, s, _ in rows]
+            got = [read_run(r) for r in runs]
+            rows = [x for g in got for x in g.rows]
+            shares = [x[2] for x in rows]
+            items[(block, name)] = by_item(rows)
+            ratio = statistics.median([x[4] for x in rows]) / statistics.median(
+                [x[3] for x in rows]
+            )
             line = (
-                f"{block} {name}: n={len(rows)} turns; TTFA median "
-                f"{statistics.median([t for *_, t in rows]):.0f} ms; stt share {median_ci(shares)}"
+                f"{block} {name}: n={len(rows)} turns ({sum(g.valid for g in got)} valid; dropped "
+                f"for a missing mark {sum(len(g.no_marks) for g in got)}, for TTFA <= 0 "
+                f"{sum(g.nonpositive for g in got)}); TTFA median "
+                f"{statistics.median([x[3] for x in rows]):.0f} ms; stt share, median of "
+                f"per-turn ratios, {median_ci(shares)} over turns, {item_ci(items[(block, name)])}"
+                f" over items; ratio of medians {100 * ratio:.1f}%; builds "
+                f"{sorted({g.build[:7] for g in got})}, config "
+                f"{sorted({g.config_hash for g in got})}"
             )
             if args.audit:
-                c = [cls.get((run, turn), "not in the audit") for run, turn, _, _ in rows]
+                c = [cls.get((x[0], x[1]), "not in the audit") for x in rows]
+                if c.count("not in the audit"):
+                    raise SystemExit(
+                        f"{name}: {c.count('not in the audit')} turns not in the audit"
+                    )
                 flagged = {"stale", "unverifiable"}
-                kept = [s for (run, turn, s, _), k in zip(rows, c, strict=True) if k not in flagged]
+                named = [
+                    f"{x[0][-6:]} t{x[1]} {k}" for x, k in zip(rows, c, strict=True) if k in flagged
+                ]
+                kept = [x for x, k in zip(rows, c, strict=True) if k not in flagged]
+                dropped_flags = [
+                    f"{r[-6:]} t{t} {cls.get((f'reactive-{r}', t), '?')}"
+                    for r, g in zip(runs, got, strict=True)
+                    for t in g.no_marks
+                ]
                 line += (
                     f"; pre-roll: stale {c.count('stale')}, unverifiable {c.count('unverifiable')},"
-                    f" unchecked {c.count('unchecked')}; without the flagged n={len(kept)}, stt "
-                    f"share {median_ci(kept)} (post hoc)"
+                    f" unchecked {c.count('unchecked')} ({', '.join(named) or 'none'}); the turns "
+                    f"dropped for a mark: {', '.join(dropped_flags) or 'none'}; without the "
+                    f"flagged n={len(kept)}, stt share {median_ci([x[2] for x in kept])} over "
+                    f"turns, {item_ci(by_item(kept))} over items (post hoc)"
                 )
             lines.append(line)
+    p1, n1, wd = "P1 pass 1 (REACTIVE)", "P1 re-scored on NOPARTIAL (pass 1n)", "word density"
+    for label, a, b in (
+        ("P1 order, dev - short_digit (pass 1)", (p1, "dev"), (p1, "short_digit")),
+        ("P1 order, dev - short_digit (pass 1n)", (n1, "dev"), (n1, "short_digit")),
+        (
+            "word density, single_step - dev (pass 1)",
+            (wd, "single_step_reasoning (20 items)"),
+            (p1, "dev"),
+        ),
+    ):
+        lines.append(f"DIFF {label}: {diff_ci(items[a], items[b])} over items")
     text = "\n".join(lines) + "\n"
     sys.stdout.write(text)
     if args.log:
