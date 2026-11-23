@@ -17,6 +17,14 @@ rate reported without that baseline says nothing about the issue rule.
 
 Proportions carry Wilson intervals: one rep of 20 items cannot separate 20 %
 from 30 %, and the interval is what says so.
+
+--report (added 2026-11-23, post hoc; the default output is unchanged) prints
+the figures the 2026-10-06 CORRECTION to the P5 entry and the ledger cite,
+which no committed script printed: per arm, disjunct (a) alone (split turns
+over turns, Wilson), the same without turn 1, the items whose turn count
+differs from the baseline's (Wilson), and the achieved duty over the
+hypotheses with duty > 0 (the first of each turn records 0): median and the
+quartiles by the rule cadence_iqr uses, with the record count beside it.
 """
 
 from __future__ import annotations
@@ -121,10 +129,46 @@ def cadence_iqr(run_dir: Path) -> tuple[float, int]:
     return (q3 - q1, len(c))
 
 
+def report(name: str, d: Path, base: Path) -> str:
+    """The CORRECTION's figures for one arm (see the module docstring)."""
+    turns = load(d)
+    per_item = Counter(t["utterance"] for t in turns if t.get("utterance", -1) > 0)
+    split = [t for t in turns if per_item.get(t.get("utterance", -1), 0) > 1]
+    late1 = [t for t in turns if t["turn"] != 1]
+    split1 = [t for t in split if t["turn"] != 1]
+    base_items = Counter(t["utterance"] for t in load(base) if t.get("utterance", -1) > 0)
+    items = sorted(set(per_item) | set(base_items))
+    disc = sum(1 for u in items if per_item.get(u, 0) != base_items.get(u, 0))
+    hyps = [
+        json.loads(line)
+        for line in (d / "turns.jsonl").read_text().splitlines()
+        if line.strip() and '"hypothesis_record"' in line
+    ]
+    duty = sorted(h["duty"] for h in hyps if h.get("duty", 0) > 0)
+
+    def w(k: int, n: int) -> str:
+        lo, hi = wilson(k, n)
+        return f"{k}/{n} = {k / n:.2f} [{lo:.2f}, {hi:.2f}]"
+
+    out = (
+        f"  [report] {name}: disjunct (a) split turns {w(len(split), len(turns))}; without "
+        f"turn 1 {w(len(split1), len(late1))}; items whose turn count differs from the "
+        f"baseline's {w(disc, len(items))}"
+    )
+    if duty:
+        q1, q3 = duty[len(duty) // 4], duty[(3 * len(duty)) // 4]
+        out += (
+            f"; duty median {statistics.median(duty):.3f} [q1 {q1:.3f}, q3 {q3:.3f}] over "
+            f"{len(duty)} hypotheses with duty > 0, of {len(hyps)} records"
+        )
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--baseline", type=Path, required=True)
     ap.add_argument("--arm", action="append", nargs=2, metavar=("NAME", "DIR"), required=True)
+    ap.add_argument("--report", action="store_true", help="the CORRECTION's figures (post hoc)")
     a = ap.parse_args()
 
     base = arm_stats(a.baseline, None)
@@ -154,6 +198,10 @@ def main() -> None:
         )
         if s["unattributed"]:
             print(f"{'':>20}   {s['unattributed']} turns carry no file index — unscoreable")
+    if a.report:
+        print()
+        for name, d in rows:
+            print(report(name, d, a.baseline))
 
 
 if __name__ == "__main__":
