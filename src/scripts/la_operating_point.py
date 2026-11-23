@@ -131,7 +131,7 @@ def provenance(path: Path) -> dict[str, object]:
     return prov
 
 
-def corpus_report(labels: Path, corpus: str) -> list[str]:
+def corpus_report(labels: Path, corpus: str, from_item: int = 0) -> list[str]:
     rows_path = labels / f"{corpus}.parquet"
     prov = provenance(rows_path)
     relabel = prov.get("relabel")
@@ -156,9 +156,15 @@ def corpus_report(labels: Path, corpus: str) -> list[str]:
     by_utt: dict[str, list[dict[str, object]]] = defaultdict(list)
     for r in pq.read_table(rows_path, columns=ROW_COLS).to_pylist():
         by_utt[str(r["utt"])].append(r)
-    utts = pq.read_table(
-        labels / f"{corpus}.utterances.parquet", columns=["utt", "turns"]
-    ).to_pylist()
+    utts = [
+        u
+        for u in pq.read_table(
+            labels / f"{corpus}.utterances.parquet", columns=["utt", "turns"]
+        ).to_pylist()
+        if not from_item or int(str(u["utt"]).split(":")[-1]) >= from_item
+    ]
+    if from_item:
+        corpus = f"{corpus} items {from_item}+"
     out: list[str] = []
     per: dict[str, list[Counts]] = {"all": [], "no-runaway": []}
     nums: dict[str, dict[str, list[list[int]]]] = {
@@ -228,6 +234,12 @@ def main() -> None:
         default=None,
         help="a label file's stem, e.g. mqa-single_step.la3 (repeatable; default the seven)",
     )
+    p.add_argument(
+        "--from-item",
+        type=int,
+        default=0,
+        help="also report only the files whose item id is at least this (the selection set: 20)",
+    )
     args = p.parse_args()
     commit = subprocess.run(
         ["git", "describe", "--always", "--dirty", "--abbrev=40"],
@@ -248,6 +260,8 @@ def main() -> None:
             lines.append(f"# sha256 {hashlib.sha256(f.read_bytes()).hexdigest()} {f}")
     for corpus in corpora:
         lines += corpus_report(args.labels, corpus)
+        if args.from_item:
+            lines += corpus_report(args.labels, corpus, args.from_item)
     text = "\n".join(lines) + "\n"
     sys.stdout.write(text)
     if args.log:
