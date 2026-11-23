@@ -3,16 +3,20 @@
 Scorer written after the data. P1 (PRE-REGISTRATION 2026-09-23g) and word
 density (PRE-REGISTRATION 2026-10-01d) were scored on 2026-10-01 with no
 committed script (NOTES "2026-10-01 — PASS 1 COMPLETE. P1 IS FALSIFIED" and
-"2026-10-01 — Word density scored"). Ali (2026-11-23, on the pre-roll
-audit's open rows): "(a) post-hoc scorers that must reproduce the recorded
-numbers before their counts are used."
+"2026-10-01 — Word density scored"). Ali's decision, given in the session
+on 2026-11-23 in his decisions on the step-2 pre-registration review (not
+yet recorded in NOTES; his numbering, which differs from the 2026-11-20
+decisions'): "6. P1 and word density (decision 2 of 11-22): (a) post-hoc
+scorers that must reproduce the recorded numbers before their counts are
+used."
 
 The quantity: per VALID turn (not warm-up, not washout, with the four
 marks), the recognizer's share of TTFA,
     (stt_final - vad_user_stopped) / (audio_out_first - speech_end_est),
 its median per set (the median of the per-turn ratios; the ratio of the
-medians printed beside it) and the median TTFA. Two percentile bootstrap
-CIs, each 4000 resamples, seed 0 (stage_decomposition.boot_ci at 4b59f1e):
+medians printed beside it) and the median TTFA (not scored here: the
+recorded TTFA CIs and the LLM-share column). Two percentile bootstrap CIs,
+each 4000 resamples, seed 0 (stage_decomposition.boot_ci at 4b59f1e):
 over turns, as recorded, and over items (every rep of a resampled item:
 a turn index is the same file in each rep, so the turns are not
 independent). The recorded points and n are reproduced; the turn-level CIs
@@ -26,6 +30,9 @@ Sets and runs:
   long_digit, multi_step;
 - P1 re-scored on NOPARTIAL (pass 1n, 2026-10-02);
 - word density: the 20-item single_step_reasoning set, three reps.
+
+Every line names its items (the turn indices its turns fall on), each run's
+build, and each turn dropped for a missing mark with the marks it lacks.
 
 With --audit (preroll_audit.py --out): per set, the turns whose pre-roll
 the audit flagged (stale, unverifiable) or could not check (unchecked),
@@ -88,7 +95,7 @@ SETS = {
         ),
     },
     "word density": {
-        "single_step_reasoning (20 items)": (
+        "single_step_reasoning": (
             "20261001-163635-51ac10",
             "20261001-164213-1d8be7",
             "20261001-164736-f43dae",
@@ -103,7 +110,7 @@ BOOT = 4000  # stage_decomposition.boot_ci (4b59f1e), seed 0: reproduces 8 of th
 class Run:
     rows: list[tuple[str, int, float, float, float]]  # run, turn, share, ttfa_ms, stt_ms
     valid: int
-    no_marks: list[int]  # valid turns dropped for a missing mark
+    no_marks: list[tuple[int, list[str]]]  # valid turns dropped: (turn, the marks missing)
     nonpositive: int  # valid turns dropped for TTFA <= 0
     build: str
     config_hash: str
@@ -122,7 +129,7 @@ def read_run(run: str) -> Run:
         out.valid += 1
         st = t.get("stages_ms") or {}
         if not all(k in st for k in MARKS):
-            out.no_marks.append(int(t["turn"]))
+            out.no_marks.append((int(t["turn"]), [k for k in MARKS if k not in st]))
             continue
         ttfa = st["audio_out_first"] - st["speech_end_est"]
         if ttfa <= 0:
@@ -228,15 +235,22 @@ def main() -> None:
             ratio = statistics.median([x[4] for x in rows]) / statistics.median(
                 [x[3] for x in rows]
             )
+            dropped = [
+                f"{r[-6:]} t{t} (no {', '.join(miss)})"
+                + (f" {cls.get((f'reactive-{r}', t), 'not in the audit')}" if args.audit else "")
+                for r, g in zip(runs, got, strict=True)
+                for t, miss in g.no_marks
+            ]
             line = (
-                f"{block} {name}: n={len(rows)} turns ({sum(g.valid for g in got)} valid; dropped "
-                f"for a missing mark {sum(len(g.no_marks) for g in got)}, for TTFA <= 0 "
+                f"{block} {name}: n={len(rows)} turns on {len(items[(block, name)])} items "
+                f"({sum(g.valid for g in got)} valid; dropped for a missing mark "
+                f"{len(dropped)}: {', '.join(dropped) or 'none'}; for TTFA <= 0 "
                 f"{sum(g.nonpositive for g in got)}); TTFA median "
                 f"{statistics.median([x[3] for x in rows]):.0f} ms; stt share, median of "
                 f"per-turn ratios, {median_ci(shares)} over turns, {item_ci(items[(block, name)])}"
-                f" over items; ratio of medians {100 * ratio:.1f}%; builds "
-                f"{sorted({g.build[:7] for g in got})}, config "
-                f"{sorted({g.config_hash for g in got})}"
+                f" over items; ratio of medians {100 * ratio:.1f}%; build per run "
+                f"{', '.join(f'{r[-6:]}@{g.build[:7]}' for r, g in zip(runs, got, strict=True))}"
+                f", config {sorted({g.config_hash for g in got})}"
             )
             if args.audit:
                 c = [cls.get((x[0], x[1]), "not in the audit") for x in rows]
@@ -251,17 +265,12 @@ def main() -> None:
                 kept = [x for x, k in zip(rows, c, strict=True) if k not in flagged]
                 located = {(x[0], x[1]): opens[(x[0], x[1])] for x in rows if (x[0], x[1]) in opens}
                 unlocated = [f"{x[0][-6:]} t{x[1]}" for x in rows if (x[0], x[1]) not in opens]
-                dropped_flags = [
-                    f"{r[-6:]} t{t} {cls.get((f'reactive-{r}', t), '?')}"
-                    for r, g in zip(runs, got, strict=True)
-                    for t in g.no_marks
-                ]
                 line += (
                     f"; pre-roll: stale {c.count('stale')}, unverifiable {c.count('unverifiable')},"
-                    f" unchecked {c.count('unchecked')} ({', '.join(named) or 'none'}); the turns "
-                    f"dropped for a mark: {', '.join(dropped_flags) or 'none'}; without the "
-                    f"flagged n={len(kept)}, stt share {median_ci([x[2] for x in kept])} over "
-                    f"turns, {item_ci(by_item(kept))} over items (post hoc); items: "
+                    f" unchecked {c.count('unchecked')} ({', '.join(named) or 'none'}); without "
+                    f"the flagged n={len(kept)} on {len(by_item(kept))} items, stt share "
+                    f"{median_ci([x[2] for x in kept])} over turns, {item_ci(by_item(kept))} over "
+                    f"items (post hoc); items: "
                     f"{item_files(runs, located)} (not located: {', '.join(unlocated) or 'none'})"
                 )
             lines.append(line)
@@ -271,11 +280,14 @@ def main() -> None:
         ("P1 order, dev - short_digit (pass 1n)", (n1, "dev"), (n1, "short_digit")),
         (
             "word density, single_step - dev (pass 1)",
-            (wd, "single_step_reasoning (20 items)"),
+            (wd, "single_step_reasoning"),
             (p1, "dev"),
         ),
     ):
-        lines.append(f"DIFF {label}: {diff_ci(items[a], items[b])} over items")
+        lines.append(
+            f"DIFF {label}: {diff_ci(items[a], items[b])} over items "
+            f"({len(items[a])} v {len(items[b])} items)"
+        )
     text = "\n".join(lines) + "\n"
     sys.stdout.write(text)
     if args.log:
