@@ -12,10 +12,18 @@ Keep repetition count as a feature."
   UTF-8 text over its zlib-compressed length), of the hypothesis's words
   joined as the transcript writes them; the threshold is faster-whisper's
   default for transcribe(), read from its signature, not typed here.
+- A departure from faster-whisper's own use: it computes the ratio per
+  30 s window, on that window's whole decoded text, and only to trigger a
+  temperature fallback (inactive at this project's temperature 0); it never
+  discards. Here: the same function and threshold, per hypothesis, as a
+  discard (guard_census.py counts the buffers over 30 s).
 - "Repeats one token >= 5 times" is read as a RUN: the same Word.key five
-  or more times in a row, the shape of a stuck decode (a word used five
-  times across a long hypothesis is not one). This reading is the code's,
-  stated in NOTES for Ali.
+  or more times in a row, over the whitespace tokens inside each word's
+  text (so a per-segment decode counts as its words), the shape of a stuck
+  decode (a word used five times across a long hypothesis is not one).
+  This reading, and "token" as a whitespace word rather than a Whisper
+  token, are the code's, put to Ali in NOTES (guard_census.py counts the
+  other readings).
 
 Invariants, tested in src/tests/test_runaway.py.
 """

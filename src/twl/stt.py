@@ -57,7 +57,7 @@ from twl.commit import LocalAgreementCommitter, Word
 from twl.config import SttConfig
 from twl.hypothesis_worker import HypothesisWorker, WorkerPool
 from twl.pacing import FixedTickIssuer, SelfPacedIssuer
-from twl.runaway import longest_run, runaway_reason
+from twl.runaway import compression_ratio, longest_run, runaway_reason
 from twl.stt_engine import MIN_DECODE_S, POLL_S, PREROLL_S
 from twl.telemetry import (
     read_faults,
@@ -501,10 +501,12 @@ class StreamingWhisperSTT(STTService):
             self._issuer.note_decode(decode_ms)
             self._turns.mark("stt_partial_done", at_ns=done_ns)
             before = self._committer.committed_end_s
-            # THE RUNAWAY GUARD (twl.runaway): a stuck decode never reaches the
-            # committer. Off unless the config turns it on.
-            runaway = runaway_reason(words) if commit.runaway_guard else ""
-            kept = [] if runaway else self._committer.offer(words, buffer_end_s)
+            # THE RUNAWAY GUARD (twl.runaway): its verdict is logged always; with
+            # the guard on, a failing hypothesis reaches neither the committer
+            # nor downstream (no interim frame).
+            runaway = runaway_reason(words)
+            discarded = bool(runaway) and commit.runaway_guard
+            kept = [] if discarded else self._committer.offer(words, buffer_end_s)
             if commit.two_tier and kept:
                 span = Span(
                     start_s=before,
@@ -513,7 +515,7 @@ class StreamingWhisperSTT(STTService):
                 )
                 self._span_queued_ns[(span.start_s, span.end_s)] = now_ns()
                 self._twotier.enqueue(span)
-            emitted = bool(words) and self._speaking
+            emitted = bool(words) and self._speaking and not discarded
             if emitted:
                 self._turns.mark("stt_partial_frame", at_ns=now_ns())
                 self.partials_emitted += 1
@@ -532,6 +534,8 @@ class StreamingWhisperSTT(STTService):
                 idle_ms=decision.idle_ms,
                 required_idle_ms=decision.required_idle_ms,
                 runaway=runaway,
+                runaway_discarded=discarded,
+                compression_ratio=compression_ratio(words),
                 longest_run=longest_run(words),
             )
             if emitted:

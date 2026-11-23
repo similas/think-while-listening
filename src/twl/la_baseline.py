@@ -37,6 +37,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from twl.commit import LocalAgreementCommitter, Word
+from twl.runaway import runaway_reason
 from twl.survival_labels import is_scored, num_units
 
 LABEL = "label_num"  # the training label (Ali's scorer decision, 2026-11-19)
@@ -122,7 +123,10 @@ def la2_counts(rows: Sequence[Row], final_words: int) -> Counts:
 
 
 def simulated_commits(
-    hyps: Sequence[Mapping[str, object]], agreement_n: int, tail_guard_s: float
+    hyps: Sequence[Mapping[str, object]],
+    agreement_n: int,
+    tail_guard_s: float,
+    runaway_guard: bool = False,
 ) -> set[tuple[int, int]]:
     """(hyp_index, word_index) of the words LA-n commits on one turn's recorded
     hypotheses. word_index counts the hypothesis's fresh words from LA-2's
@@ -138,6 +142,8 @@ def simulated_commits(
         assert isinstance(raw, list)
         words = [Word(str(w["text"]), _f(w["start_s"]), _f(w["end_s"])) for w in raw]
         ce = _f(h["committed_end_s"])
+        if runaway_guard and runaway_reason(words):  # discarded before LA-n sees it
+            continue
         fresh_index = {id(w): i for i, w in enumerate(w for w in words if w.start_s >= ce - 1e-9)}
         for w in committer.offer(words, buffer_end_s=_f(h["issued_s"])):
             if id(w) in fresh_index:

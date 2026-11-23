@@ -96,10 +96,14 @@ class HypothesisRecord:
     required_idle_ms: float
     cadence_ms: float
     duty: float
-    # The runaway guard's verdict on this hypothesis ("" = offered to the
-    # committer; "compression" / "repeat" = discarded), and its repetition
-    # count (twl.runaway.longest_run). "" and -1 before 2026-11-23.
+    # The runaway guard (twl.runaway) on this hypothesis, logged whether or not
+    # the guard is on: its verdict ("" passes; "compression" / "repeat"
+    # fails), whether the hypothesis was discarded (only with the guard on),
+    # its compression ratio and its repetition count. Defaults before
+    # 2026-11-23.
     runaway: str = ""
+    runaway_discarded: bool = False
+    compression_ratio: float = -1.0
     longest_run: int = -1
 
     kind: str = field(default="hypothesis_record", init=False)

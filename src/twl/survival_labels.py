@@ -71,18 +71,21 @@ from twl.wer import normalize, normalize_num
 
 
 def longest_run(words: Sequence[Word]) -> int:
-    """The most times one token (Word.key) occurs in a row; words with no key
-    (punctuation) neither count nor break a run. The repetition-count feature
-    of the runaway guard (twl.runaway; Ali's decision 7 on 7257b7f)."""
+    """The most times one token occurs in a row: the whitespace tokens INSIDE
+    each word's text, keyed as Word.key, so a per-segment decode (one Word per
+    segment, word_timestamps off) counts as its words would. Tokens with no
+    key (punctuation) neither count nor break a run. The repetition-count
+    feature of the runaway guard (twl.runaway; Ali's decision 7 on 7257b7f)."""
     best = run = 0
     last = ""
     for w in words:
-        k = w.key
-        if not k:
-            continue
-        run = run + 1 if k == last else 1
-        last = k
-        best = max(best, run)
+        for piece in w.text.split():
+            k = Word(piece, 0.0, 0.0).key
+            if not k:
+                continue
+            run = run + 1 if k == last else 1
+            last = k
+            best = max(best, run)
     return best
 
 

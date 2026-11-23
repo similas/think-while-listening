@@ -356,13 +356,19 @@ def settings_record(cfg: TwlConfig, s: ReplaySettings) -> dict[str, object]:
             "partials_seen": "the hypothesis's 1-based index in the utterance",
             "hyp_longest_run": "the most times one token occurs in a row in the whole "
             "hypothesis (twl.survival_labels.longest_run): the runaway guard's repetition "
-            "count, kept as a feature (Ali's decision 7 on 7257b7f)",
+            "count, kept as a feature (Ali's decision 7 on 7257b7f; the 'in a row' reading "
+            "is pending his answer)",
             "since_commit_s": "issue time minus the end of the decode that last committed",
             "word_index": "index among the fresh words (punctuation-only tokens counted, not rows)",
         },
         "label_columns": list(LABEL_COLUMNS),
         "label_num_version": LABEL_VERSION,
-        "descriptor_columns": {"num_unit": NUM_UNIT_DESCRIPTION},
+        "descriptor_columns": {
+            "num_unit": NUM_UNIT_DESCRIPTION,
+            "hyp_compression_ratio": "faster-whisper's compression ratio of the whole "
+            "hypothesis (twl.runaway.compression_ratio), the runaway guard's other test; "
+            "reads no final; not a feature",
+        },
         "id_columns": list(ID_COLUMNS),
         "feature_columns": [
             "hyp_longest_run",
@@ -455,6 +461,7 @@ ROW_SCHEMA = pa.schema(
         ("label_exact", pa.int8()),
         ("num_unit", pa.int8()),
         ("hyp_longest_run", pa.int32()),
+        ("hyp_compression_ratio", pa.float64()),
     ]
 )
 

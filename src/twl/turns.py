@@ -599,6 +599,8 @@ class TurnManager:
         idle_ms: float,
         required_idle_ms: float,
         runaway: str = "",
+        runaway_discarded: bool = False,
+        compression_ratio: float = -1.0,
         longest_run: int = -1,
     ) -> None:
         """One COMMIT-WL hypothesis, written immediately.
@@ -627,6 +629,8 @@ class TurnManager:
                 cadence_ms=round(cadence_ms, 1),
                 duty=round(decode_ms / cadence_ms, 3) if cadence_ms > 0 else -1.0,
                 runaway=runaway,
+                runaway_discarded=runaway_discarded,
+                compression_ratio=round(compression_ratio, 3),
                 longest_run=longest_run,
             ),
         )

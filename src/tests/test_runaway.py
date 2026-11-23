@@ -43,8 +43,10 @@ def test_the_live_loop_offers_only_a_hypothesis_the_guard_passes() -> None:
     from twl.stt import StreamingWhisperSTT
 
     src = inspect.getsource(StreamingWhisperSTT)
-    assert "runaway = runaway_reason(words) if commit.runaway_guard else" in src
-    assert "kept = [] if runaway else self._committer.offer(words, buffer_end_s)" in src
+    assert "discarded = bool(runaway) and commit.runaway_guard" in src
+    assert "kept = [] if discarded else self._committer.offer(words, buffer_end_s)" in src
+    # nor does it reach downstream: no interim frame for a discarded hypothesis
+    assert "emitted = bool(words) and self._speaking and not discarded" in src
 
 
 def test_the_guard_is_off_unless_configured() -> None:
@@ -62,9 +64,31 @@ def test_the_hypothesis_record_carries_the_verdict_and_the_run(tmp_path) -> None
     m.turn_started(now_ns())
     m.note_hypothesis(
         buffer_s=1.0, decode_ms=100.0, committed_words=0, committed_end_s=0.0,
-        idle_ms=0.0, required_idle_ms=0.0, runaway="repeat", longest_run=6,
+        idle_ms=0.0, required_idle_ms=0.0, runaway="repeat", runaway_discarded=False,
+        compression_ratio=1.23456, longest_run=6,
     )  # fmt: skip
     m.finish_turn()
     m.close()
     (rec,) = records(tmp_path, "hypothesis_record")
-    assert (rec["runaway"], rec["longest_run"]) == ("repeat", 6)
+    got = (rec["runaway"], rec["runaway_discarded"], rec["compression_ratio"], rec["longest_run"])
+    assert got == ("repeat", False, 1.235, 6)
+
+
+def test_a_per_segment_decode_counts_its_words() -> None:
+    # word_timestamps off: one Word per segment; the run is the words' own
+    seg = [Word("the value is phi phi phi phi phi phi phi.", 0.0, 3.0)]
+    assert longest_run(seg) == 7
+    assert runaway_reason(seg) == runaway_reason(ws("the value is phi phi phi phi phi phi phi."))
+
+
+def test_the_simulated_committer_skips_a_guarded_hypothesis() -> None:
+    from twl.la_baseline import simulated_commits
+
+    def h(text: str, issued: float) -> dict[str, object]:
+        words = [{"text": w.text, "start_s": w.start_s, "end_s": w.end_s} for w in ws(text)]
+        return {"frozen": False, "issued_s": issued, "committed_end_s": 0.0, "words": words}
+
+    stuck = "go go go go go go"
+    hyps = [h(stuck, 3.0), h(stuck, 4.0)]
+    assert simulated_commits(hyps, 2, 0.3)  # unguarded, LA-2 commits the loop
+    assert simulated_commits(hyps, 2, 0.3, runaway_guard=True) == set()

@@ -60,6 +60,7 @@ import numpy.typing as npt
 
 from twl.commit import LocalAgreementCommitter, Word
 from twl.pacing import SelfPacedIssuer, modelled_decode_ms
+from twl.runaway import compression_ratio, runaway_reason
 from twl.survival_labels import HypContext, HypWord, fresh_words, is_scored, rows
 
 # (buffer audio, its start in the turn in s, the prompt) -> (the hypothesis's
@@ -81,6 +82,10 @@ class ReplaySettings:
     min_decode_s: float
     stop_secs: float
     sample_rate: int = 16000
+    # The runaway guard (twl.runaway): False reproduces step 1's unguarded
+    # stream; True discards a failing hypothesis before LA-2, as a guarded
+    # live arm does. The verdict is recorded on every hypothesis either way.
+    runaway_guard: bool = False
 
     def __post_init__(self) -> None:
         if self.agreement_n != 2:
@@ -261,11 +266,15 @@ def replay(
              "words": [{"text": h.word.text, "start_s": h.word.start_s,
                         "end_s": h.word.end_s} for h in hyp]}
         )  # fmt: skip
-        kept = committer.offer([h.word for h in hyp], buffer_end_s=now)
+        verdict = runaway_reason([h.word for h in hyp])
+        out.hyps[-1]["runaway"] = verdict
+        guarded = bool(verdict) and s.runaway_guard
+        kept = [] if guarded else committer.offer([h.word for h in hyp], buffer_end_s=now)
         ctx = HypContext(k, now, ce, last_commit, remainder, len(kept))
         fresh = fresh_words(hyp, ce)
         out.empty_words += sum(1 for h in fresh if not is_scored(h.word))
-        out.rows.extend(rows(hyp, ctx, final))
+        ratio = compression_ratio([h.word for h in hyp])
+        out.rows.extend({**r, "hyp_compression_ratio": ratio} for r in rows(hyp, ctx, final))
         out.hypotheses += 1
         # LA-2's own remainder rule (LocalAgreementCommitter.offer).
         remainder = tuple(
