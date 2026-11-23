@@ -59,6 +59,8 @@ SOURCES: dict[str, Source] = {
     "alloc": Source("allocator_decisions.py", PASS6),
     # Post-hoc sensitivity: the claims whose population held a turn the pre-roll
     # audit flagged, re-scored without those turns (NOTES 2026-11-22).
+    # P4 under both scorers, pass 2 on all four sets and pass 2k (NOTES 2026-11-23).
+    "p4num": Source("p4_rescore.py"),
     "preroll_sens": Source(
         "preroll_sensitivity.py",
         ("--audit", "results/raw/run_logs/20261122_preroll_audit/turns.jsonl"),
@@ -249,6 +251,11 @@ class Claim:
         return line(self.source, self.pattern).string.strip()
 
 
+H_P4NUM = (
+    "2026-11-23 — P4 RE-SCORED under the number-normalized scorer (post-hoc sensitivity): sign "
+    "and bar outcome unchanged on multi_step in pass 2 and pass 2k, the other sets inert; "
+    "PROVENANCE GAP closed (pass 2's P4 mean); step 1's LABELS table regenerated"
+)
 H_PREROLL = (
     "2026-11-22 — PRE-ROLL DEFECT found by the label replay: content audit (3 stale turns in "
     "P2a's population; P2a and pass 6 qualified; no re-scored verdict changes), fix, pre-roll "
@@ -871,5 +878,54 @@ CLAIMS: tuple[Claim, ...] = (
         "preroll_sens",
         r"^SENS alloc_counts \(",
         H_PREROLL,
+    ),
+    Claim(
+        "p4_pass2_mean",
+        "Pass 2 P4 on multi_step: mean dWER, registered scorer",
+        "p4num",
+        r"^P4 PASS2 multi_step wer:",
+        H_P4NUM,
+    ),
+    Claim(
+        "p4_pass2_num",
+        "Pass 2 P4 on multi_step under the number-normalized scorer (post-hoc sensitivity)",
+        "p4num",
+        r"^P4 PASS2 multi_step wer_num:",
+        H_P4NUM,
+    ),
+    Claim(
+        "p4_pass2_short_digit",
+        "Pass 2 P4 on short_digit: dWER, registered scorer (inert: no commits)",
+        "p4num",
+        r"^P4 PASS2 short_digit wer:",
+        H_P4NUM,
+    ),
+    Claim(
+        "p4_pass2_short_digit_num",
+        "Pass 2 P4 on short_digit under the number-normalized scorer (inert)",
+        "p4num",
+        r"^P4 PASS2 short_digit wer_num:",
+        H_P4NUM,
+    ),
+    Claim(
+        "p4_pass2_long_digit",
+        "Pass 2 P4 on long_digit: dWER, registered scorer (inert: no commits)",
+        "p4num",
+        r"^P4 PASS2 long_digit wer:",
+        H_P4NUM,
+    ),
+    Claim(
+        "p4_pass2_long_digit_num",
+        "Pass 2 P4 on long_digit under the number-normalized scorer (inert)",
+        "p4num",
+        r"^P4 PASS2 long_digit wer_num:",
+        H_P4NUM,
+    ),
+    Claim(
+        "p4_pass2k_num",
+        "Pass 2k P4 on multi_step under the number-normalized scorer (post-hoc sensitivity)",
+        "p4num",
+        r"^P4 PASS2K multi_step wer_num:",
+        H_P4NUM,
     ),
 )

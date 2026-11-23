@@ -240,8 +240,8 @@
   "corrections": [
    "2026-10-13 — DECISIONS on f5e1b8f (user): P4 reconciled, Spoken-MQA, planner, P2a"
   ],
-  "notes": "Selection-time estimate on the 16-item selection set (median 10.6 s): tiny a=2 median dWER +0.028 (+0.009..+0.042), reported as FAILED in the 2026-10-02/05 decisions; prior evidence that did not carry. The 'option 2' rule was Ali's instruction of 2026-10-01, not a NOTES registration.",
-  "qualifier": "selection-set estimate +0.028 (median 10.6 s items) did not carry"
+  "notes": "Selection-time estimate on the 16-item selection set (median 10.6 s): tiny a=2 median dWER +0.028 (+0.009..+0.042), reported as FAILED in the 2026-10-02/05 decisions; prior evidence that did not carry. The 'option 2' rule was Ali's instruction of 2026-10-01, not a NOTES registration. Post-hoc re-score: p4_rescore.py (NOTES 2026-11-23).",
+  "qualifier": "selection-set estimate +0.028 (median 10.6 s items) did not carry; number-normalized scorer (post-hoc sensitivity): multi_step mean +0.0077 (16 worse, 6 better), n=62, passes; other sets 0 by inertness (no commits)"
  },
  {
   "id": "P4 (pass 2k)",
@@ -251,7 +251,9 @@
   "verdict": "HOLDS on multi_step: mean +0.0043 [-0.0039, +0.0135], median 0, n=70; dev holds by inertness (uninformative), n=16",
   "corrections": [
    "2026-10-08 — CORRECTION to \"PASS 2k: P3 HOLDS\" (reviewer, 7 findings)"
-  ]
+  ],
+  "qualifier": "number-normalized scorer (post-hoc sensitivity): multi_step mean +0.0028 [-0.0038, +0.0096], n=70, HOLDS; dev 0 by inertness",
+  "notes": "Post-hoc re-score: p4_rescore.py (NOTES 2026-11-23)."
  },
  {
   "id": "P5",

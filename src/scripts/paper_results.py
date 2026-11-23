@@ -349,6 +349,18 @@ SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("planner_validation", "planner_dp", "planner_noduty"),
     ),
     (
+        "P4 under the number-normalized scorer: post-hoc sensitivity (NOTES 2026-11-23)",
+        (
+            "p4_pass2_mean",
+            "p4_pass2_num",
+            "p4_pass2_short_digit",
+            "p4_pass2_short_digit_num",
+            "p4_pass2_long_digit",
+            "p4_pass2_long_digit_num",
+            "p4_pass2k_num",
+        ),
+    ),
+    (
         "Pre-roll defect: post-hoc sensitivity, beside the registered values (NOTES 2026-11-22)",
         (
             "p2a_pop_preroll",

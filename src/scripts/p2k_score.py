@@ -30,8 +30,8 @@ from twl.records import endpoint_after_final
 from twl.wer import wer, wer_num
 
 # The per-item WER: the registered scorer unless --scorer wer_num (Ali's
-# scorer decision, 2026-11-19: P4 re-scored as a post-hoc sensitivity). Item
-# alignment by transcript always uses the registered wer.
+# scorer decision, 2026-11-19: P4 re-scored as a post-hoc sensitivity). Items
+# are the recorded utterance index, whatever the scorer.
 ITEM_WER = wer
 
 _spec = importlib.util.spec_from_file_location("p9_score", Path(__file__).with_name("p9_score.py"))

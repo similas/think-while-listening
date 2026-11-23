@@ -9345,3 +9345,86 @@ results/raw/run_logs/20261122_preroll_audit/:
   transcripts (the planner's 69 turns in utterance-mapped runs are never
   read: exposure.log); P2b's line is a design statement, unchanged by
   construction.
+
+## 2026-11-23 — P4 RE-SCORED under the number-normalized scorer (post-hoc sensitivity): sign and bar outcome unchanged on multi_step in pass 2 and pass 2k, the other sets inert; PROVENANCE GAP closed (pass 2's P4 mean); step 1's LABELS table regenerated
+
+### P4
+
+Ali's decision, as recorded in "2026-11-19 — DECISIONS (Ali): the scorer
+for numbers, and the training label", item 3: "Backward: P4 for pass 2 and
+pass 2k is re-scored with the new scorer and appended beside the
+registered verdicts, labelled as a post-hoc sensitivity. The registered
+verdicts are not changed. If the sign or the bar outcome differs under the
+new scorer, the ledger qualifier and the paper's Limitations say so
+plainly."
+
+src/scripts/p4_rescore.py at f0fadda:
+results/raw/run_logs/20261123_p4_labels/p4_rescore.log. The scorers run
+unchanged as registered, the per-item WER under twl.wer.wer and then
+wer_num. Membership does not depend on the scorer: pass 2's items are
+aligned by transcript with wer in both runs, pass 2k's are the recorded
+utterance index. dWER = WER(test arm) - WER(NOPARTIAL) per item,
+registered -> number scorer:
+
+    pass 2 (bar, PRE-REGISTRATION 2026-09-23g: "dWER <= +2.0 points on
+    every split. FALSIFIED if > +5 on any"; scored on 2026-10-06 on the
+    mean)
+      sixteen      mean +0.0000 -> +0.0000, n=16
+      short_digit  mean +0.0000 -> +0.0000, n=20
+      long_digit   mean +0.0000 -> +0.0000, n=18
+      multi_step   mean +0.0082 (17 worse, 7 better, 38 same) ->
+                   +0.0077 (16 worse, 6 better, 40 same), n=62
+    pass 2k (bar, PASS 2k amendment: mean and median per item "<= +0.020 on
+    each set. Falsified if > +0.050 on either"; p2k_score.py's own verdict)
+      multi_step   mean +0.0043 [-0.0039, +0.0135] -> +0.0028
+                   [-0.0038, +0.0096], n=70; HOLDS -> HOLDS
+      dev          mean +0.0000 -> +0.0000, n=16; HOLDS BY INERTNESS both
+
+The median is +0.0000 on every set under both scorers, and no mean comes
+near the falsification bounds (the largest is +0.0082). Only multi_step
+tests anything: on sixteen and the digit sets pass 2's committer never
+fired ("ON SIXTEEN THE COMMITTER NEVER FIRES" and "the digit sets cannot
+commit", NOTES 2026-10-06), and pass 2k's gate abstained on dev, so their
+transcripts are identical arm for arm and any scorer gives 0: the same by
+construction. On multi_step the sign of the mean (pass 2: +0.0082 ->
++0.0077; pass 2k: +0.0043 -> +0.0028) and the bar outcome are unchanged,
+so no Limitations sentence is owed. The digit sets, where number handling
+matters most, give no test of it under commitment.
+
+The digit sets' runs, pass 2's own and now in the claim registry (source
+p4num): short_digit NOPARTIAL 20261002-103332-b34440, -111420-86da6c,
+-115514-ed6f32, COMMIT-WL 20261005-144706-f049cb, -152813-b26387,
+-160916-22433d; long_digit NOPARTIAL 20261002-103659-426fbe,
+-111804-8a8ad0, -115855-7562bf, COMMIT-WL 20261005-145035-8ae463,
+-153144-27ee84, -161247-ea3914.
+
+PROVENANCE GAP closed: pass 2's P4 mean and its worse/better/same counts
+(the 2026-10-06 table) had no printing script. pass2_score.py --p4-mean
+prints them and reproduces +0.0082, 17, 7, 38; registered as a claim
+(source p4num).
+
+### Step 1's LABELS table, on the relabelled files
+
+src/scripts/labels_table.py at f0fadda:
+results/raw/run_logs/20261123_p4_labels/labels_table.log. Survival of each
+label column with a bootstrap CI over files, [all] and [no-runaway] (step
+1's runaway definition), and the turn finals' WER against the reference
+under both scorers. label_num, [all] and [no-runaway]:
+
+    mqa-short_digit         0.3378 [0.1851, 0.5827] (100)   0.5291 [0.4681, 0.5924] (99)
+    mqa-long_digit          0.5231 [0.4858, 0.5607] (173)   0.5231 [0.4858, 0.5607] (173)
+    mqa-single_step         0.8849 [0.8589, 0.9068] (594)   0.8971 [0.8784, 0.9111] (594)
+    mqa-multi_step          0.8699 [0.8431, 0.8910] (1322)  0.8969 [0.8809, 0.9101] (1322)
+    librispeech-test-clean  0.8548 [0.8287, 0.8772] (2503)  0.8771 [0.8627, 0.8884] (2503)
+    librispeech-test-other  0.7658 [0.7457, 0.7847] (2728)  0.7724 [0.7523, 0.7891] (2727)
+    peoples-speech          0.7450 [0.7312, 0.7595] (5780)  0.7661 [0.7546, 0.7769] (5777)
+
+(files in brackets). short_digit without its runaway file short_digit:6,
+promised on 2026-11-20 "under the full normalizer": 0.5291 [0.4681,
+0.5924], against the interim label's 0.6243 [0.5581, 0.6881] on the same
+rows. Final WER, registered -> number scorer: short_digit 0.1580 -> 0.2105,
+long_digit 0.1521 -> 0.1760, single_step 0.0480 -> 0.0434, multi_step
+0.0359 -> 0.0336, test-clean 0.0604 -> 0.0543, test-other 0.1360 -> 0.1283,
+People's Speech 0.2890 -> 0.2725 (CIs in the log). On the digit sets the
+number scorer has fewer reference tokens (a spoken number is one), so each
+error weighs more: 519 -> 361 reference words on short_digit.
