@@ -23,8 +23,9 @@ the figures the 2026-10-06 CORRECTION to the P5 entry and the ledger cite,
 which no committed script printed: per arm, disjunct (a) alone (split turns
 over turns, Wilson), the same without turn 1, the items whose turn count
 differs from the baseline's (Wilson), and the achieved duty over the
-hypotheses with duty > 0 (the first of each turn records 0): median and the
-quartiles by the rule cadence_iqr uses, with the record count beside it.
+hypotheses with duty > 0 (the first of each turn records -1, no cadence
+yet): median and the quartiles by the rule cadence_iqr uses, with the
+record count beside it.
 """
 
 from __future__ import annotations

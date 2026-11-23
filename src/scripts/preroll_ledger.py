@@ -13,7 +13,9 @@ Per row, with the audit's classes (preroll_audit.py --out):
   named:
     pass 2 (P4: wer, P7: energy_j), per set: the turns of the common items
       that enter the metric's line, both arms
-      (preroll_pop.pop_pass2_score.arm_contrib, pass2_score.py's rules);
+      (preroll_pop.pop_pass2_score.arm_contrib, pass2_score.py's rules), and
+      its gate: every turn record of the six runs, whose transcripts
+      pass2_score.align reads to map turns to files;
     P9b and its re-run: p9_score.read_run's surviving turns of every run
       (preroll_pop.pop_p9_score._surviving, checked equal to the scorer's);
       p9b_score.py then drops the void runs and keeps the common items;
@@ -23,15 +25,16 @@ Per row, with the audit's classes (preroll_audit.py --out):
     P5: every turn record of the four runs (p5_score.load).
 - REAL and SENS: the scorer's lines that carry the row's numbers, run on the
   repository and on a shadow with the flagged turns marked invalid
-  (preroll_sensitivity.shadow, mode "invalid"). P2b: GATE, on the shadow with
-  the flagged turns' transcripts blanked (mode "blank"), as its values hold
-  none.
+  (preroll_sensitivity.shadow, mode "invalid"). GATE, for the scorers whose
+  item map reads transcripts (pass 2, P2b): the scorer on the shadow with the
+  flagged turns' transcripts blanked (mode "blank").
 - P5: REAL only, with p5_score.py --report (the figures its 2026-10-06
-  CORRECTION and the ledger cite). Its quantities are the driver's utterance
-  index, the VAD's vad_user_stopped events, the playback timeline and the
-  hypotheses' duty (p5_score.py), none read from the recognizer's buffer the
-  defect is in. arm_stats has no validity filter, so a turn marked invalid is
-  still counted, and a deleted one would un-split its file.
+  CORRECTION and the ledger cite). arm_stats has no validity filter, so a
+  turn marked invalid is still counted, and a deleted one would un-split its
+  file. Its turn counts read the driver's utterance index; its duty reads the
+  hypotheses' decode_ms / cadence_ms, and a decode reads the recognizer's
+  buffer, so DUTY prints, per arm, the hypotheses on flagged turns and how
+  many carry a duty (> 0) the quartiles take.
 
     preroll_ledger.py --audit results/raw/run_logs/20261122_preroll_audit/turns.jsonl [--log FILE]
 """
@@ -39,6 +42,7 @@ Per row, with the audit's classes (preroll_audit.py --out):
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -197,8 +201,16 @@ def main() -> None:
                 lines.append(pop_line(f"pass 2 {row} {name} ({key})", pass2_pop(name, key), cls))
             real = grab(run(REPO, "pass2_score.py", pass2_args(name)), PASS2_LINES)
             sens = grab(run(roots["invalid"], "pass2_score.py", pass2_args(name)), PASS2_LINES)
+            gate = grab(run(roots["blank"], "pass2_score.py", pass2_args(name)), PASS2_LINES)
+            mapped = arm_contrib(
+                [REPO / f"{RAW}{r}" for r in (*P1N[name], *COMMIT_WL[name])],
+                REPO / SET_DIR[name],
+                "wer",
+            )[3]
+            lines.append(pop_line(f"pass 2 item map {name} [gate]", mapped, cls))
             lines += [f"REAL pass 2 {name}: {x}" for x in real]
             lines += [f"SENS pass 2 {name}: {x}" for x in sens]
+            lines += [f"GATE pass 2 {name}: {x}" for x in gate]
         for row, runs in P9B.items():
             lines.append(pop_line(f"{row} (surviving turns, every run)", p9b_pop(runs), cls))
             argv = [f"{RAW}{r}" for r in runs]
@@ -212,6 +224,17 @@ def main() -> None:
             for t in p5_score.load(REPO / f"{RAW}{r}")
         }
         lines.append(pop_line("P5 (every turn record, four runs)", p5, cls))
+        for arm, r in (("REACTIVE-NOPARTIAL", P5_BASE), *P5_ARMS):
+            hyps = [
+                json.loads(x)
+                for x in (REPO / f"{RAW}{r}" / "turns.jsonl").read_text().splitlines()
+                if x.strip() and '"hypothesis_record"' in x
+            ]
+            on = [h for h in hyps if int(h["turn"]) in flags.get(f"reactive-{r}", set())]
+            lines.append(
+                f"DUTY P5 {arm}: hypotheses {len(hyps)}, on flagged turns {len(on)}, of which "
+                f"with duty > 0 {sum(1 for h in on if h.get('duty', 0) > 0)}"
+            )
         argv = ["--report", "--baseline", f"{RAW}{P5_BASE}"]
         for arm, r in P5_ARMS:
             argv += ["--arm", arm, f"{RAW}{r}"]
