@@ -34,7 +34,13 @@ from pathlib import Path
 from typing import Any
 
 from twl.records import endpoint_after_final
-from twl.wer import wer
+from twl.wer import wer, wer_num
+
+# The per-item WER: the registered scorer unless --scorer wer_num (Ali's
+# scorer decision, 2026-11-19: P4 re-scored as a post-hoc sensitivity). Item
+# alignment by transcript always uses the registered wer.
+ITEM_WER = wer
+P4_MEAN = False  # --p4-mean
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -145,7 +151,7 @@ def read_run(run_dir: Path, set_dir: Path) -> dict[str, Any]:
         items[f] = {
             **items.get(f, {}),
             "ttfa_ms": ttfa,
-            "wer": wer(refs[f], r.get("transcript") or ""),
+            "wer": ITEM_WER(refs[f], r.get("transcript") or ""),
             "energy_j": r.get("energy_j", -1.0),
             "final_ms": st.get("stt_final", -1) - st.get("vad_user_stopped", -1),
             "tail_s": r.get("final_tail_s", -1.0),
@@ -225,6 +231,17 @@ def report(set_name: str, base: dict, test: dict, base_meta: dict, test_meta: di
 
     paired("ttfa_ms")  # NOPARTIAL - COMMIT-WL: positive is a saving
     paired("wer", sign=-1)  # COMMIT-WL - NOPARTIAL: positive is worse
+    if P4_MEAN:
+        # P4's form (NOTES 2026-10-06): the mean beside the median, and the
+        # items it moves. Opt-in, so the registered output is unchanged.
+        dw = [
+            test[f]["wer"] - base[f]["wer"] for f in common if "wer" in base[f] and "wer" in test[f]
+        ]
+        print(
+            f"  [report] P4 dWER COMMIT-WL - NOPARTIAL: median {statistics.median(dw):+.4f} "
+            f"mean {statistics.fmean(dw):+.4f} worse {sum(x > 1e-9 for x in dw)} better "
+            f"{sum(x < -1e-9 for x in dw)} same {sum(abs(x) <= 1e-9 for x in dw)} n={len(dw)}"
+        )
     paired("energy_j", sign=-1)  # COMMIT-WL - NOPARTIAL: positive is worse
     paired("final_ms")
 
@@ -235,7 +252,19 @@ def main() -> None:
     ap.add_argument("--set-dir", type=Path, required=True)
     ap.add_argument("--base", nargs="+", type=Path, required=True)
     ap.add_argument("--test", nargs="+", type=Path, required=True)
+    ap.add_argument(
+        "--scorer",
+        choices=("wer", "wer_num"),
+        default="wer",
+        help="per-item WER: the registered scorer, or the number-normalized one (post hoc)",
+    )
+    ap.add_argument("--p4-mean", action="store_true", help="also print P4's mean dWER line")
     a = ap.parse_args()
+    global ITEM_WER, P4_MEAN
+    P4_MEAN = a.p4_mean
+    if a.scorer == "wer_num":
+        ITEM_WER = wer_num
+        print("SCORER wer_num: per-item WER under the number-normalized scorer (post hoc)")
     base, bm = arm_items(a.base, a.set_dir)
     test, tm = arm_items(a.test, a.set_dir)
     report(a.set, base, test, bm, tm)

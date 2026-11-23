@@ -27,7 +27,12 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from twl.records import endpoint_after_final
-from twl.wer import wer
+from twl.wer import wer, wer_num
+
+# The per-item WER: the registered scorer unless --scorer wer_num (Ali's
+# scorer decision, 2026-11-19: P4 re-scored as a post-hoc sensitivity). Item
+# alignment by transcript always uses the registered wer.
+ITEM_WER = wer
 
 _spec = importlib.util.spec_from_file_location("p9_score", Path(__file__).with_name("p9_score.py"))
 assert _spec and _spec.loader
@@ -102,7 +107,9 @@ def read_run(d: Path, refs: list[str]) -> dict:
             "final": st["stt_final"] - st["vad_user_stopped"],
             "ratio": (st["stt_final"] - st["vad_user_stopped"])
             / (SOLO_A_MS + SOLO_B_MS_PER_S * t.get("final_tail_s", 0.0)),
-            "wer": wer(refs[u - 1], t.get("transcript") or "") if u <= len(refs) else float("nan"),
+            "wer": ITEM_WER(refs[u - 1], t.get("transcript") or "")
+            if u <= len(refs)
+            else float("nan"),
             "j_raw": (e + stale_raw) if e >= 0 else None,
             "j_net": (e - idle / 1000.0 * aof_s + stale_net) if e >= 0 and idle >= 0 else None,
             "unready": int(
@@ -220,7 +227,17 @@ def ratio_of_medians(
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--set", action="append", nargs="+", metavar=("NAME", "SET_DIR"), required=True)
+    ap.add_argument(
+        "--scorer",
+        choices=("wer", "wer_num"),
+        default="wer",
+        help="per-item WER: the registered scorer, or the number-normalized one (post hoc)",
+    )
     a = ap.parse_args()
+    global ITEM_WER
+    if a.scorer == "wer_num":
+        ITEM_WER = wer_num
+        print("SCORER wer_num: per-item WER under the number-normalized scorer (post hoc)")
     all_runs: list[dict] = []
     sets = []
     for spec in a.set:
