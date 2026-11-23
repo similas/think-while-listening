@@ -9221,3 +9221,127 @@ two define a runaway differently: step 1's report (at least 20 scored
 words, one key 50 % or more of them) and the guard's (compression ratio
 above faster-whisper's default threshold, or one token repeated 5 times or
 more). Which one does decision 5 mean?
+
+## 2026-11-23 — NUMBER-NORMALIZED SCORER added and pinned; label_num recomputed; LA-2's tables regenerated (without runaways and under the number-unit label, both open: number words survive less on the four MQA sets); pre-roll sensitivity variants
+
+### Installed and pinned
+
+Ali's approval (2026-11-20), quoted: "1. Normalizer: (a) approved — pip
+install --no-deps whisper-normalizer==0.1.15 more-itertools into both
+venvs. Pin it in pyproject with the version; record the install in NOTES."
+
+Installed 2026-11-22 into ~/.venvs/twl and ~/.venvs/twl-learn:
+whisper-normalizer 0.1.15 and more-itertools 11.1.0, with --no-deps. Beyond
+the approved command: ~/.venvs/twl-learn lacked regex, which the
+normalizer imports, so regex==2026.9.10 went in there too (--no-deps), the
+version ~/.venvs/twl already had. Pinned in pyproject.toml and README.md at
+3765dc8; the Indic and international normalizers' dependencies are not
+installed.
+
+### The scorer
+
+twl.wer.wer_num / normalize_num: Whisper's English text normalizer, a
+second, named scorer. Ali's scorer decision (2026-11-19), item 2: "Going
+forward (the committer phase, its labels, its pre-registration, and P4 for
+step 5), the number-normalized scorer is the registered one." twl.wer.wer,
+the scorer
+every pass so far was registered under, is unchanged. Its known quirks are
+kept, on both sides ("one third" -> "13rd"; 1 is written "one").
+
+### label_num, recomputed
+
+twl.survival_labels at 3765dc8: a word survives when every token of its
+NUMBER UNIT is matched in the turn's final. A unit is a run of number words
+cut where the scorer's reading composes, normalized with the word after it
+in view (Whisper's rules look one word ahead). So a number the hypothesis
+has heard only in part does not survive: its unit's tokens are not the
+final's. That definition is Ali's to confirm (asked in the 2026-11-22
+report, decision 1).
+
+src/scripts/relabel_num.py at 13991c3, from the words step 1 stored, into
+results/raw/commit_labels/num/; step 1's files only read:
+results/raw/run_logs/20261123_relabel/relabel.log. label_num = 1, step 1's
+interim label -> this one (RELABEL lines):
+
+    mqa-short_digit         239/601 = 0.3977 -> 203/601 = 0.3378
+    mqa-long_digit          487/738 = 0.6599 -> 385/736 = 0.5231
+    mqa-single_step         21417/24147 = 0.8869 -> 21368/24147 = 0.8849
+    mqa-multi_step          103556/118891 = 0.8710 -> 103100/118526 = 0.8699
+    librispeech-test-clean  62364/73046 = 0.8538 -> 62436/73045 = 0.8548
+    librispeech-test-other  51380/67274 = 0.7637 -> 51519/67272 = 0.7658
+    peoples-speech          110000/147984 = 0.7433 -> 110138/147843 = 0.7450
+
+UNITS: the units' tokens equal the scorer's (the same words, joined, in
+context) on every turn final but one (multi_step 1457/1458) and on every
+offered hypothesis. Newly unscored (-1) rows, in the order above: 0, 2, 0,
+365, 1, 2, 141. Of them, words this code no longer scores at all (a lone
+"%"): 0, 2, 0, 364, 0, 0, 79; the rest are words whose unit has no token
+under the scorer (it drops fillers such as "um"), which leaves People's
+Speech 62 rows. Unit-edge zeros (0 in a number unit whose own word survives
+as a word): 30, 108, 84, 372, 3, 5, 106.
+
+Step 1 stored word texts without faster-whisper's leading space and stored
+each turn's final as the words joined with spaces ("1 .77"). The units join
+them with twl.survival_labels.join_words (a word starting with punctuation
+attaches); commit_labels.py does the same from 3765dc8. A stated departure.
+
+### LA-2's operating point, regenerated
+
+src/scripts/la_operating_point.py at 13991c3 on the relabelled files:
+results/raw/run_logs/20261123_la_point_num/la_point.log. LA_CHECK
+reproduces la2_commit on every row of every corpus. Committed fraction
+[all] moves at most in the fourth decimal (multi_step 0.6116 -> 0.6115,
+People's Speech 0.2217 -> 0.2218); precision [all] 0.8571 (short_digit,
+files 18), 0.9412, 0.9561, 0.9504, 0.9153, 0.8958, 0.8965.
+
+NUMBERS, words in number units minus other words, paired over files
+(twl.survival_labels.is_number_unit: a digit in the unit, or a word that is
+a number by itself; a one-word "one", "ones", "oh" or "o" is not counted).
+[no-runaway] leaves out step 1's runaway hypotheses, a definition still
+OPEN against decision 7 (NOTES 2026-11-22); the label is the number-unit
+rule, Ali's decision 1 open:
+
+                            [no-runaway]                         [all]
+    mqa-short_digit         -0.2350 [-0.3454, -0.1333] (99)      +0.0908 [-0.3149, +0.2801] (100)
+    mqa-long_digit          -0.3454 [-0.4291, -0.2581] (173)     -0.3454 [-0.4291, -0.2581] (173)
+    mqa-single_step         -0.0501 [-0.0825, -0.0188] (594)     -0.0692 [-0.1506, -0.0074] (594)
+    mqa-multi_step          -0.0208 [-0.0388, -0.0014] (1322)    -0.0266 [-0.0672, +0.0123] (1322)
+    librispeech-test-clean  +0.0007 [-0.0368, +0.0365] (2503)    -0.1289 [-0.3355, +0.0516] (2503)
+    librispeech-test-other  -0.0103 [-0.0796, +0.0530] (2727)    -0.1297 [-0.3222, +0.0428] (2728)
+    peoples-speech          -0.0216 [-0.0598, +0.0113] (5777)    -0.0520 [-0.1277, +0.0159] (5780)
+
+(files in brackets). short_digit's deficit appears only without its
+runaway file short_digit:6 (223 of its 601 rows). The unit-edge zeros sit
+in the same rows: long_digit 108, short_digit 30, single_step 84,
+multi_step 372 (above), against number-word counts of 370, 174, 3121 and
+12308 [no-runaway]. Under the interim label and class (20261120 log) the
+[no-runaway] differences were -0.0831, -0.0582, -0.0078, +0.0361, +0.0037,
+-0.0982, +0.0256: multi_step's is the only sign change between intervals
+that both exclude 0 (People's Speech's also changes sign, both intervals
+spanning 0). Both the label and the number class changed, so no change is
+the label's alone. SUPERSEDED, in "2026-11-20 — STEP 1 LABELS COMPLETE":
+"the design excludes deficits larger than 0.19 (short_digit) and 0.15
+(long_digit). On multi_step numbers survive better."
+
+Not done: step 1's LABELS table (label_num survival with its bootstrap CI
+over files, and short_digit without short_digit:6, promised there "under
+the full normalizer") is not regenerated; only LA-2's tables are.
+
+### Pre-roll: the sensitivity variants
+
+src/scripts/preroll_sensitivity.py at 13991c3, in
+results/raw/run_logs/20261122_preroll_audit/:
+- sensitivity_unchecked.log, the unchecked turns removed too. P2a, listener
+  c and Fig. 1 hold no unchecked turn, so their lines are those of the main
+  sensitivity by construction. Pass 6: 576 -> 525 decisions over 71 turns
+  (489 below break-even, 36 infeasible). The stale-decode lines cannot be
+  re-scored this way: with the 6 unchecked frozen turns' records removed,
+  p2k_score's own checks 1 and 4 void all three STOP runs. 6 of their 58
+  frozen turns stay unchecked and uncovered.
+- sensitivity_gates.log and sensitivity_gates_unchecked.log, the flagged
+  (and the unchecked) turns' transcripts blanked: pass 2's P3 and the
+  planner print the same lines as registered. Only pass 2's map
+  (pass2_score.align) and the planner's transcript-aligned runs read those
+  transcripts (the planner's 69 turns in utterance-mapped runs are never
+  read: exposure.log); P2b's line is a design statement, unchanged by
+  construction.

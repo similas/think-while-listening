@@ -400,10 +400,11 @@
   "verdict": "every registered check passes: 576 decisions (537 below_break_even, 39 infeasible), 0 spends, 0 drafts",
   "corrections": [
    "2026-10-09 — CORRECTION to \"PASS 8 (f*), PASS 6, P8\": pass 8's f* was on mixed clocks. Corrected, it lands on the prediction",
-   "2026-11-22 — PRE-ROLL DEFECT found by the label replay: content audit (3 stale turns in P2a's population; P2a and pass 6 qualified; no re-scored verdict changes), fix, pre-roll logged; DECISIONS on 7257b7f (Ali): sealed 80, LA-3, comparator, off-policy, Pareto, selection set, runaway guard, oracle ceiling, order"
+   "2026-11-22 — PRE-ROLL DEFECT found by the label replay: content audit (3 stale turns in P2a's population; P2a and pass 6 qualified; no re-scored verdict changes), fix, pre-roll logged; DECISIONS on 7257b7f (Ali): sealed 80, LA-3, comparator, off-policy, Pareto, selection set, runaway guard, oracle ceiling, order",
+   "2026-11-23 — NUMBER-NORMALIZED SCORER added and pinned; label_num recomputed; LA-2's tables regenerated (without runaways and under the number-unit label, both open: number words survive less on the four MQA sets); pre-roll sensitivity variants"
   ],
-  "qualifier": "pre-roll defect: of its 81 turns 71 cleared, 1 unverifiable, 9 unchecked (no saved segment); without the unverifiable one 575 decisions (536 below_break_even, 39 infeasible), 0 spends, 0 drafts (post hoc)",
-  "notes": "Pre-roll qualifier: preroll_sensitivity.py, results/raw/run_logs/20261122_preroll_audit/sensitivity.log."
+  "qualifier": "pre-roll defect: of its 81 turns 71 cleared, 1 unverifiable, 9 unchecked (no saved segment); without the unverifiable one 575 decisions (536 below_break_even, 39 infeasible), 0 spends, 0 drafts (post hoc); with the 9 unchecked also removed, 525 decisions over 71 turns",
+  "notes": "Pre-roll qualifier: preroll_sensitivity.py, results/raw/run_logs/20261122_preroll_audit/sensitivity.log. With the unchecked turns too: sensitivity_unchecked.log (NOTES 2026-11-23)."
  },
  {
   "id": "pass 7",
