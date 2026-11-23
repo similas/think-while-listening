@@ -783,6 +783,78 @@ DP (no duty bound)     +46 ms [+25, +71] n=70; [report] mean +139 ms, Q3 +125 ms
 - NOTES: "2026-10-13 — CORRECTION to "LEVEL-2 PLANNER, SIMULATED" (reviewer, 6 findings)" (8b6bbca 2026-10-13)
 - caveat: Decoding back to back, not planning; the duty bound is a harness constant equal across arms.
 
+## P4 under the number-normalized scorer: post-hoc sensitivity (NOTES 2026-11-23)
+
+### Pass 2 P4 on multi_step: mean dWER, registered scorer
+
+```
+P4 PASS2 multi_step wer: P4 dWER COMMIT-WL - NOPARTIAL: median +0.0000 mean +0.0082 worse 17 better 7 same 38 n=62
+```
+
+- command: `src/scripts/p4_rescore.py`
+- runs: see the scorer's run list
+- NOTES: "2026-11-23 — P4 RE-SCORED under the number-normalized scorer (post-hoc sensitivity): sign and bar outcome unchanged on multi_step in pass 2 and pass 2k, the other sets inert; PROVENANCE GAP closed (pass 2's P4 mean); step 1's LABELS table regenerated" (ffbcb3c 2026-11-23)
+
+### Pass 2 P4 on multi_step under the number-normalized scorer (post-hoc sensitivity)
+
+```
+P4 PASS2 multi_step wer_num: P4 dWER COMMIT-WL - NOPARTIAL: median +0.0000 mean +0.0077 worse 16 better 6 same 40 n=62
+```
+
+- command: `src/scripts/p4_rescore.py`
+- runs: see the scorer's run list
+- NOTES: "2026-11-23 — P4 RE-SCORED under the number-normalized scorer (post-hoc sensitivity): sign and bar outcome unchanged on multi_step in pass 2 and pass 2k, the other sets inert; PROVENANCE GAP closed (pass 2's P4 mean); step 1's LABELS table regenerated" (ffbcb3c 2026-11-23)
+
+### Pass 2 P4 on short_digit: dWER, registered scorer (inert: no commits)
+
+```
+P4 PASS2 short_digit wer: P4 dWER COMMIT-WL - NOPARTIAL: median +0.0000 mean +0.0000 worse 0 better 0 same 20 n=20
+```
+
+- command: `src/scripts/p4_rescore.py`
+- runs: see the scorer's run list
+- NOTES: "2026-11-23 — P4 RE-SCORED under the number-normalized scorer (post-hoc sensitivity): sign and bar outcome unchanged on multi_step in pass 2 and pass 2k, the other sets inert; PROVENANCE GAP closed (pass 2's P4 mean); step 1's LABELS table regenerated" (ffbcb3c 2026-11-23)
+
+### Pass 2 P4 on short_digit under the number-normalized scorer (inert)
+
+```
+P4 PASS2 short_digit wer_num: P4 dWER COMMIT-WL - NOPARTIAL: median +0.0000 mean +0.0000 worse 0 better 0 same 20 n=20
+```
+
+- command: `src/scripts/p4_rescore.py`
+- runs: see the scorer's run list
+- NOTES: "2026-11-23 — P4 RE-SCORED under the number-normalized scorer (post-hoc sensitivity): sign and bar outcome unchanged on multi_step in pass 2 and pass 2k, the other sets inert; PROVENANCE GAP closed (pass 2's P4 mean); step 1's LABELS table regenerated" (ffbcb3c 2026-11-23)
+
+### Pass 2 P4 on long_digit: dWER, registered scorer (inert: no commits)
+
+```
+P4 PASS2 long_digit wer: P4 dWER COMMIT-WL - NOPARTIAL: median +0.0000 mean +0.0000 worse 0 better 0 same 18 n=18
+```
+
+- command: `src/scripts/p4_rescore.py`
+- runs: see the scorer's run list
+- NOTES: "2026-11-23 — P4 RE-SCORED under the number-normalized scorer (post-hoc sensitivity): sign and bar outcome unchanged on multi_step in pass 2 and pass 2k, the other sets inert; PROVENANCE GAP closed (pass 2's P4 mean); step 1's LABELS table regenerated" (ffbcb3c 2026-11-23)
+
+### Pass 2 P4 on long_digit under the number-normalized scorer (inert)
+
+```
+P4 PASS2 long_digit wer_num: P4 dWER COMMIT-WL - NOPARTIAL: median +0.0000 mean +0.0000 worse 0 better 0 same 18 n=18
+```
+
+- command: `src/scripts/p4_rescore.py`
+- runs: see the scorer's run list
+- NOTES: "2026-11-23 — P4 RE-SCORED under the number-normalized scorer (post-hoc sensitivity): sign and bar outcome unchanged on multi_step in pass 2 and pass 2k, the other sets inert; PROVENANCE GAP closed (pass 2's P4 mean); step 1's LABELS table regenerated" (ffbcb3c 2026-11-23)
+
+### Pass 2k P4 on multi_step under the number-normalized scorer (post-hoc sensitivity)
+
+```
+P4 PASS2K multi_step wer_num: P4 dWER STOP-NOPARTIAL: median -0.0000 [-0.0000, -0.0000] mean +0.0028 n=70 -> HOLDS | dWER mean CI [-0.0038, +0.0096]; worse 12, better 8
+```
+
+- command: `src/scripts/p4_rescore.py`
+- runs: see the scorer's run list
+- NOTES: "2026-11-23 — P4 RE-SCORED under the number-normalized scorer (post-hoc sensitivity): sign and bar outcome unchanged on multi_step in pass 2 and pass 2k, the other sets inert; PROVENANCE GAP closed (pass 2's P4 mean); step 1's LABELS table regenerated" (ffbcb3c 2026-11-23)
+
 ## Pre-roll defect: post-hoc sensitivity, beside the registered values (NOTES 2026-11-22)
 
 ### P2a population without the turns the pre-roll audit flagged (post-hoc sensitivity)

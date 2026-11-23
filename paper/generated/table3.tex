@@ -28,8 +28,8 @@ P2b & \texttt{ce0397e} & \texttt{677537d} & NOT TESTABLE & structural: each item
 P3 & \texttt{0a1437b} & \texttt{571d622} & FAILS & bar moved before the data: $\ge$1000, $\ge$500, then $\ge$300 ms \\
 P3 (pass 2k) & \texttt{3228b69} & \texttt{59cf3ab} & HOLDS & CI lower end +294 below the 300 ms bar \\
 feasibility gate / dev (pass 2k) & \texttt{3228b69} & \texttt{59cf3ab} & GATE ABSTAINED (0 hypotheses, 0 stops, 3 runs); TTFA +2 ms [-15, +15], n=16 $\to$ within +/-100 &  \\
-P4 & \texttt{013ecd9} & \texttt{571d622} & PASSES & selection-set estimate +0.028 (median 10.6 s items) did not carry \\
-P4 (pass 2k) & \texttt{3228b69} & \texttt{59cf3ab} & HOLDS on multi\_step &  \\
+P4 & \texttt{013ecd9} & \texttt{571d622} & PASSES & selection-set estimate +0.028 (median 10.6 s items) did not carry; number-normalized scorer (post-hoc sensitivity): multi\_step mean +0.0077 (16 worse, 6 better), n=62, passes; other sets 0 by inertness (no commits) \\
+P4 (pass 2k) & \texttt{3228b69} & \texttt{59cf3ab} & HOLDS on multi\_step & number-normalized scorer (post-hoc sensitivity): multi\_step mean +0.0028 [-0.0038, +0.0096], n=70, HOLDS; dev 0 by inertness \\
 P5 & \texttt{5b9fa60} & \texttt{dde198b} & FAILS (criterion cannot separate arms) &  \\
 P6 & \texttt{013ecd9} & \texttt{571d622} & NOT MET ON TWO SETS, FALSIFIED ON NONE &  \\
 P6 (pass 2k) & \texttt{3228b69} & \texttt{59cf3ab} & HOLDS on multi\_step 0.95x [0.94, 0.96] (n=70 items); dev 0.97x [0.96, 0.98] holds by inertness (uninformative) &  \\
