@@ -58,6 +58,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import numpy.typing as npt
 
+from twl.closed_loop import ModelCommitter
 from twl.commit import LocalAgreementCommitter, Word
 from twl.pacing import SelfPacedIssuer, modelled_decode_ms
 from twl.runaway import compression_ratio, runaway_reason
@@ -191,6 +192,7 @@ def replay(
     s: ReplaySettings,
     endpoint_s: float,
     open_s: float = 0.0,
+    model: ModelCommitter | None = None,
 ) -> ReplayResult:
     """Replay the hypothesis path on ONE TURN and label its words.
 
@@ -204,6 +206,11 @@ def replay(
             the idle time start there, as live (stt.py resets the issuer and
             the last decode's end at the open); the buffer already holds the
             pre-roll, audio[0 : open_s].
+        model: the learned committer in LA-2's place (step 2's closed loop,
+            twl.closed_loop): it commits from the rows' features, LA-2 runs in
+            shadow for the la2_commit feature, and each offered hypothesis's
+            record gains the fresh indices it committed. None: LA-2 commits,
+            exactly as before.
 
     Returns:
         The rows and the replay's counts.
@@ -223,7 +230,11 @@ def replay(
         agreement_n=s.agreement_n,
     )
     issuer.reset()
-    committer = LocalAgreementCommitter(agreement_n=s.agreement_n, tail_guard_s=s.tail_guard_s)
+    committer: LocalAgreementCommitter | ModelCommitter = (
+        model
+        if model is not None
+        else LocalAgreementCommitter(agreement_n=s.agreement_n, tail_guard_s=s.tail_guard_s)
+    )
     now, idle_ms, last_commit = open_s, 0.0, 0.0
     remainder: tuple[Word, ...] = ()
     k = 0
@@ -269,12 +280,25 @@ def replay(
         verdict = runaway_reason([h.word for h in hyp])
         out.hyps[-1]["runaway"] = verdict
         guarded = bool(verdict) and s.runaway_guard
-        kept = [] if guarded else committer.offer([h.word for h in hyp], buffer_end_s=now)
-        ctx = HypContext(k, now, ce, last_commit, remainder, len(kept))
         fresh = fresh_words(hyp, ce)
+        if model is None:
+            assert isinstance(committer, LocalAgreementCommitter)
+            kept = [] if guarded else committer.offer([h.word for h in hyp], buffer_end_s=now)
+            ctx = HypContext(k, now, ce, last_commit, remainder, len(kept))
+            hyp_rows = rows(hyp, ctx, final)
+        else:
+            # LA-2 in shadow on the model's stream, for the la2_commit feature;
+            # then the model commits from this hypothesis's rows.
+            la2_n = 0 if guarded else model.shadow_would_commit(fresh, now)
+            ctx = HypContext(k, now, ce, last_commit, remainder, la2_n)
+            hyp_rows = rows(hyp, ctx, final)
+            kept = [] if guarded else model.offer_rows(fresh, hyp_rows)
+            out.hyps[-1]["committed_idx"] = [] if guarded else list(model.last_idx)
+            if not guarded:
+                model.note_offered(fresh)
         out.empty_words += sum(1 for h in fresh if not is_scored(h.word))
         ratio = compression_ratio([h.word for h in hyp])
-        out.rows.extend({**r, "hyp_compression_ratio": ratio} for r in rows(hyp, ctx, final))
+        out.rows.extend({**r, "hyp_compression_ratio": ratio} for r in hyp_rows)
         out.hypotheses += 1
         # LA-2's own remainder rule (LocalAgreementCommitter.offer).
         remainder = tuple(
