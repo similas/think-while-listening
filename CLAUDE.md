@@ -232,8 +232,13 @@ Root-level files are allowed; no other top-level folders.
   three proxies):
   - A harness waits for the **event** it depends on, never a proxy (a count, a
     silence, a clock).
-  - Every turn is checked against the **file's ground truth**, not the
-    pipeline's opinion.
+  - Every turn outside a VAD split pair that has a VAD stop, in file playback,
+    is checked against **its own file's end of speech**, not the pipeline's
+    opinion: the file's end is looked up by the file index read at the
+    turn's open (from b5bea37, 2026-11-24), and one divergence outside a
+    split pair voids the run. Before that, runs were checked live only up to
+    their first split; the cited runs' later turns were checked post hoc from
+    the playback timeline, 80 of them not located (NOTES 2026-11-24).
   - The abort record is written **before** the abort.
   - A shared-core penalty is a penalty whether or not a lock is held. Every run
     with partials reports the in-flight-at-endpoint rate.

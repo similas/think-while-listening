@@ -10011,3 +10011,85 @@ once, not once per force-finish. Past set-table rates, PASS 1's splits/files
 table among them, are the old quantity; a run after 37885c7 reports the new
 one. The two are not compared without saying so. The summary still prints
 the force-finish count beside the rate.
+
+## 2026-11-24 — ENDPOINT DRIFT after a split, post hoc: in the 160 cited runs no checked turn crosses the 1500 ms bar (1702 checked, 80 not located); the lookup fixed (Ali's decision 6)
+
+Ali (2026-11-24), as he wrote it: "Decision 6: (b). Fix the lookup by the
+file index read at turn open, with a test of a drift after a split; then
+the approximate post-split check of every cited run from the playback
+timeline, reported per run. Thesis and brief wording for past runs: "Turns
+are checked against the file's ground truth at record time; in runs with a
+VAD split, turns after the first split were checked post hoc from the
+playback timeline (NOTES 2026-11-24)." CLAUDE.md states the rule as it now
+holds."
+
+THE FIX (b5bea37):
+- The drift check now looks up the file's end of speech by the file index
+  read at the turn's open. Only a run with no file index falls back to the
+  turn number.
+- The drift is logged per turn as endpoint_drift_ms (None where the check
+  does not run).
+- The test test_a_drift_after_a_split_is_checked_against_its_own_file
+  (as amended in the commit after ce3f6b6): after a split, a turn 4 s late
+  against its own file is flagged and voids the run. Each file's end exists
+  in the test only once that file has played, as live. With the old lookup
+  the turn is not checked and the test fails (checked by hand, not logged).
+
+THE CHECK (src/scripts/drift_posthoc.py at ce3f6b6, post hoc), logged per
+run with the claims and ledger rows citing each run:
+results/raw/run_logs/20261124_drift/drift_posthoc.log.
+- Cited runs: 160. These are every run in a registered claim's population
+  or gate, and the ledger rows' runs. All 160 have a playback timeline.
+- Method: the pre-roll audit's located close of each turn minus its file's
+  end, on the timeline's delivered-chunk clock (20 ms per chunk). The file
+  is the one holding the turn's open. Split-pair turns are not checked, as
+  live. It is an approximation: the chunk clock counts delivered audio only
+  (it stops while the playback gate waits), and the close is where the
+  saved segment was located.
+- Calibration, before each run's first split or desync (checked live):
+  3885 turns, all located; drift -300 to +720 ms; none over the bar; no
+  live flag.
+- After it, in 60 runs (never checked live): 2471 turns. 689 are
+  split-pair turns, not checked, as live. 80 could not be located. The
+  other 1702 were checked: drift -700 to +760 ms, none over 1500 ms.
+
+What it shows: no checked post-split turn of a cited run would have been
+flagged by the live rule. What it does not: the 80 unlocated turns remain
+unchecked, and the method approximates the live clock.
+
+Wording:
+- thesis/chapters/ch3_methods.tex and the brief's §9 rule now carry Ali's
+  sentence.
+- CLAUDE.md states the rule as it now holds: the end of speech is looked up
+  by the file index from b5bea37; earlier runs were checked live up to their
+  first split, and the rest post hoc.
+- The brief's §3.4 is left as the design. Its "turn N ... speech_end_ns[N]"
+  is what the fix implements, N being the file's position. Its abort clause
+  ("abort on the *second* divergence") is not what the code does (the
+  CORRECTION below).
+
+## 2026-11-24 — CORRECTION to "2026-11-24 — CORRECTION to §3.4 ("TURNS ARE CHECKED AGAINST THE FILE") and to "PASS 1 COMPLETE": the endpoint-drift check stops at a run's first split": a run voids on its FIRST divergence outside a split pair, not the second
+
+The reviewer found this checking decision 6. The CORRECTION (8b82f65) says
+the invariant "the second divergence voids the run" could not fire, and
+that "a second divergence voids a run". Both are wrong about the rule. The
+code sets invariant_error on the first divergence outside a split pair
+(src/twl/turns.py), and run_reactive.py aborts the run on it. The test
+test_a_divergence_outside_a_split_voids_the_run asserts exactly that. The
+2026-10-01 PASS 1 VOID entry made one divergence outside a split a
+cascade, which superseded §3.4's "one is tolerated"; the brief's §3.4 still
+says "second".
+
+Ali decided on decision 6 with "second" stated as the rule. What the fix
+(b5bea37) does, in fact:
+- From b5bea37, the rule reaches every turn after a run's first split, and
+  a single post-split divergence outside a split pair aborts the run.
+- One case it now catches is a split at a normal endpoint whose first turn
+  ends more than 1500 ms before its file does. The DECISIONS entry above
+  says nothing marks that turn; from b5bea37, the drift check does, and the
+  run aborts.
+- None of the 160 cited runs would have aborted on it: 0 checked turns over
+  the bar, before or after the first split (the entry above; 80 post-split
+  turns not located).
+Whether a post-split divergence should void a run or only flag it is put
+to Ali.

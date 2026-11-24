@@ -82,7 +82,9 @@ difference is taken per item, and the 95\% confidence interval is a
 percentile bootstrap over items. Analyses that depart from this state their
 design with their result.
 
-\textbf{Validity.} Turns are checked against the file's ground truth. A turn
+\textbf{Validity.} Turns are checked against the file's ground truth at record
+time; in runs with a VAD split, turns after the first split were checked post
+hoc from the playback timeline (NOTES 2026-11-24). A turn
 split by the voice-activity detector, a turn whose endpoint fired after its
 final transcript, and a run that fails a registered validity check are
 excluded by rules fixed before scoring.
