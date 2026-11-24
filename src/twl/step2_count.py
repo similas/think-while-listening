@@ -20,8 +20,11 @@ guarded, as for every committer):
   word starting at or after the later of the stream's committed end and the
   committer's own (the end of the last word it committed in this turn).
   ``decide`` returns the fresh-word indices it commits; any ineligible index
-  is an error. A fresh word before the committer's own end is inside its
-  committed prefix, so it counts as committed. LA-2's commits on step 1's
+  is an error. A fresh word the committer can no longer commit (before its
+  own end) counts as committed only if it matches a word it did commit in
+  this turn (the same Word.key, overlapping in time); otherwise a unit holding
+  it can never be whole (Q4: "all its scored words are committed"), and the
+  unit is counted as BLOCKED. LA-2's commits on step 1's
   stream must never break the rule: counting them raises if one does, so
   every run of step2_anchors.py or the scorer checks it.
 - The ORACLE (memory=False) is oracle_ceiling.py's rule, every final unit at
@@ -29,7 +32,9 @@ guarded, as for every committer):
   prefix memory does not apply; it commits each final unit once (its decide).
 - UNITS: num_units over the fresh words, aligned to the final's units by
   align_units. A unit is WHOLE when every scored word in it is committed, at
-  this hypothesis or earlier.
+  this hypothesis or earlier (as above). A word committed into a unit not yet
+  whole waits; a later hypothesis's unit takes it when the word's midpoint
+  lies within that unit's span.
 - A WHOLE unit that aligns to a final unit not yet credited credits that
   final unit, and the scored words committed into it (now, or pending from an
   earlier hypothesis) are correct commits. A whole unit that aligns nowhere,
@@ -67,6 +72,7 @@ class Counts:
     pending_left: int = 0  # committed into a unit never completed (not correct)
     unaligned: int = 0  # committed into a whole unit that aligns nowhere
     duplicate: int = 0  # committed into a whole unit whose final unit was already credited
+    blocked: int = 0  # unit-hypotheses kept from whole by a word it can no longer commit
 
     def add(self, o: Counts) -> None:
         for k in self.__dataclass_fields__:
@@ -83,6 +89,7 @@ def count_turn(turn: dict[str, Any], decide: Decide, guarded: bool, memory: bool
     fu = num_units([w.text for w in final])
     c = Counts(words=sum(1 for w in final if is_scored(w)))
     own_end = float("-inf")  # the end of the last word this committer committed
+    done: list[Word] = []  # every word this committer committed in the turn
     credited: set[int] = set()
     pending: list[Word] = []  # committed scored words awaiting their unit's completion
     h = 0
@@ -107,9 +114,14 @@ def count_turn(turn: dict[str, Any], decide: Decide, guarded: bool, memory: bool
         bad = [i for i in now if not eligible[i]]
         if bad:
             raise ValueError(f"hypothesis {h}: committed ineligible fresh words {sorted(bad)}")
-        before = [not e for e in eligible]  # inside the committed prefix
+        before = [
+            not eligible[i]
+            and any(d.key == w.key and d.start_s < w.end_s and w.start_s < d.end_s for d in done)
+            for i, w in enumerate(fresh)
+        ]
         if now:
             own_end = max(own_end, max(fresh[i].end_s for i in now))
+            done += [fresh[i] for i in sorted(now)]
         new_scored = {i for i in now if is_scored(fresh[i])}
         c.commits += len(new_scored)
         for k, (idx, _tokens) in enumerate(units):
@@ -118,9 +130,10 @@ def count_turn(turn: dict[str, Any], decide: Decide, guarded: bool, memory: bool
             held = [w for w in pending if span[0] <= (w.start_s + w.end_s) / 2 <= span[1]]
             if not mine and not held:
                 continue
-            whole = all(before[i] or i in now for i in idx if is_scored(fresh[i]))
-            if not whole:
+            missing = [i for i in idx if is_scored(fresh[i]) and not (before[i] or i in now)]
+            if missing:
                 pending += [fresh[i] for i in mine]
+                c.blocked += any(not eligible[i] for i in missing)
                 continue
             for w in held:
                 pending.remove(w)

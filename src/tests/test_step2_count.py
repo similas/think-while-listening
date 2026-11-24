@@ -67,11 +67,27 @@ def test_the_oracle_credits_every_surviving_unit_once_and_is_never_wrong() -> No
 
 
 def test_la2_and_the_oracle_bound_the_gap() -> None:
-    """g = (model - LA-2) / (oracle - LA-2): LA-2's commits through the same
-    function give 0, the oracle's give 1."""
+    """g = (model - LA-2) / (oracle - LA-2): LA-2's commits, fed through the
+    MODEL's path (P = 1 on them, 0 elsewhere, tau 0.5), give LA-2's own counts,
+    so g = 0; the oracle's give g = 1."""
     t = turn((FINAL[:4], 0.0), (FINAL[3:], 0.7))
-    la2 = count_turn(t, la2_decide({(1, 0), (1, 1), (1, 2)}), guarded=False).correct_words
+    commits = {(1, 0), (1, 1), (1, 2)}
+    la2 = count_turn(t, la2_decide(commits), guarded=False)
+    as_model = count_turn(
+        t, prefix_decide(lambda h, i: 1.0 if (h, i) in commits else 0.0, 0.5), guarded=False
+    )
+    assert as_model == la2
     orc = count_turn(t, oracle_decide(), guarded=False, memory=False).correct_words
-    as_model = count_turn(t, la2_decide({(1, 0), (1, 1), (1, 2)}), guarded=False).correct_words
-    assert (as_model - la2) / (orc - la2) == 0
-    assert (orc - la2) / (orc - la2) == 1
+    assert (as_model.correct_words - la2.correct_words) / (orc - la2.correct_words) == 0
+
+
+def test_a_word_it_can_no_longer_commit_does_not_complete_a_unit() -> None:
+    """Q4: all its scored words committed. Hypothesis 2 re-times "five" to start
+    before the model's own end (0.7 s): it is ineligible, never committed, so
+    "twenty five" cannot become whole; "twenty" stays a commit not correct."""
+    retimed = [*FINAL[:2], ("twenty", 0.4, 0.65), ("five", 0.65, 0.9), FINAL[4]]
+    t = turn((FINAL[:4], 0.0), (retimed, 0.0))
+    p = {(1, 0): 0.9, (1, 1): 0.9, (1, 2): 0.9, (1, 3): 0.1, (2, 4): 0.9}
+    c = count_turn(t, prefix_decide(p_table(p), 0.5), guarded=False)
+    assert (c.commits, c.correct_commits, c.correct_words) == (4, 3, 3)
+    assert (c.pending_left, c.blocked) == (1, 1)

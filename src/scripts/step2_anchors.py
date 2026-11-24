@@ -29,7 +29,10 @@ Per condition (guarded, unguarded), on the selection set:
   (2000 resamples, seed 0);
 - CHECK: the oracle counted by count_turn equals its rule counted directly
   (oracle_ceiling.py's: the final units some fresh unit aligns to), and every
-  oracle commit is correct;
+  oracle commit is correct; LA-2's commits fed through the MODEL's path
+  (twl.step2_count.prefix_decide, P = 1 on them and 0 elsewhere, tau 0.5)
+  give LA-2's own counts on every turn (Ali's Q3: one counting function,
+  LA-2 giving g = 0);
 - BASE: the scored rows' survival rate (label_num), the rows a calibration is
   scored on (the guard's hypotheses dropped when guarded); a constant
   predictor at that rate has an in-sample expected calibration error of 0;
@@ -58,7 +61,7 @@ import pyarrow.parquet as pq
 from scripts.la_operating_point import BOOT, provenance
 from twl.la_baseline import LABEL, simulated_commits
 from twl.runaway import runaway_reason
-from twl.step2_count import count_turn, la2_decide, oracle_decide, words_of
+from twl.step2_count import count_turn, la2_decide, oracle_decide, prefix_decide, words_of
 from twl.survival_labels import align_units, is_scored, num_units
 
 CORPUS = "mqa-single_step"
@@ -79,6 +82,7 @@ class File:
     oracle_commits: int = 0
     oracle_correct_commits: int = 0
     oracle_direct: int = 0  # the oracle's rule counted directly (CHECK)
+    la2_model_path_mismatch: int = 0  # turns where LA-2 via prefix_decide differs (CHECK)
     rows: int = 0  # scored rows offered (calibration's population)
     rows_pos: int = 0
 
@@ -86,11 +90,12 @@ class File:
 def file_counts(u: dict[str, object], guarded: bool, tail_guard: float, labels: dict) -> File:
     f = File()
     for k, t in enumerate(u["turns"]):  # type: ignore[attr-defined]
-        la2 = count_turn(
-            t,
-            la2_decide(simulated_commits(t["hyps"], 2, tail_guard, runaway_guard=guarded)),
-            guarded,
+        la2_set = simulated_commits(t["hyps"], 2, tail_guard, runaway_guard=guarded)
+        la2 = count_turn(t, la2_decide(la2_set), guarded)
+        via_model = count_turn(
+            t, prefix_decide(lambda h, i, s=la2_set: 1.0 if (h, i) in s else 0.0, 0.5), guarded
         )
+        f.la2_model_path_mismatch += via_model != la2
         orc = count_turn(t, oracle_decide(), guarded, memory=False)
         f.words += la2.words
         f.la2_correct += la2.correct_words
@@ -176,9 +181,11 @@ def lines_for(files: list[File], cond: str) -> list[str]:
     oc, occ, od = (
         tot(files, a) for a in ("oracle_commits", "oracle_correct_commits", "oracle_direct")
     )
-    if od != o or occ != oc:
+    mm = tot(files, "la2_model_path_mismatch")
+    if od != o or occ != oc or mm:
         raise SystemExit(
-            f"CHECK failed ({cond}): oracle {o} vs direct {od}; commits {oc}, correct {occ}"
+            f"CHECK failed ({cond}): oracle {o} vs direct {od}; commits {oc}, correct {occ}; "
+            f"LA-2 via the model's path differs on {mm} turns"
         )
     return [
         f"ANCHORS {cond}: files {len(files)}; finals' scored words {W}; LA-2 commits {n} (correct "
@@ -188,7 +195,8 @@ def lines_for(files: list[File], cond: str) -> list[str]:
         f"{fmt(la2)}; oracle {o}/{W} = {fmt(orc)}; bars at the point: g = 0.5 -> {half:.4f}, "
         f"g = 0.25 -> {quarter:.4f}",
         f"CHECK {cond}: the oracle by count_turn {o} = its rule counted directly {od}; oracle "
-        f"commits {oc}, all correct ({occ})",
+        f"commits {oc}, all correct ({occ}); LA-2's commits through the model's path "
+        f"(prefix_decide) reproduce LA-2's counts on every turn",
         f"BASE {cond}: scored rows {tot(files, 'rows')}, survive {tot(files, 'rows_pos')} = "
         f"{base:.4f}; a constant predictor at this rate has in-sample ECE 0",
         f"POWER {cond}: a stand-in at about half the gap (each file the oracle's or LA-2's "
