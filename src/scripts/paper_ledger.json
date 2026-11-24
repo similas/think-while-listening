@@ -468,7 +468,8 @@
   "verdict": "HOLDS: g = 0.6255 [0.5806, 0.6691], n=574 files, tau* 0.64 (in-sample, median of 3 seeds, guarded)",
   "corrections": [],
   "amendments": [
-   "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad): the configuration is chosen by held-out log-loss (Ali's Q7); the four readings approved. Before the scorer and any fit"
+   "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad): the configuration is chosen by held-out log-loss (Ali's Q7); the four readings approved. Before the scorer and any fit",
+   "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad, 2439df4): the secondary model's declarations, and (c)'s partner (Ali's decision 2); the freeze lifted for the closed-loop run. Before the run and before the secondary's training"
   ],
   "qualifier": "in-sample (tau*, seed) and off-policy until the closed loop; unguarded, tau* re-chosen at LA-2's unguarded limit, g = 0.2176 [0.1577, 0.2753] (0.6254 at the guarded tau*); the conditions differ only in the turns holding the guard's 594 discarded rows"
  },
@@ -480,7 +481,8 @@
   "verdict": "(a) MET, (b) MET, (c) PENDING: lag median +2.454 s [+2.451, +2.463], n=6170 words; ECE 0.0154 [0.0116, 0.0201], n=22871 rows; (c) after the primary's Pareto (Q5)",
   "corrections": [],
   "amendments": [
-   "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad): the configuration is chosen by held-out log-loss (Ali's Q7); the four readings approved. Before the scorer and any fit"
+   "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad): the configuration is chosen by held-out log-loss (Ali's Q7); the four readings approved. Before the scorer and any fit",
+   "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad, 2439df4): the secondary model's declarations, and (c)'s partner (Ali's decision 2); the freeze lifted for the closed-loop run. Before the run and before the secondary's training"
   ]
  }
 ]

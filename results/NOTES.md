@@ -10719,3 +10719,96 @@ pending commits, the hand-checked count, the rate's CI, both digit sets,
 the ledger heads, this line; finding 8, a correction to the report after
 round 36, does not apply: that report gave 288,160 label rows from
 labels_table.log and no guarded count).
+
+## 2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad, 2439df4): the secondary model's declarations, and (c)'s partner (Ali's decision 2); the freeze lifted for the closed-loop run. Before the run and before the secondary's training
+
+Ali (2026-11-24), on the report that scored the primary, as he wrote it:
+
+    Decisions:
+    1. (a). Write the closed-loop driver and scorer, review, commit. GO for
+    the closed-loop run on the scored model (L63_R200_text, seed 2, τ* 0.64),
+    guarded, ~1 h, box quiet, as soon as the review clears — no further
+    message needed from me.
+    2. (a). Amend the secondary now as you state it, with (c)'s partner
+    fixed. Train it only after the closed-loop run has finished — training is
+    compute on the box, and nothing runs during a measured run.
+
+    Entry wording: the false-commit CI including the limit is stated beside
+    the point, as the registered rule reads; the "never saw runaways"
+    explanation stays labelled as untested.
+
+The option he chose, as the report stated it: "Amend now, carrying over the
+primary's declarations: the same 8 configurations and seeds, the held-out
+split rule over its four corpora (the three primary ones plus the 1,322
+unsealed multi_step files), and selection by held-out log-loss. (c) is scored
+against the primary as scored now; if the closed loop leads to a retrained
+primary, (c) is reported against both. Then train and score (c)."
+
+Ali approved, 2026-11-24: decision 2 (a) as the report stated it, and the
+GO in decision 1. Item 3's resampling details, item 4 and item 5's commit
+order are declared here, consistent with 345efad and 2439df4; they are not
+his choices.
+
+THE FREEZE. NOTES 2026-10-13 froze measurement, and the 2026-11-18 entry left
+recording any lift to Ali. Ali's GO above is read as lifting it for the
+closed-loop run, and for that run only. The step-1 label replays (2026-11-19) and the LA-3
+replay (2026-11-23) ran under the same launcher with no lift recorded; that
+gap is stated here, not repaired.
+
+THE BOARD. For "box quiet", the thesis's own llama-server (twl-llama.service,
+resident and idle, unused by the replay) is stopped before the smoke run and
+restarted after the full run, both times recorded with the run. spotifyd
+(the voice companion's Spotify device) stays up: it computes only if music
+is played to it. The clocks are not pinned, a departure from the run
+skill's preconditions: the replay's clock is simulated
+(twl.pacing.modelled_decode_ms), so no number of this run depends on wall
+time or clocks. The swap in use is read after twl-llama stops and before
+the launch. The driver logs tj, swap used, the power mode and the clocks at
+the start, tj and the swap traffic (pswpin and pswpout since the start) on
+every progress line, and the totals at the end; it refuses to start at tj
+65 C or above, and runs under the thermal watchdog. ANY growth in pswpin or
+pswpout during the run is reported and the run flagged invalid under
+CLAUDE.md §6; whether it stands, given the simulated clock, is Ali's to
+decide then. The run starts in the afternoon, so its hour does not reach
+the nightly backup at 04:30, which skips only for run_reactive.py.
+
+Amended, before the closed-loop run and before any secondary fit:
+
+1. The secondary's training corpora: the three primary ones plus
+   mqa-multi_step's label rows (results/raw/commit_labels/num), the 1322
+   unsealed files (la_point.log, 20261123_la_point_num), and none of the
+   sealed 80 (the seal file, results/raw/spoken_mqa/multi_step_fresh80-
+   seed20261118.json); the scorer checks the two are disjoint before it
+   reads any secondary output.
+2. Everything else in its training is the primary's (2439df4 items 1, 4 and
+   5): the 8 configurations, their parameters, the seeds 0, 1 and 2, the
+   features, the deterministic settings, the guard's hypotheses dropped, the
+   last checkpoint. The held-out split is the same rule over the four
+   corpora: ids f"{corpus}:{utt}" for every distinct utt in their label-row
+   files, held = random.Random(0).sample(sorted(ids), round(0.1 * n)). The
+   configuration is chosen by the lowest held-out log-loss averaged over its
+   seeds; the median seed by g at its own tau* on the selection set.
+3. (c), the secondary against the primary: both at their own tau*, the
+   difference in correct-committed fraction (secondary - primary), paired
+   per file over the selection set, with a percentile bootstrap CI over
+   files (2000 resamples, seed 0). MET if the CI lies entirely at or below
+   0.05; a CI straddling 0.05 is NOT MET; above it, the primary's
+   generalization is the finding, reported as such (345efad). The primary is
+   the one scored in e207b70 (L63_R200_text, seed 2, tau* 0.64). If the
+   closed loop sends the primary to the retrain branch, (c) is reported
+   against the retrained primary as well.
+4. Predictions are written for the secondary's held-out files, the
+   selection set and the digit sets; model output on the multi_step files is
+   allowed now that the primary's Pareto is scored (decision 9), and never on
+   the sealed 80.
+5. Order: the secondary is trained only after the closed-loop run has
+   finished (Ali). Its training script and (c)'s scorer are committed before
+   its first fit.
+
+WHAT DOES NOT CHANGE: the predictions, bars, estimator, verdicts, checks and
+every other part of 345efad and 2439df4.
+
+Reviewed before commit (round 41: 10 findings, 10 resolved; the freeze
+lift, the board log and its departures, the abort record and SIGTERM, the
+backup window, the scoring-log check, "box quiet", the swap rule settled
+before launch, whose choice each part is, this line).
