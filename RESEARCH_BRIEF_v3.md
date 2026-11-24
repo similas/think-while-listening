@@ -418,7 +418,7 @@ acceptance met), before any run > 30 min. No compute on the Jetson during a meas
   clock). Three void runs on one day, three proxies.
 - Turns are checked against the file's ground truth at record time; in runs with a VAD
   split, turns after the first split were checked post hoc from the playback timeline
-  (NOTES 2026-11-24).
+  (80 turns could not be located) (NOTES 2026-11-24).
 - The abort record is written **before** the abort.
 - A shared-core penalty is a penalty whether or not a lock is held. Every run with
   partials reports the in-flight-at-endpoint rate.

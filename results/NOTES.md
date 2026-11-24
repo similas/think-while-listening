@@ -10093,3 +10093,25 @@ Ali decided on decision 6 with "second" stated as the rule. What the fix
   turns not located).
 Whether a post-split divergence should void a run or only flag it is put
 to Ali.
+
+## 2026-11-24 — DECISIONS on 06a267e (Ali): one divergence outside a split pair voids a run, before or after the first split; the thesis and brief sentence names the 80 unlocated turns
+
+Ali (2026-11-24), as he wrote it:
+
+    Decisions:
+    7. (a). One divergence outside a split pair voids the run, before or
+       after the first split — the 2026-10-01 rule applied to every turn.
+    8. (b). Add "(80 turns could not be located)".
+
+Done:
+7. No code change: the code already voids on the first divergence outside
+   a split pair (src/twl/turns.py; run_reactive.py aborts on it), and from
+   b5bea37 the check reaches every turn after a run's first split that is
+   outside a split pair and has a VAD stop. Ali's decision keeps the
+   2026-10-01 rule. The brief's §3.4 ("abort on the *second* divergence")
+   now contradicts it; an edit to that clause is proposed to Ali, not made.
+8. thesis/chapters/ch3_methods.tex and the brief's §9 rule now read "…
+   turns after the first split were checked post hoc from the playback
+   timeline (80 turns could not be located) (NOTES 2026-11-24)." The 80 of
+   1782 post-split turns outside split pairs are summed over
+   drift_posthoc.log's per-run lines (its SUMMARY does not print them).
