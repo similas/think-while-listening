@@ -466,7 +466,10 @@
   "registered": "2026-11-24 — PRE-REGISTRATION: step 2, the learned committer's offline evaluation (Ali's predictions, in his words; scaffolding approved by Ali). Committed before the scorer and any model code",
   "scored": null,
   "verdict": "PENDING",
-  "corrections": []
+  "corrections": [],
+  "amendments": [
+   "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad): the configuration is chosen by held-out log-loss (Ali's Q7); the four readings approved. Before the scorer and any fit"
+  ]
  },
  {
   "id": "step 2 (a)-(c)",
@@ -474,6 +477,9 @@
   "registered": "2026-11-24 — PRE-REGISTRATION: step 2, the learned committer's offline evaluation (Ali's predictions, in his words; scaffolding approved by Ali). Committed before the scorer and any model code",
   "scored": null,
   "verdict": "PENDING",
-  "corrections": []
+  "corrections": [],
+  "amendments": [
+   "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad): the configuration is chosen by held-out log-loss (Ali's Q7); the four readings approved. Before the scorer and any fit"
+  ]
  }
 ]

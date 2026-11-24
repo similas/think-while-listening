@@ -10523,3 +10523,75 @@ for the limit's move, the Pareto, tau*'s objective, the lag pairing, the
 guard at training, Ali's re-sent text, the ledger form, BLOCKED's wording
 and direction, the tie rule's quantity, the reviewer count; the
 configuration selection left to Ali, marked PENDING Q7).
+
+## 2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad): the configuration is chosen by held-out log-loss (Ali's Q7); the four readings approved. Before the scorer and any fit
+
+Ali (2026-11-24), as he wrote it:
+
+    Q7: (b). Configuration chosen by log-loss on a held-out 10 % of the
+    training corpora's files, split by file, seed 0; the selection set
+    chooses only τ* and the median seed. Record it as an amendment to 345efad
+    before the scorer is written.
+
+    Your four readings are correct; record them as approved. The moved limit
+    (0.0458) and the memory-blocked units stand as the entry states them; the
+    scorer prints the blocked amount beside g.
+
+    Then: step2_score.py committed, the training script, train the primary,
+    score, report.
+
+Ali approved, 2026-11-24: the choice in item 1 (held-out log-loss, 10 %,
+split by file, seed 0, the selection set choosing only tau* and the median
+seed), and items 2 and 3 (his answer). Item 1's operational details and the
+mean over seeds, and items 4 and 5, are declared here under Q4 ("at most 8
+declared configurations") before any fit; they are not his choices.
+
+Amended, before step2_score.py, the training script or any fit:
+
+1. [PENDING Q7] in RUNS now reads: the configuration scored is the one with
+   the lowest held-out log-loss (Ali's choice). Declared details: the file
+   ids are f"{corpus}:{utt}" for every distinct utt in the three primary
+   corpora's label-row files; n is their number; the held-out files are
+   random.Random(0).sample(sorted(ids), round(0.1 * n)), and every
+   configuration and seed is trained on the rest. The training script logs
+   n and the held-out count before fitting. A configuration's held-out
+   log-loss is the binary log-loss of P(survive) against label_num on the
+   held-out rows (label_num 0 or 1, the guard's hypotheses dropped),
+   averaged over its three seeds: the mean over seeds is a reading of
+   "chosen by log-loss". The selection set chooses only tau* and the median
+   seed (Ali's words).
+2. The four readings filled after his approval of the scaffold are approved
+   by Ali (2026-11-24): the counting function's matching rule, the PARETO
+   line, tau*'s objective (the correct-committed fraction), and the lag
+   pairing under Q4.
+3. The limit 322/7038 = 0.0458 and the memory-blocked units stand as the
+   entry states them; the scorer prints the model's blocked amount beside g.
+4. The declared configurations (Q4: at most 8, the last checkpoint of each,
+   no early stopping), fixed here before any fit. Gradient-boosted trees
+   (lightgbm 4.7.0, objective binary), each trained for a fixed number of
+   rounds with learning rate 0.05, min_data_in_leaf 200, feature_fraction
+   0.8, bagging_fraction 0.8 with bagging_freq 1, lambda_l2 1.0, the seed
+   (0, 1 or 2) as lightgbm's seed, and deterministic=true, force_col_wise=true,
+   num_threads 4, so a fit is reproducible and the three seeds' range is seed
+   variance alone. They are the 2 x 2 x 2 grid of:
+   - num_leaves 15 or 63;
+   - 200 or 600 rounds;
+   - the word's text as a feature or not (text_hash % 1024, floor modulo,
+     0 to 1023, as a categorical feature).
+   The other features, in every configuration: the phase plan's columns
+   (NOTES 2026-11-18: pos_from_end_s, word_dur_s, logprob, no_speech_prob,
+   partials_seen, agreed_prev, la2_commit, buffer_s, since_commit_s), plus
+   seg_avg_logprob and num_unit, both hypothesis-side, added here.
+5. Predictions are written for the held-out training files, the selection
+   set (single_step items 20 and up) and the digit sets (evaluation only, at
+   tau*, descriptive); none on multi_step before the primary's
+   selection-set Pareto is scored (decision 9; the secondary is trained on
+   it then, Q5).
+
+WHAT DOES NOT CHANGE: the predictions, bars, estimator, verdicts, checks and
+every other part of 345efad.
+
+Reviewed before commit (round 37: 6 findings, 6 resolved; whose choice each
+part is, the two added features, the split call and the hash encoding,
+deterministic training, item 5 against Q5 and the held-out rows, this
+line).
