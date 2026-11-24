@@ -18,15 +18,25 @@ declared there, before any fit.
   checkpoint (a fixed number of rounds, no early stopping).
 - Predictions (amendment item 5): the held-out training files, the selection
   set (single_step items 20 and up) and the digit sets; none on multi_step.
+- The retrained model (AMENDMENT 2026-11-24, "the retrained model's verdict is
+  decided by one guarded closed loop", item 1), with --onpolicy DIR: the
+  on-policy rows of LibriSpeech test-clean (step2_relabel.py's
+  librispeech-test-clean.onpolicy.parquet and .utterances.parquet in DIR) are
+  added to all the rows above, label 0/1, the guard's hypotheses dropped
+  (guarded_out on the relabel's utterances file), keyed as
+  f"librispeech-test-clean:{utt}". They add no file to the split: a file
+  outside step 1's test-clean stops the fit. Their rows of held-out files are
+  held out. Their sha256 enter the manifest with the others.
 
 Writes, under --out: manifest.json; models/<config>_s<seed>.txt;
-heldout/<config>_s<seed>.parquet (key, turn, hyp_index, word_index, label, p);
+heldout/<config>_s<seed>.parquet (source, key, turn, hyp_index, word_index,
+label, p; source "step1" or "onpolicy", since the two share keys);
 preds/<config>_s<seed>.parquet (corpus, utt, turn, hyp_index, word_index, p).
 
 Run in ~/.venvs/twl-learn with PYTHONPATH=src, from the repository root:
 
     step2_train.py --out results/raw/step2/primary
-                   [--labels results/raw/commit_labels/num] [--log FILE]
+                   [--labels results/raw/commit_labels/num] [--onpolicy DIR] [--log FILE]
 """
 
 from __future__ import annotations
@@ -53,6 +63,8 @@ TRAIN = ("librispeech-test-clean", "librispeech-test-other", "peoples-speech")
 SEL = "mqa-single_step"
 SELECTION_FROM = 20
 DIGITS = ("mqa-short_digit", "mqa-long_digit")
+ONPOLICY = "librispeech-test-clean"  # the relabelled corpus (Ali's decision 2 on 54fce21)
+ONPOLICY_STEM = f"{ONPOLICY}.onpolicy"
 LABEL = "label_num"
 NUMERIC = (
     "pos_from_end_s",
@@ -133,10 +145,42 @@ def concat(parts: list[dict[str, np.ndarray]]) -> dict[str, np.ndarray]:
     return {c: np.concatenate([p[c] for p in parts]) for c in parts[0]}
 
 
+def read_onpolicy(d: Path, ids: set[str]) -> tuple[dict[str, np.ndarray], dict[str, object]]:
+    """The relabel's rows, kept as the others are, keyed as step 1's test-clean files.
+
+    Stops if a row's file is not among ids (the split's files): the on-policy
+    rows add no file to the split (AMENDMENT 2026-11-24, item 1).
+    """
+    r = read_rows(d, ONPOLICY_STEM)
+    key = np.array([f"{ONPOLICY}:{u}" for u in r["utt"]], dtype=object)
+    outside = set(key.tolist()) - ids
+    if outside:
+        raise SystemExit(
+            f"on-policy rows of {len(outside)} files outside the split: {sorted(outside)[:3]}"
+        )
+    drop = guarded_out(d, ONPOLICY_STEM)
+    keep = np.array(
+        [
+            lab in (0, 1) and (str(u), int(k), int(h)) not in drop
+            for lab, u, k, h in zip(r[LABEL], r["utt"], r["turn"], r["hyp_index"], strict=True)
+        ]
+    )
+    r["key"] = key
+    r["source"] = np.array(["onpolicy"] * len(key), dtype=object)
+    info: dict[str, object] = {
+        "dir": str(d),
+        "files": len(set(key.tolist())),
+        "label_rows": len(keep),
+        "kept": int(keep.sum()),
+    }
+    return take(r, keep), info
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--labels", type=Path, default=Path("results/raw/commit_labels/num"))
+    p.add_argument("--onpolicy", type=Path, default=None, help="step2_relabel.py's output")
     p.add_argument("--log", type=Path, default=None)
     args = p.parse_args()
     build = subprocess.run(
@@ -161,6 +205,11 @@ def main() -> None:
             f = args.labels / f"{c}{suffix}"
             sha[str(f)] = hashlib.sha256(f.read_bytes()).hexdigest()
             say(f"# sha256 {sha[str(f)]} {f}")
+    if args.onpolicy:
+        for suffix in (".parquet", ".utterances.parquet"):
+            f = args.onpolicy / f"{ONPOLICY_STEM}{suffix}"
+            sha[str(f)] = hashlib.sha256(f.read_bytes()).hexdigest()
+            say(f"# sha256 {sha[str(f)]} {f}")
 
     # the training rows: label 0/1, the guard's hypotheses dropped, keyed by file
     parts, ids = [], set()
@@ -176,9 +225,19 @@ def main() -> None:
             ]
         )
         r["key"] = key
+        r["source"] = np.array(["step1"] * len(key), dtype=object)
         parts.append(take(r, keep))
         say(
             f"ROWS {c}: {len(keep)} label rows; kept {int(keep.sum())} (label 0/1, guard's dropped)"
+        )
+    onpolicy: dict[str, object] | None = None
+    if args.onpolicy:
+        op, onpolicy = read_onpolicy(args.onpolicy, ids)
+        parts.append(op)
+        say(
+            f"ROWS {ONPOLICY_STEM}: {onpolicy['label_rows']} label rows of {onpolicy['files']} "
+            f"files; kept {onpolicy['kept']} (label 0/1, guard's dropped); no file added to the "
+            "split"
         )
     rows = concat(parts)
     n = len(ids)
@@ -218,6 +277,7 @@ def main() -> None:
             pq.write_table(
                 pa.table(
                     {
+                        "source": ho["source"].astype(str),
                         "key": ho["key"].astype(str),
                         "turn": ho["turn"],
                         "hyp_index": ho["hyp_index"],
@@ -253,6 +313,7 @@ def main() -> None:
         "rows_line": rows_line,
         "held_out": sorted(held),
         "sha256": sha,
+        "onpolicy": onpolicy,
     }
     (args.out / "manifest.json").write_text(json.dumps(manifest, indent=1) + "\n")
     if args.log:

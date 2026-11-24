@@ -87,6 +87,7 @@ from twl.step2_rules import choose_tau, ece, median_seed, quantile, rate, verdic
 SEL = "mqa-single_step"
 SELECTION_FROM = 20
 TRAIN = ("librispeech-test-clean", "librispeech-test-other", "peoples-speech")
+ONPOLICY = "librispeech-test-clean"  # the retrained model's on-policy rows (step2_train)
 SCORING_CODE = (
     "src/scripts/step2_score.py",
     "src/scripts/step2_anchors.py",
@@ -365,23 +366,34 @@ def main() -> None:
         if m_rows is None:
             stop("the manifest does not give its held-out row count")
         n_held = int(m_rows.group(1)) if m_rows else 0
-        truth: dict[tuple[str, int, int, int], int] = {}
+        truth: dict[tuple[str, str, int, int, int], int] = {}
         held_set = set(held)
-        for c in TRAIN:
+        # the retrained model's on-policy rows (AMENDMENT 2026-11-24, item 1) share
+        # step 1's keys, so a row is (source, key, turn, hyp_index, word_index)
+        sources = [("step1", args.labels / f"{c}.parquet", c) for c in TRAIN]
+        if manifest.get("onpolicy"):
+            od = Path(str(manifest["onpolicy"]["dir"]))
+            sources.append(("onpolicy", od / f"{ONPOLICY}.onpolicy.parquet", ONPOLICY))
+        for src, path, c in sources:
             for r in pq.read_table(
-                args.labels / f"{c}.parquet",
-                columns=["utt", "turn", "hyp_index", "word_index", LABEL],
+                path, columns=["utt", "turn", "hyp_index", "word_index", LABEL]
             ).to_pylist():
                 key = f"{c}:{r['utt']}"
                 if key in held_set:
-                    truth[(key, int(r["turn"]), int(r["hyp_index"]), int(r["word_index"]))] = int(
-                        r[LABEL]
+                    truth[(src, key, int(r["turn"]), int(r["hyp_index"]), int(r["word_index"]))] = (
+                        int(r[LABEL])
                     )
         for c in configs:
             for s_ in seeds:
                 ho = pq.read_table(args.models / "heldout" / f"{c}_s{s_}.parquet").to_pylist()
                 keys = [
-                    (str(r["key"]), int(r["turn"]), int(r["hyp_index"]), int(r["word_index"]))
+                    (
+                        str(r.get("source", "step1")),
+                        str(r["key"]),
+                        int(r["turn"]),
+                        int(r["hyp_index"]),
+                        int(r["word_index"]),
+                    )
                     for r in ho
                 ]
                 bad = len(keys) != n_held or len(set(keys)) != len(keys)
