@@ -9,16 +9,27 @@ unit alignment as the oracle does, and the scored condition is WITH the
 runaway guard applied to every committer (unguarded: the sensitivity), on
 step 1's stream with the guard's hypotheses dropped.
 
+COUNTING (from 2026-11-24): twl.step2_count.count_turn, the one function
+the scorer uses for every committer, under Ali's answers on the scaffold
+(Q3, memory; Q4, partial units: "a unit counts as correct only when all its
+scored words are committed, for the model and LA-2 alike"). The false-commit
+rate is 1 - correct commits / commits (decision 2). Until 2026-11-24 this
+script counted a unit correct when any of its words was committed (the
+anchors logged on 2026-11-23).
+
 Per condition (guarded, unguarded), on the selection set:
-- ANCHORS: files; the finals' scored words (twl.la_baseline.scored_words);
-  LA-2 per word (re-simulated, twl.la_baseline.simulated_commits, guarded or
-  not): correct commits (final units it commits, counted once, by
-  twl.survival_labels.align_units), false commits (committed scored words in
-  hypothesis units that survive nowhere), committed = correct + false, the
-  false-commit rate false / committed; the oracle's correct commits (final
-  units at their first survival); the bars in committed fraction at g = 0.5
-  and g = 0.25 at the point; each with a percentile bootstrap CI over files
+- ANCHORS: files; the finals' scored words; LA-2 per word (re-simulated,
+  twl.la_baseline.simulated_commits, guarded or not): its commits (scored
+  words), the correct ones, and the rest by cause (a whole unit aligning
+  nowhere; a unit never completed; a final unit already credited); the
+  false-commit rate; its correct-committed words (the final's scored words
+  of the final units it credits); the oracle's (every final unit at its
+  first surviving appearance); the bars in committed fraction at g = 0.5 and
+  g = 0.25 at the point; each with a percentile bootstrap CI over files
   (2000 resamples, seed 0);
+- CHECK: the oracle counted by count_turn equals its rule counted directly
+  (oracle_ceiling.py's: the final units some fresh unit aligns to), and every
+  oracle commit is correct;
 - BASE: the scored rows' survival rate (label_num), the rows a calibration is
   scored on (the guard's hypotheses dropped when guarded); a constant
   predictor at that rate has an in-sample expected calibration error of 0;
@@ -45,9 +56,9 @@ from pathlib import Path
 import pyarrow.parquet as pq
 
 from scripts.la_operating_point import BOOT, provenance
-from twl.commit import Word
-from twl.la_baseline import LABEL, scored_words, simulated_commits
+from twl.la_baseline import LABEL, simulated_commits
 from twl.runaway import runaway_reason
+from twl.step2_count import count_turn, la2_decide, oracle_decide, words_of
 from twl.survival_labels import align_units, is_scored, num_units
 
 CORPUS = "mqa-single_step"
@@ -58,53 +69,60 @@ FRESH_EPS = 1e-9
 @dataclass
 class File:
     words: int = 0  # the finals' scored words
-    la2_correct: int = 0
-    la2_false: int = 0
+    la2_correct: int = 0  # correct-committed words (final side)
+    la2_commits: int = 0
+    la2_correct_commits: int = 0
+    la2_unaligned: int = 0
+    la2_partial: int = 0
+    la2_duplicate: int = 0
     oracle: int = 0
+    oracle_commits: int = 0
+    oracle_correct_commits: int = 0
+    oracle_direct: int = 0  # the oracle's rule counted directly (CHECK)
     rows: int = 0  # scored rows offered (calibration's population)
     rows_pos: int = 0
-
-
-def ws(raw: list[dict[str, object]]) -> list[Word]:
-    return [Word(str(w["text"]), float(str(w["start_s"])), float(str(w["end_s"]))) for w in raw]
 
 
 def file_counts(u: dict[str, object], guarded: bool, tail_guard: float, labels: dict) -> File:
     f = File()
     for k, t in enumerate(u["turns"]):  # type: ignore[attr-defined]
-        final = ws(t["final_words"])
-        f.words += scored_words([w.text for w in final])
+        la2 = count_turn(
+            t,
+            la2_decide(simulated_commits(t["hyps"], 2, tail_guard, runaway_guard=guarded)),
+            guarded,
+        )
+        orc = count_turn(t, oracle_decide(), guarded, memory=False)
+        f.words += la2.words
+        f.la2_correct += la2.correct_words
+        f.la2_commits += la2.commits
+        f.la2_correct_commits += la2.correct_commits
+        f.la2_unaligned += la2.unaligned
+        f.la2_partial += la2.pending_left
+        f.la2_duplicate += la2.duplicate
+        f.oracle += orc.correct_words
+        f.oracle_commits += orc.commits
+        f.oracle_correct_commits += orc.correct_commits
+        final = words_of(t["final_words"])
         fu = num_units([w.text for w in final])
-        la2 = simulated_commits(t["hyps"], 2, tail_guard, runaway_guard=guarded)
-        oracle: set[int] = set()
-        correct: set[int] = set()
+        direct: set[int] = set()
         h = 0
         for hyp in t["hyps"]:
             if hyp["frozen"]:
                 continue
             h += 1
-            hw = ws(hyp["words"])
+            hw = words_of(hyp["words"])
             if guarded and runaway_reason(hw):
                 continue
             ce = float(hyp["committed_end_s"])
             fresh = [w for w in hw if w.start_s >= ce - FRESH_EPS]
             hu = num_units([w.text for w in fresh])
-            for kk, j in enumerate(align_units(fresh, hu, final, fu)):
-                unit = hu[kk]
-                done = [i for i in unit[0] if (h, i) in la2]
-                if j is not None:
-                    oracle.add(j)
-                    if done:
-                        correct.add(j)
-                elif done and unit[1]:
-                    f.la2_false += sum(1 for i in done if is_scored(fresh[i]))
+            direct |= {j for j in align_units(fresh, hu, final, fu) if j is not None}
             for i in range(len(fresh)):
                 lab = labels.get((k, h, i))
                 if lab is not None and lab >= 0:
                     f.rows += 1
                     f.rows_pos += lab
-        f.oracle += sum(sum(1 for i in fu[j][0] if is_scored(final[i])) for j in oracle)
-        f.la2_correct += sum(sum(1 for i in fu[j][0] if is_scored(final[i])) for j in correct)
+        f.oracle_direct += sum(sum(1 for i in fu[j][0] if is_scored(final[i])) for j in direct)
     return f
 
 
@@ -129,11 +147,9 @@ def fmt(v: tuple[float, float, float]) -> str:
 
 
 def lines_for(files: list[File], cond: str) -> list[str]:
-    W, c, x, o = (tot(files, a) for a in ("words", "la2_correct", "la2_false", "oracle"))
-    rate = ci(
-        lambda fs: tot(fs, "la2_false") / max(1, tot(fs, "la2_correct") + tot(fs, "la2_false")),
-        files,
-    )
+    W, c, o = (tot(files, a) for a in ("words", "la2_correct", "oracle"))
+    n, cc = tot(files, "la2_commits"), tot(files, "la2_correct_commits")
+    rate = ci(lambda fs: 1 - tot(fs, "la2_correct_commits") / max(1, tot(fs, "la2_commits")), files)
     la2 = ci(lambda fs: tot(fs, "la2_correct") / tot(fs, "words"), files)
     orc = ci(lambda fs: tot(fs, "oracle") / tot(fs, "words"), files)
     half = (c + 0.5 * (o - c)) / W
@@ -157,11 +173,22 @@ def lines_for(files: list[File], cond: str) -> list[str]:
             draws.append(v)
     draws.sort()
     lo, hi = draws[int(0.025 * len(draws))], draws[int(0.975 * len(draws)) - 1]
+    oc, occ, od = (
+        tot(files, a) for a in ("oracle_commits", "oracle_correct_commits", "oracle_direct")
+    )
+    if od != o or occ != oc:
+        raise SystemExit(
+            f"CHECK failed ({cond}): oracle {o} vs direct {od}; commits {oc}, correct {occ}"
+        )
     return [
-        f"ANCHORS {cond}: files {len(files)}; finals' scored words {W}; LA-2 committed {c + x} "
-        f"(correct {c}, false {x}); LA-2 false-commit rate {x}/{c + x} = {fmt(rate)}; LA-2 "
-        f"correct committed {c}/{W} = {fmt(la2)}; oracle {o}/{W} = {fmt(orc)}; bars at the "
-        f"point: g = 0.5 -> {half:.4f}, g = 0.25 -> {quarter:.4f}",
+        f"ANCHORS {cond}: files {len(files)}; finals' scored words {W}; LA-2 commits {n} (correct "
+        f"{cc}; not correct {n - cc}: unaligned {tot(files, 'la2_unaligned')}, unit never whole "
+        f"{tot(files, 'la2_partial')}, final unit already credited {tot(files, 'la2_duplicate')}); "
+        f"LA-2 false-commit rate {n - cc}/{n} = {fmt(rate)}; LA-2 correct committed {c}/{W} = "
+        f"{fmt(la2)}; oracle {o}/{W} = {fmt(orc)}; bars at the point: g = 0.5 -> {half:.4f}, "
+        f"g = 0.25 -> {quarter:.4f}",
+        f"CHECK {cond}: the oracle by count_turn {o} = its rule counted directly {od}; oracle "
+        f"commits {oc}, all correct ({occ})",
         f"BASE {cond}: scored rows {tot(files, 'rows')}, survive {tot(files, 'rows_pos')} = "
         f"{base:.4f}; a constant predictor at this rate has in-sample ECE 0",
         f"POWER {cond}: a stand-in at about half the gap (each file the oracle's or LA-2's "
