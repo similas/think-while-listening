@@ -10812,3 +10812,100 @@ Reviewed before commit (round 41: 10 findings, 10 resolved; the freeze
 lift, the board log and its departures, the abort record and SIGTERM, the
 backup window, the scoring-log check, "box quiet", the swap rule settled
 before launch, whose choice each part is, this line).
+
+## 2026-11-24 — STEP 2 CLOSED LOOP: BELOW the off-policy CI (correct-committed 0.3988 [0.3737, 0.4236] against [0.6326, 0.6713]; precision 0.9439 against [0.9493, 0.9593]); the run is flagged for 773 swap-ins and a lesser fence breach, and whether it stands, and so whether the retrain branch follows, is Ali's
+
+Registered: "2026-11-24 — PRE-REGISTRATION: step 2 ..." (345efad), CLOSED
+LOOP; Ali's GO and the freeze lift: the AMENDMENT of c0c9c32. Code
+5e98e59 (twl.closed_loop; twl.label_replay taking the model; the driver
+src/scripts/step2_closed_loop.py; the scorer
+src/scripts/step2_closed_loop_score.py, committed before the run). Both
+runs on the clean build c0c9c32:
+- results/raw/run_logs/20261124_closed_loop_full/: launch.log, driver.log,
+  watchdog.log, closed_loop.log (the driver's), closed_loop_score.log;
+- the run's output: results/raw/step2/closed_loop/closed_loop.jsonl.
+
+THE RUN. A smoke run of 3 files (closed_loop_smoke/, 15:19:01 to 15:19:15)
+passed every check first. The full run: launched 15:19:36, armed 15:19:37,
+done 16:00:49; 574 files in 2467 s, under the thermal watchdog (peak tj
+65.8 C over 1235 samples; the driver's own reads: tj 59.8 C at the start,
+65.5 C at most; the first trip point is 74 C, never reached). Swap used was
+634 MB at the start and 631 MB at DONE (closed_loop.log). The
+twl-llama.service (the thesis's llama-server) was stopped at 15:18:51 for
+"box quiet" and restarted at 16:02:29. It was a transient unit, which
+systemd forgets once stopped, so it was started again with
+src/scripts/llama_server.sh, with the same command line (read by hand:
+systemctl, pgrep -af; not logged). spotifyd stayed up and wrote no journal
+entries from 15:18 to 16:02 (read by hand, journalctl). After "=== done",
+driver.log has "STOP: the watchdog (pid 915251) is gone (16:00:59)". That
+is its liveness monitor seeing the watchdog's normal exit after the run,
+not a stop of the run.
+
+A LESSER FENCE BREACH: during the run, a wait loop read the run's logs once
+a minute (grep on launch.log and driver.log, 41 minutes). By the LA-3
+precedent (2026-11-23, its log reads) this is a breach of "no processes".
+Its direction: no number of this run can have moved, since the replay's
+clock is simulated and the decodes do not depend on wall time. It goes to
+Ali with the swap flag.
+
+VALIDITY (closed_loop.log), all passed before the first decode:
+- the label files equal the anchors log's sha256;
+- the model is the one the scoring log scored (L63_R200_text, seed 2,
+  tau* 0.64);
+- the replay settings and the hypothesis model are step 1's, with the guard
+  on;
+- the model reproduces its scored P on all 23465 selection-set rows through
+  the driver's feature path (largest difference 0.0e+00);
+- the corpus files' sha256 verified.
+
+THE SWAP FLAG. The driver logged swap traffic since the start: pswpin +773
+pages, pswpout +0. Of these, 172 came in the first 25 files and 264 by the
+50th. The amendment of c0c9c32 fixed the rule before the launch: "ANY growth
+in pswpin or pswpout during the run is reported and the run flagged invalid
+under CLAUDE.md §6; whether it stands, given the simulated clock, is Ali's
+to decide then." The run is flagged. No number of this run depends on wall
+time, since the replay's clock is simulated.
+
+THE VERDICT LINE, as the scorer prints it (closed_loop_score.log):
+
+    CLOSED LOOP (guarded, its own stream): committed fraction 0.4227 [0.3971, 0.4481]; correct-committed 0.3988 [0.3737, 0.4236]; false-commit rate 0.0561 [0.0489, 0.0639], precision 0.9439; commits 6433, correct 6072; BLOCKED units 0, commits left not correct 8
+    OFF-POLICY CI at tau* 0.64: correct-committed [0.6326, 0.6713]; precision [0.9493, 0.9593] (scoring log, PARETO guarded)
+    VERDICT (decision 8): BELOW the off-policy CI (correct-committed 0.3988 < 0.6326; precision 0.9439 < 0.9493): the retrain branch
+
+On its own stream, the model credits 0.3988 of the finals' scored words,
+against 0.6521 off-policy at the same tau*. That is below LA-2's 0.4414 on
+LA-2's own stream (anchors.log), though the two are on different streams
+and not paired. Its precision falls from 0.9546 to 0.9439. Both fall below
+the off-policy CI.
+
+WHAT FOLLOWS DEPENDS ON WHETHER THE RUN STANDS, which is Ali's (the
+amendment of c0c9c32):
+- (a) It stands. By the registration (345efad, CLOSED LOOP, with Ali's Q4
+  there): "one on-policy relabel of LibriSpeech test-clean, retrain with
+  seeds 0, 1 and 2 and tau* re-chosen by the same rule, and the retrained
+  model's verdict is the one that counts, stated as off-policy (no second
+  closed loop), the first reported beside it." The first model's
+  off-policy HOLDS (g = 0.6255 [0.5806, 0.6691], e207b70) is then reported
+  beside the retrained model's. The relabel is a measured run and needs
+  Ali's GO. How the on-policy rows enter the retraining is not fixed by the
+  registration, and is put to Ali.
+- (b) It is void: it is reported with its cause and not re-run (the void
+  rule). The first model's HOLDS stands as off-policy, with no closed-loop
+  check.
+Until Ali decides, step 2's ledger verdict is PENDING. Whether, under (a),
+the retrained model's verdict also replaces the first model's secondaries
+(a) and (b), or whether they stay as the first model's, is not plain from
+345efad, and is put to Ali too.
+
+WHY THE CLOSED LOOP FALLS (descriptive, not tested): on the model's own
+stream, its commits move the buffer's start, so later hypotheses come from
+buffers the model was never trained on. Possible mechanisms are its
+commits ending at a buffer edge (it has no tail guard), and features
+(since_commit_s, buffer_s, la2_commit in shadow) far from LA-2's stream.
+None is measured here.
+
+Reviewed before commit (round 42: 6 findings, 6 resolved; the consequence
+made conditional on Ali's decision, the log reads reported as a lesser
+fence breach with spotifyd checked, the secondaries under the retrain
+branch put to Ali, the ledger field, the hand-read facts labelled and the
+swap in use stated, this line).

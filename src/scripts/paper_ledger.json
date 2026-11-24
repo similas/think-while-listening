@@ -465,13 +465,14 @@
   "prediction": "Learned committer, primary (out-of-domain): at LA-2's false-commit rate on the selection set (574 single_step files, guarded), commits at least half the LA-2 -> oracle gap in correct-committed words, g >= 0.5; FALSIFIED if g's CI lies entirely below 0.25",
   "registered": "2026-11-24 — PRE-REGISTRATION: step 2, the learned committer's offline evaluation (Ali's predictions, in his words; scaffolding approved by Ali). Committed before the scorer and any model code",
   "scored": "2026-11-24 — STEP 2 SCORED (the primary, offline, in-sample): g = 0.6255 [0.5806, 0.6691] at tau* 0.64, HOLDS; lag MET, calibration MET; without the guard, tau* re-chosen at LA-2's unguarded limit, g is 0.2176 [0.1577, 0.2753] (0.6254 at the guarded tau*)",
-  "verdict": "HOLDS: g = 0.6255 [0.5806, 0.6691], n=574 files, tau* 0.64 (in-sample, median of 3 seeds, guarded)",
+  "verdict": "PENDING: the closed loop, flagged for 773 swap-ins (Ali to decide whether it stands), fell below the off-policy CI (correct-committed 0.3988 [0.3737, 0.4236] against [0.6326, 0.6713]), n=574 files; if it stands, the retrained model's verdict counts (decision 8)",
   "corrections": [],
   "amendments": [
    "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad): the configuration is chosen by held-out log-loss (Ali's Q7); the four readings approved. Before the scorer and any fit",
    "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad, 2439df4): the secondary model's declarations, and (c)'s partner (Ali's decision 2); the freeze lifted for the closed-loop run. Before the run and before the secondary's training"
   ],
-  "qualifier": "in-sample (tau*, seed) and off-policy until the closed loop; unguarded, tau* re-chosen at LA-2's unguarded limit, g = 0.2176 [0.1577, 0.2753] (0.6254 at the guarded tau*); the conditions differ only in the turns holding the guard's 594 discarded rows"
+  "qualifier": "the first model, off-policy: g = 0.6255 [0.5806, 0.6691], n=574 files (HOLDS), reported beside; unguarded sensitivity g = 0.2176 [0.1577, 0.2753] with tau* re-chosen",
+  "notes": "Closed loop scored: 2026-11-24 — STEP 2 CLOSED LOOP: BELOW the off-policy CI (correct-committed 0.3988 [0.3737, 0.4236] against [0.6326, 0.6713]; precision 0.9439 against [0.9493, 0.9593]); the run is flagged for 773 swap-ins and a lesser fence breach, and whether it stands, and so whether the retrain branch follows, is Ali's"
  },
  {
   "id": "step 2 (a)-(c)",
@@ -483,6 +484,7 @@
   "amendments": [
    "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad): the configuration is chosen by held-out log-loss (Ali's Q7); the four readings approved. Before the scorer and any fit",
    "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad, 2439df4): the secondary model's declarations, and (c)'s partner (Ali's decision 2); the freeze lifted for the closed-loop run. Before the run and before the secondary's training"
-  ]
+  ],
+  "qualifier": "scored on the first model; whether the retrain branch, if the closed-loop run stands, replaces (a) and (b) is Ali's to decide"
  }
 ]
