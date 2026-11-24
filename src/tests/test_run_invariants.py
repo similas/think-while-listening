@@ -7,8 +7,9 @@ summary. A check built from the pipeline's own marks cannot see that, because
 the marks are what went wrong. The file source knows when each utterance
 actually stopped, so that is the reference.
 
-One divergence is tolerated and flagged — a Silero split on a 30 s utterance
-must not throw away fifty minutes. The second voids the run.
+One divergence outside a VAD split pair voids the run (the 2026-10-01 cascade
+rule; NOTES 2026-11-24, CORRECTION to the CORRECTION to §3.4); split pairs are
+exempt.
 """
 
 from __future__ import annotations
@@ -257,17 +258,24 @@ def test_a_drift_after_a_split_is_checked_against_its_own_file(tmp_path: Path) -
     the file index read at open. By turn number, every turn after a run's
     first split found no truth and went unchecked (NOTES 2026-11-24)."""
     t0 = now_ns()
-    truth = {1: t0 + int(10e9), 2: t0 + int(30e9), 3: t0 + int(50e9), 4: t0 + int(70e9)}
+    # As live: a file's end exists only once that file has played, so by turn
+    # number turn 4 (playing file 3) finds no truth and goes unchecked.
+    truth: dict[int, int] = {}
     m = manager(tmp_path, truth)
     current = {"pos": 1}
     m.set_file_index_source(lambda: current["pos"])
+    truth[1] = t0 + int(10e9)
     play(m, t0, 0.0, 10.4)  # file 1, turn 1
     current["pos"] = 2
     m.turn_started(t0 + int(20e9))  # file 2 splits: this turn is force-finished
+    truth[2] = t0 + int(30e9)
     play(m, t0, 25.0, 30.3)  # turn 3, the split's second turn (not checked)
     current["pos"] = 3
-    play(m, t0, 40.0, 54.0)  # turn 4 on file 3: 4 s late. By turn number: no truth
+    truth[3] = t0 + int(50e9)
+    play(m, t0, 40.0, 54.0)  # turn 4 on file 3: 4 s late; file 4 has not played
+    assert m.invariant_error is not None  # one divergence outside a split voids the run
     current["pos"] = 4
+    truth[4] = t0 + int(70e9)
     play(m, t0, 60.0, 70.3)  # turn 5 on file 4: on time
     m.close()
     recs = turn_records(tmp_path)

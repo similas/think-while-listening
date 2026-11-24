@@ -61,9 +61,9 @@ log = logging.getLogger(__name__)
 # How far a turn's detected endpoint may sit from the file's own before that
 # turn, and its successor, are flagged. 1.5 s covers the VAD hangover (0.8 s)
 # and the poll granularity with room to spare; past it the turn is not the
-# utterance the file played. A SECOND divergence voids the run: one Silero
-# split on a 30 s utterance must not throw away fifty minutes, but two means
-# turns and files have parted company.
+# utterance the file played. One divergence outside a VAD split pair voids
+# the run (the 2026-10-01 cascade rule; NOTES 2026-11-24, CORRECTION to the
+# CORRECTION to §3.4); split pairs are exempt.
 class IdleFn(Protocol):
     """The idle-power baseline, called by KEYWORD for the quiet bound.
 
