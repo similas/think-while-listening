@@ -26,7 +26,8 @@ def main() -> None:
                 continue
             t = json.loads(line)
             roles |= bool(t.get("warmup") or t.get("washout"))
-            splits += "vad_split" in (t.get("invalid_reason") or "")
+            # by token: "vad_split_continuation" (from 2026-11-24) is not a split flag
+            splits += "vad_split" in (t.get("invalid_reason") or "").split(";")
         if any(c > 1 for c in files.values()) or roles:
             plan_runs += 1
             if splits:

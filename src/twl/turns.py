@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -242,6 +243,19 @@ class TurnManager:
         # design. The source knows which file is playing, so it is asked.
         self._file_index_fn: Callable[[], int] | None = None
         self._utterance = -1
+        # A SPLIT'S CONTINUATION: a turn that opens on the file the previous
+        # turn opened on. The split flags above reach the two turns around a
+        # force-finish; the turn after the second one's normal endpoint can
+        # take the rest of the same file and was recorded valid (P1's
+        # multi_step t17, word density's t16: NOTES 2026-11-23). Ali
+        # (2026-11-24, decision 3 on the ledger audit): "from the next live
+        # run a split's continuation is marked invalid".
+        self._continuation = False
+        self.vad_split_continuations = 0
+        # Turns opened per playlist position, for the run summary's split
+        # count: a file that produced more than one turn split, whether by a
+        # force-finish or at a normal endpoint.
+        self._turns_per_file: Counter[int] = Counter()
         self._plan_position = -1
         self._last_playback_done_ns = 0
         self._hyp_killed = False
@@ -394,6 +408,16 @@ class TurnManager:
                 ),
             )
 
+    @property
+    def files_split(self) -> int:
+        """Playlist positions that produced more than one turn."""
+        return sum(1 for n in self._turns_per_file.values() if n > 1)
+
+    @property
+    def split_turns_flagged(self) -> int:
+        """Turns flagged vad_split (the two around each force-finish, counted once)."""
+        return len(self._split_turns)
+
     def set_file_index_source(self, fn: Callable[[], int]) -> None:
         """Supply the playing file's 1-based index (FileFrameSource)."""
         self._file_index_fn = fn
@@ -420,7 +444,11 @@ class TurnManager:
         self._clock = TurnClock(origin_ns=at_ns)
         # Read at OPEN: both halves of a split read the same file, which is
         # what makes a split visible in the records instead of inferable.
+        previous = self._utterance
         self._utterance = self._file_index_fn() if self._file_index_fn is not None else -1
+        self._continuation = self._utterance > 0 and self._utterance == previous
+        if self._utterance > 0:
+            self._turns_per_file[self._utterance] += 1
         # The PLAYLIST POSITION this turn opened in. A plan is indexed by it,
         # never by turn number: a VAD split gives one file two turns, so from
         # the first split on, plan[turn - 1] names a later file than the one
@@ -988,6 +1016,11 @@ class TurnManager:
             invalid_reason = (invalid_reason + ";" if invalid_reason else "") + inherited
         if self._turn in self._split_turns:
             invalid_reason = (invalid_reason + ";" if invalid_reason else "") + "vad_split"
+        if self._continuation:
+            invalid_reason = (
+                invalid_reason + ";" if invalid_reason else ""
+            ) + "vad_split_continuation"
+            self.vad_split_continuations += 1
         # THE OTHER HALF OF A SPLIT, the one the split flag does not reach: a
         # turn whose final was marked before its own endpoint is reading two
         # different stretches of speech off one clock. See

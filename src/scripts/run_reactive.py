@@ -820,14 +820,19 @@ async def run(args: argparse.Namespace) -> None:
                 )
             # The reason travels with the log: a reader of turns.jsonl alone
             # must be able to see that this run is void and why.
-            if built.turns.vad_splits:
+            if built.turns.vad_splits or built.turns.vad_split_continuations:
                 n_files = source.files_started if isinstance(source, FileFrameSource) else 0
-                rate = built.turns.vad_splits / n_files if n_files else float("nan")
+                split = built.turns.files_split
+                rate = split / n_files if n_files else float("nan")
                 print(
-                    f"VAD SPLITS: {built.turns.vad_splits} of {n_files} utterances split "
-                    f"(rate {rate:.2f}); {2 * built.turns.vad_splits} turns flagged "
-                    f"vad_split and excluded. The rate is a measurement of endpoint "
-                    f"detection on read speech and belongs in the set table.",
+                    f"VAD SPLITS: {split} of {n_files} files produced more than one turn "
+                    f"(rate {rate:.2f}); {built.turns.vad_splits} force-finishes; "
+                    f"{built.turns.split_turns_flagged} turns flagged vad_split and "
+                    f"{built.turns.vad_split_continuations} flagged vad_split_continuation "
+                    f"(a turn on the previous turn's file; the second turn of a "
+                    f"force-finished pair carries both), all excluded. The rate is a "
+                    f"measurement of endpoint detection on read speech and belongs in the "
+                    f"set table.",
                     file=sys.stderr,
                 )
             if built.turns.endpoint_divergences:
