@@ -469,7 +469,8 @@
   "corrections": [],
   "amendments": [
    "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad): the configuration is chosen by held-out log-loss (Ali's Q7); the four readings approved. Before the scorer and any fit",
-   "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad, 2439df4): the secondary model's declarations, and (c)'s partner (Ali's decision 2); the freeze lifted for the closed-loop run. Before the run and before the secondary's training"
+   "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad, 2439df4): the secondary model's declarations, and (c)'s partner (Ali's decision 2); the freeze lifted for the closed-loop run. Before the run and before the secondary's training",
+   "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad): the retrained model's verdict is decided by one guarded closed loop (Ali's decision 4 on 54fce21). Before any retrained model exists"
   ],
   "qualifier": "the first model, off-policy: g = 0.6255 [0.5806, 0.6691], n=574 files (HOLDS), reported beside; unguarded sensitivity g = 0.2176 [0.1577, 0.2753] with tau* re-chosen",
   "notes": "Closed loop scored: 2026-11-24 — STEP 2 CLOSED LOOP: BELOW the off-policy CI (correct-committed 0.3988 [0.3737, 0.4236] against [0.6326, 0.6713]; precision 0.9439 against [0.9493, 0.9593]); the run is flagged for 773 swap-ins and a lesser fence breach, and whether it stands, and so whether the retrain branch follows, is Ali's. Decisions: 2026-11-24 — DECISIONS on 54fce21 (Ali): the closed-loop run stands; the retrain branch follows; GO for the on-policy relabel of LibriSpeech test-clean; the retrained model's verdict to be decided by a closed loop (its wording to his approval)"
@@ -483,7 +484,8 @@
   "corrections": [],
   "amendments": [
    "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad): the configuration is chosen by held-out log-loss (Ali's Q7); the four readings approved. Before the scorer and any fit",
-   "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad, 2439df4): the secondary model's declarations, and (c)'s partner (Ali's decision 2); the freeze lifted for the closed-loop run. Before the run and before the secondary's training"
+   "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad, 2439df4): the secondary model's declarations, and (c)'s partner (Ali's decision 2); the freeze lifted for the closed-loop run. Before the run and before the secondary's training",
+   "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad): the retrained model's verdict is decided by one guarded closed loop (Ali's decision 4 on 54fce21). Before any retrained model exists"
   ],
   "qualifier": "scored on the first model; (a) and (b) are scored again on the retrained model, the first model's beside them (Ali, 2026-11-24)"
  }

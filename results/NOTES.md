@@ -10980,3 +10980,102 @@ amendment's draft, before any retrained model exists.
 
 Reviewed before commit (round 44: 6 findings, 6 resolved; round 45: 5
 findings, 5 resolved; round 46: no findings).
+
+## 2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad): the retrained model's verdict is decided by one guarded closed loop (Ali's decision 4 on 54fce21). Before any retrained model exists
+
+Ali (2026-11-24), as he wrote it: "4. (ii). Amend now, before any retrained
+model exists: one guarded closed loop of the retrained model at its own τ*
+decides the verdict, g on the loop's own stream with LA-2 and the oracle
+anchored on step 1's stream, paired by file, same thresholds. Draft the
+wording for my approval before committing it."
+
+This change is prompted by the first model's closed-loop result (153bbac:
+on its own stream, 0.3988 against 0.6521 off-policy), and it is made before
+any retrained model exists. Ali approved this wording, 2026-11-24, with his
+answers to the draft's four questions, as he wrote them:
+
+    0. Both readings confirmed: (i) the GO lifts the freeze for the relabel
+    run only; (ii) the closed loop's swap rule applies.
+
+    1. (a) Approved as written, with:
+       A. (b). A bar: if the loop's false-commit CI lies entirely above
+       LA-2's 0.0458, the verdict is reported as NOT MET ON PRECISION
+       whatever g_cl.
+       B. (a). This approval is the GO for the retrained model's closed
+       loop, ~41 min, box quiet, once its scorer is reviewed and committed.
+       C. (b). The trigger is the retrained loop again falling below its
+       own off-policy CI.
+       D. (b). Off-policy carries the verdicts; lag also reported on the
+       loop's stream, paired by file against LA-2 on step 1's, no verdict.
+
+    Ali approved this wording, 2026-11-24. Commit the amendment and its
+    ledger row before any retrained model is fitted.
+
+Amended (345efad, CLOSED LOOP, the retrain branch), the draft's items with
+the answers in place of its questions:
+
+1. THE RETRAINED MODEL (decisions 2 (b) and (c) on 54fce21): trained on all
+   the existing rows plus the on-policy rows of LibriSpeech test-clean (the
+   relabel, src/scripts/step2_relabel.py), with the same 8 configurations,
+   seeds and parameters (2439df4). The on-policy rows:
+   - come from the relabel's own files (librispeech-test-clean.onpolicy.parquet
+     and .utterances.parquet), whose sha256 the training manifest records;
+   - keep step 1's utt ids and are keyed as f"librispeech-test-clean:{utt}",
+     so they add no file to the split: n stays 11,012 files, the held-out
+     sample is the same 1,101 ids, and the scorer's recomputation of the
+     split is unchanged. The on-policy rows of held-out files are held out;
+   - have the guard's hypotheses dropped and labels other than 0/1 dropped,
+     as for the other rows (step2_train.guarded_out on the relabel's
+     utterances file).
+   Its configuration is chosen again by the lowest held-out log-loss over
+   the same split. Its tau* and its median seed are chosen as registered,
+   off-policy on the selection set (decision 3 on the review: tau* the
+   largest correct-committed fraction within LA-2's false-commit rate,
+   0.0458; the median seed by g).
+2. THE VERDICT that counts: one guarded closed loop of that model (its
+   median seed, at its own tau*) over the selection set, run as the first
+   closed loop ran (twl.closed_loop; step 1's turns and finals reused). The
+   number scored is
+       g_cl = (model_cl - LA-2) / (oracle - LA-2)
+   in correct-committed words. model_cl is counted on the loop's own stream
+   (twl.step2_count, guarded, with memory). LA-2 and the oracle are their
+   per-file counts on step 1's stream, recomputed from the label files by
+   twl.step2_count, the scorer checking that they reproduce anchors.log's
+   totals (2026-11-24). All three are pooled over the 574 files, with a
+   95 % percentile bootstrap CI over files (2000 resamples, seed 0) that
+   draws each file once for all three terms (paired by file). The verdict
+   rules are the registered ones: HOLDS if the CI lies entirely above 0.5;
+   MEETS if the point >= 0.5 and the CI includes 0.5; BELOW PREDICTION, NOT
+   FALSIFIED if the point < 0.5 and the CI reaches above 0.25; FALSIFIED if
+   the CI lies entirely below 0.25.
+   THE PRECISION BAR (A (b)): if the loop's false-commit rate's CI (on its
+   own stream, from the same draws as g_cl's: files drawn once for all
+   terms, 2000 resamples, seed 0) lies entirely above LA-2's 0.0458 (step
+   1's stream), the verdict is reported as NOT MET ON PRECISION, whatever
+   g_cl.
+3. Reported beside it: the loop's false-commit rate with its CI; the
+   retrained model's off-policy g; and the first model's off-policy g and
+   closed-loop g, computed the same way.
+4. The secondaries (a) lag and (b) calibration are scored again on the
+   retrained model, with the first model's beside them (decision 3 on
+   54fce21). Off-policy carries their verdicts, as registered (D (b)). Lag
+   is also reported on the loop's own stream, paired by file against LA-2
+   on step 1's stream, with no verdict.
+5. The closed loop of the retrained model is a measured run: the run skill,
+   the box quiet, under the watchdog. Its scorer, the closed-loop scorer
+   extended with g_cl, the precision bar and the loop's lag, is committed
+   before that run. Ali's approval of this wording is the GO for that run
+   (about 41 minutes), once its scorer is reviewed and committed (B (a)).
+6. If the retrained model's closed loop again falls below its own
+   off-policy CI (C (b): decision 8's comparison, as
+   step2_closed_loop_score.py makes it, at the retrained model's tau*), a
+   tail guard on the model's commits is the next change, declared in its
+   own amendment, not silent (Ali's decisions on 54fce21).
+
+WHAT DOES NOT CHANGE: the predictions, the bars, the estimator (except that
+the number deciding the retrained model's verdict is g_cl, with the
+precision bar), the checks, and every other part of 345efad, 2439df4 and
+c0c9c32.
+
+Reviewed before commit (round 48: 1 finding, 1 resolved; the draft in
+rounds 44 and 47).
