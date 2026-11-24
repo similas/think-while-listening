@@ -17,7 +17,10 @@ def ws(spec):  # type: ignore[no-untyped-def]
 def turn(*hyps: tuple[list, float]) -> dict:
     return {
         "final_words": ws(FINAL),
-        "hyps": [{"frozen": False, "words": ws(w), "committed_end_s": ce} for w, ce in hyps],
+        "hyps": [
+            {"frozen": False, "words": ws(w), "committed_end_s": ce, "issued_s": w[-1][2] + 0.5}
+            for w, ce in hyps
+        ],
     }
 
 
@@ -91,3 +94,22 @@ def test_a_word_it_can_no_longer_commit_does_not_complete_a_unit() -> None:
     c = count_turn(t, prefix_decide(p_table(p), 0.5), guarded=False)
     assert (c.commits, c.correct_commits, c.correct_words) == (4, 3, 3)
     assert (c.pending_left, c.blocked) == (1, 1)
+
+
+def test_the_prefix_passes_over_an_unscored_word_without_a_row() -> None:
+    """The labeler writes no row for a word no normalizer sees ("-"); the
+    model's prefix passes over it, uncommitted, and goes on."""
+    words = [("I", 0.0, 0.2), ("-", 0.2, 0.2), ("have", 0.2, 0.4)]
+    t = {
+        "final_words": ws([("I", 0.0, 0.2), ("have", 0.2, 0.4)]),
+        "hyps": [{"frozen": False, "words": ws(words), "committed_end_s": 0.0, "issued_s": 1.0}],
+    }
+    p = {(1, 0): 0.9, (1, 2): 0.9}  # no row for "-"
+    c = count_turn(t, prefix_decide(lambda h, i: p.get((h, i)), 0.5), guarded=False)
+    assert (c.commits, c.correct_commits, c.correct_words) == (2, 2, 2)
+
+
+def test_a_scored_word_without_a_p_is_an_error() -> None:
+    t = turn((FINAL[:2], 0.0))
+    with pytest.raises(ValueError, match="has no P"):
+        count_turn(t, prefix_decide(lambda h, i: None, 0.5), guarded=False)

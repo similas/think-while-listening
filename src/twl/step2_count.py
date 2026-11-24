@@ -50,7 +50,7 @@ guarded, as for every committer):
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from twl.commit import Word
@@ -73,25 +73,41 @@ class Counts:
     unaligned: int = 0  # committed into a whole unit that aligns nowhere
     duplicate: int = 0  # committed into a whole unit whose final unit was already credited
     blocked: int = 0  # unit-hypotheses kept from whole by a word it can no longer commit
+    # per credited final unit: (issue time of the hypothesis that completed it,
+    # end of that unit's last word, the final unit's scored words): for lag
+    credited_at: dict[int, tuple[float, float, int]] = field(default_factory=dict)
 
     def add(self, o: Counts) -> None:
         for k in self.__dataclass_fields__:
-            setattr(self, k, getattr(self, k) + getattr(o, k))
+            if k != "credited_at":
+                setattr(self, k, getattr(self, k) + getattr(o, k))
+
+
+@dataclass
+class Prepared:
+    """A turn's hypotheses with their fresh words, units and alignment, for one
+    guard setting: computed once, counted for any committer and tau."""
+
+    final_words: int  # the final's scored words
+    unit_words: dict[int, int]  # final unit -> its scored words
+    hyps: list[tuple[int, float, float, list[Word], list[Unit], list[int | None]]]
+    # (h, issued_s, committed_end_s, fresh, units, aligned), in order
+    skipped: set[int] = field(default_factory=set)  # h of hypotheses the guard discards
 
 
 def words_of(raw: Sequence[dict[str, Any]]) -> list[Word]:
     return [Word(str(w["text"]), float(str(w["start_s"])), float(str(w["end_s"]))) for w in raw]
 
 
-def count_turn(turn: dict[str, Any], decide: Decide, guarded: bool, memory: bool = True) -> Counts:
-    """One turn's counts for one committer (see the module docstring)."""
+def prepare_turn(turn: dict[str, Any], guarded: bool) -> Prepared:
+    """The turn's offered hypotheses, fresh words, units and alignment."""
     final = words_of(turn["final_words"])
     fu = num_units([w.text for w in final])
-    c = Counts(words=sum(1 for w in final if is_scored(w)))
-    own_end = float("-inf")  # the end of the last word this committer committed
-    done: list[Word] = []  # every word this committer committed in the turn
-    credited: set[int] = set()
-    pending: list[Word] = []  # committed scored words awaiting their unit's completion
+    prep = Prepared(
+        final_words=sum(1 for w in final if is_scored(w)),
+        unit_words={j: sum(1 for i in u[0] if is_scored(final[i])) for j, u in enumerate(fu)},
+        hyps=[],
+    )
     h = 0
     for hyp in turn["hyps"]:
         if hyp["frozen"]:
@@ -99,6 +115,7 @@ def count_turn(turn: dict[str, Any], decide: Decide, guarded: bool, memory: bool
         h += 1
         hw = words_of(hyp["words"])
         if guarded and runaway_reason(hw):
+            prep.skipped.add(h)
             continue
         ce = float(hyp["committed_end_s"])
         fresh = [w for w in hw if w.start_s >= ce - FRESH_EPS]
@@ -106,6 +123,23 @@ def count_turn(turn: dict[str, Any], decide: Decide, guarded: bool, memory: bool
             continue
         units = num_units([w.text for w in fresh])
         aligned = align_units(fresh, units, final, fu)
+        prep.hyps.append((h, float(hyp["issued_s"]), ce, fresh, units, aligned))
+    return prep
+
+
+def count_turn(turn: dict[str, Any], decide: Decide, guarded: bool, memory: bool = True) -> Counts:
+    """One turn's counts for one committer (see the module docstring)."""
+    return count_prepared(prepare_turn(turn, guarded), decide, memory)
+
+
+def count_prepared(prep: Prepared, decide: Decide, memory: bool = True) -> Counts:
+    """count_turn on a prepared turn: the one counting function."""
+    c = Counts(words=prep.final_words)
+    own_end = float("-inf")  # the end of the last word this committer committed
+    done: list[Word] = []  # every word this committer committed in the turn
+    credited: set[int] = set()
+    pending: list[Word] = []  # committed scored words awaiting their unit's completion
+    for h, issued, ce, fresh, units, aligned in prep.hyps:
         if memory:
             eligible = [w.start_s >= max(ce, own_end) - FRESH_EPS for w in fresh]
         else:
@@ -146,8 +180,9 @@ def count_turn(turn: dict[str, Any], decide: Decide, guarded: bool, memory: bool
             else:
                 credited.add(j)
                 c.correct_commits += n
+                c.credited_at[j] = (issued, span[1], prep.unit_words[j])
     c.pending_left += len(pending)
-    c.correct_words += sum(sum(1 for i in fu[j][0] if is_scored(final[i])) for j in credited)
+    c.correct_words += sum(prep.unit_words[j] for j in credited)
     return c
 
 
@@ -178,16 +213,25 @@ def oracle_decide() -> Decide:
     return decide
 
 
-def prefix_decide(p: Callable[[int, int], float], tau: float) -> Decide:
+def prefix_decide(p: Callable[[int, int], float | None], tau: float) -> Decide:
     """The model: the longest prefix of the eligible fresh words with P >= tau.
-    p(h, i) is P(survive) for fresh word i of hypothesis h (0 where no row)."""
+    p(h, i) is P(survive) for fresh word i of hypothesis h, None where the word
+    has no label row. Only unscored words have none (no normalizer sees them;
+    the labeler writes no row): the prefix passes over them uncommitted, since
+    they count neither as commits nor in a unit's wholeness. A scored word
+    without a P is an error."""
 
     def decide(h: int, fresh, eligible, units, aligned) -> set[int]:  # type: ignore[no-untyped-def]
         out: set[int] = set()
         for i in range(len(fresh)):
             if not eligible[i]:
                 continue
-            if p(h, i) < tau:
+            q = p(h, i)
+            if q is None:
+                if is_scored(fresh[i]):
+                    raise ValueError(f"hypothesis {h}: scored fresh word {i} has no P")
+                continue
+            if q < tau:
                 break
             out.add(i)
         return out
