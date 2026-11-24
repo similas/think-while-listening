@@ -10909,3 +10909,74 @@ made conditional on Ali's decision, the log reads reported as a lesser
 fence breach with spotifyd checked, the secondaries under the retrain
 branch put to Ali, the ledger field, the hand-read facts labelled and the
 swap in use stated, this line).
+
+## 2026-11-24 — DECISIONS on 54fce21 (Ali): the closed-loop run stands; the retrain branch follows; GO for the on-policy relabel of LibriSpeech test-clean; the retrained model's verdict to be decided by a closed loop (its wording to his approval)
+
+Ali (2026-11-24), on the report of the closed loop, as he wrote it:
+
+    Decisions on the closed loop:
+    1. (a). The run stands, both flags recorded; the retrain branch follows
+    as registered.
+    2. (a) GO for the on-policy relabel of LibriSpeech test-clean (≤ 3.5 h),
+    driver reviewed and committed first, guarded, τ* 0.64, box quiet. (b)
+    (i): added to the existing rows. (c) yes: configuration re-chosen by
+    held-out log-loss, same split, same held-out file ids.
+    3. (i). Secondaries re-scored on the retrained model, the first model's
+    beside them.
+    4. (ii). Amend now, before any retrained model exists: one guarded
+    closed loop of the retrained model at its own τ* decides the verdict, g
+    on the loop's own stream with LA-2 and the oracle anchored on step 1's
+    stream, paired by file, same thresholds. Draft the wording for my
+    approval before committing it.
+
+    Two things to record as hypotheses in the entry, untested: the model
+    commits to the buffer edge where LA-2's tail guard would not; and after
+    its own commits, later hypotheses decode shorter, mid-phrase buffers
+    unlike anything in its training — the same effect that broke two-tier
+    v1. The on-policy relabel tests the second; if it doesn't close the gap,
+    a tail guard on the model's commits is the next declared change, not a
+    silent one.
+
+What follows:
+1. The closed-loop run (build c0c9c32; scored in 153bbac) stands, with its swap flag (773 swap-ins)
+   and its lesser fence breach (the log reads) recorded. The retrain branch
+   follows, as registered (345efad, CLOSED LOOP). The first model's
+   off-policy HOLDS (g = 0.6255 [0.5806, 0.6691], e207b70) and its closed
+   loop are reported beside the retrained model's verdict.
+2. The on-policy relabel of LibriSpeech test-clean: the first model (the
+   scored one: L63_R200_text, seed 2) committing at tau* 0.64, guarded, as
+   the closed loop ran it, writing label rows (features and labels) on its
+   own stream. Its driver is reviewed and committed before the run; the box
+   is quiet; at most 3.5 h: past that, the run stops and is reported, not
+   continued without Ali (the driver stops itself at 12600 s). The
+   estimate from the closed loop's time per file is about 2.4 h. Ali's GO
+   in 2 (a) is read as lifting the freeze for the relabel run only. The
+   board as for the closed loop: twl-llama stopped before and restarted
+   after, both times recorded; spotifyd up and checked; any growth in
+   pswpin or pswpout during the run is reported and the run flagged under
+   CLAUDE.md §6, whether it stands being Ali's to decide. If the files'
+   assembly fails at the end, they are rebuilt from the complete jsonl with
+   no decode, and that is not a re-run. The
+   retraining adds those rows to all the
+   existing ones; the configuration is chosen again by held-out log-loss
+   over the same split, the on-policy rows of held-out files staying held
+   out.
+3. The secondaries (a) lag and (b) calibration are scored again on the
+   retrained model, the first model's beside them.
+4. The amendment on how the retrained model is judged is drafted for Ali's
+   approval and committed only once he approves it. No retraining starts
+   before it is committed, so it precedes any retrained model.
+
+HYPOTHESES, recorded as Ali stated them, untested:
+- H1: the model commits up to the buffer edge, where LA-2's tail guard would
+  not commit.
+- H2: after its own commits, later hypotheses decode shorter, mid-phrase
+  buffers unlike anything in its training, the same effect that broke
+  two-tier v1.
+The on-policy relabel tests H2. If the retrained model does not close the
+gap, a tail guard on the model's commits is the next change, declared, not
+silent (Ali). What "does not close the gap" means is put to Ali with the
+amendment's draft, before any retrained model exists.
+
+Reviewed before commit (round 44: 6 findings, 6 resolved; round 45: 5
+findings, 5 resolved; round 46: no findings).
