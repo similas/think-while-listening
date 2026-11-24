@@ -9904,3 +9904,95 @@ turn's audio enters the numbers of only two rows: P1's multi_step (3
 unverifiable per pass) and word density (3 stale), both covered in the
 entries above, and neither changes a verdict. P5 counts 27 flagged turn
 records, by their file index only.
+
+## 2026-11-24 — DECISIONS on 2c5bdfa (Ali): the ledger audit. Word density's hypothesis clause reads "not resolved", pass 1n short_digit kept, a split's continuation invalid from the next live run, Fig. 1 unfitted, P2b's withdrawn CI dropped
+
+Ali (2026-11-24), on the report that closed the pre-roll audit of the
+ledger, as he wrote it:
+
+    Decisions on the ledger audit:
+    1. (a) — the hypothesis clause stays as "not resolved" with its interval.
+    2. (a) — pass 1n short_digit kept, stated as not reproduced on one CI bound.
+    3. (a) — from the next live run a split's continuation is marked invalid;
+       past passes keep the "without the flagged" lines as sensitivity.
+    4. (a) — Fig. 1 shows per-set shares, no fitted line.
+    5. (b) — P2b's CI dropped; point and n from the scorer at HEAD.
+    The 64-char subject and 4-line body are recorded as broken; fine.
+
+What was done, per decision:
+
+1. Word density's ledger verdict now reads "PREDICTION HIT (survives):
+   58.2% [57.0, 59.2], 51 valid turns; hypothesis (monotone in word
+   density) not resolved: single_step - dev +2.1 points [-1.2, +4.6] over
+   items, 17 v 16 items (post hoc)". The qualifier and notes no longer say
+   the replacement is pending.
+2. P1's ledger notes say pass 1n short_digit's counts are kept, stated as
+   not reproduced on one CI bound ([46.5, 47.7] against the recorded
+   [46.4, 47.7]; the entry of 2026-11-23 above).
+3. src/twl/turns.py: a turn that opens on the file the previous turn
+   opened on (the file source's index, read at open) now gets
+   invalid_reason "vad_split_continuation". Tests are in
+   src/tests/test_plan_alignment.py. Its reach:
+   - it applies only where a file index exists (file playback); a
+     microphone run has none, and is unaffected;
+   - no past record is changed, and past passes keep their "without the
+     flagged" lines as the sensitivity;
+   - it marks every turn after the first on a file, including the second
+     turn of a force-finished pair, which already carries vad_split and now
+     carries both;
+   - the first turn on a file is never marked by it. If the next onset
+     force-finished that turn, the split flag marks it. If it reached its
+     own endpoint, nothing marks it, and it stays valid holding only part of
+     its file. The drift check meant to catch that is inactive after a
+     run's first split (the CORRECTION below);
+   - the run summary now counts the continuation turns beside the split
+     turns (run_reactive.py), and audit_plan_splits.py counts the vad_split
+     flag by token, so continuations are not counted as splits.
+4. Fig. 1 (paper_figures.py, fig1) already draws per-set stacked bars with
+   no fitted line, so nothing changed.
+5. P2b's ledger verdict now reads "withdrawn 1.41x n=50 is descriptive
+   only". The withdrawn scorer's CI (677537d) is dropped, and the point and
+   n are p2_score.py's at HEAD (preroll_ledger.log, 2026-11-23).
+
+Commit rule, recorded as broken: e24a4cd's subject is 64 characters (the
+limit is 60), and b549355's body is 4 lines (the limit is 3). Both are
+pushed and stay as they are.
+
+## 2026-11-24 — CORRECTION to §3.4 ("TURNS ARE CHECKED AGAINST THE FILE") and to "PASS 1 COMPLETE": the endpoint-drift check stops at a run's first split
+
+The reviewer found this while checking decision 3 of the entry above.
+
+§3.4 (2026-09-23) says a turn's detected endpoint is checked against "the
+file source's own speech_end_ns". The implementation looks up the file's end
+of speech by TURN number (src/twl/turns.py, _endpoint_drift_ms:
+speech_end_fn(self._turn)). The file source keys it by PLAYLIST number
+(src/twl/transport.py, the pump: speech_end_ns[turn], where turn is the
+file's position). The two agree until a run's first VAD split. After it,
+turn T is playing an earlier file. speech_end_ns holds no entry for T until
+file T has played, which is after turn T's record is written. So the check
+returns None, and no later turn is checked. This is from reading the code,
+not measured.
+
+What it qualifies:
+- "2026-10-01 — PASS 1 COMPLETE" says "zero endpoint divergences outside
+  splits". That holds in full for dev and short_digit, which never split.
+  On long_digit and multi_step it holds only up to each run's first split.
+- Every file-playback run with a split has the same limit. Its turns after
+  the first split were never checked against their file's endpoint, and its
+  run summary's ENDPOINT DIVERGENCES count covers only the turns before.
+- The statements of the rule itself: thesis/chapters/ch3_methods.tex
+  ("Turns are checked against the file's ground truth"), the research
+  brief's §3.4 (RESEARCH_BRIEF_v3.md), and the same rule in CLAUDE.md.
+  After a run's first split no turn was checked, and the invariant "the
+  second divergence voids the run" could not fire. Rewording the thesis
+  sentence is Ali's call, to be raised with the fix.
+- Unaffected: the 2026-09-23 live acceptance (dev, no split) and "Turns
+  1-14 were one-per-file, endpoint divergences 0" (before the first split).
+
+Not changed here. The fix would look up the end of speech by the file index
+read at the turn's open (self._utterance when > 0), with a test of a drift
+after a split. It changes which turns a run flags, and a second divergence
+voids a run, so it is Ali's decision. Whether past turns after a split
+drifted is not checked here. An approximate check from the playback timeline
+(p5_score.py's endpoint_delays method) is possible wherever the utterance
+index or the pre-roll audit places a turn on its file.

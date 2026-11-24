@@ -156,9 +156,10 @@
   "scored": "2026-10-01 — PASS 1 COMPLETE. P1 IS FALSIFIED",
   "verdict": "FALSIFIED: 56.0, 47.9, 46.2, 61.5 % (dev/short/long/multi, n=48/60/54/213) — non-monotone, two sets < 50%; re-scored on NOPARTIAL same verdict (52.9, 47.0, 46.1, 61.5)",
   "corrections": [
-   "2026-11-23 — PROVENANCE GAP closed (P1 and word density): a committed scorer reproduces the points, n and 8 of the 9 recorded CIs; P1's order break holds over items (post hoc); pre-roll exposure 3 unverifiable turns per pass (P1 multi_step), 3 stale (word density)"
+   "2026-11-23 — PROVENANCE GAP closed (P1 and word density): a committed scorer reproduces the points, n and 8 of the 9 recorded CIs; P1's order break holds over items (post hoc); pre-roll exposure 3 unverifiable turns per pass (P1 multi_step), 3 stale (word density)",
+   "2026-11-24 — DECISIONS on 2c5bdfa (Ali): the ledger audit. Word density's hypothesis clause reads \"not resolved\", pass 1n short_digit kept, a split's continuation invalid from the next live run, Fig. 1 unfitted, P2b's withdrawn CI dropped"
   ],
-  "notes": "Originally v3 §5.4 (not in NOTES); declared not testable on existing logs in '2026-09-23 — §4 analyses wired...'. NOPARTIAL re-score in PASS 1n entry. Scored by p1_score.py from 2026-11-23 (post hoc): it reproduces the recorded points and n, and 7 of its 8 recorded share CIs (pass 1n short_digit's lower bound 46.5 against 46.4). Falsified on its registered line, the order: dev - short_digit +8.1 points [+4.6, +11.4] over items (NOPARTIAL +5.9 [+3.7, +7.3]); that test is post hoc.",
+  "notes": "Originally v3 §5.4 (not in NOTES); declared not testable on existing logs in '2026-09-23 — §4 analyses wired...'. NOPARTIAL re-score in PASS 1n entry. Scored by p1_score.py from 2026-11-23 (post hoc): it reproduces the recorded points and n, and 7 of its 8 recorded share CIs (pass 1n short_digit's lower bound 46.5 against 46.4). Falsified on its registered line, the order: dev - short_digit +8.1 points [+4.6, +11.4] over items (NOPARTIAL +5.9 [+3.7, +7.3]); that test is post hoc. Pass 1n short_digit's counts are kept, stated as not reproduced on one CI bound (Ali, DECISIONS 2026-11-24).",
   "qualifier": "first registered in the research brief, not the notebook; pre-roll defect: 3 of multi_step's 213 turns unverifiable on each pass; without them 61.6 % [60.6, 62.3] (pass 1), 61.5 % [60.9, 62.2] (pass 1n), over items; the sets the order break rests on hold none (post hoc)"
  },
  {
@@ -186,12 +187,13 @@
    "PRE-REGISTRATION 2026-09-23g — P3 to P8, before any Phase 5 run"
   ],
   "scored": "2026-10-13 — P2a AND P2b SCORED (registered 2026-09-23g, never scored until now)",
-  "verdict": "NOT TESTABLE: n=0 structural (each item played once per run); withdrawn 1.41x [1.23, 1.54] n=50 is descriptive only",
+  "verdict": "NOT TESTABLE: n=0 structural (each item played once per run); withdrawn 1.41x n=50 is descriptive only",
   "corrections": [
-   "2026-10-13 — CORRECTION to \"P2a AND P2b SCORED\""
+   "2026-10-13 — CORRECTION to \"P2a AND P2b SCORED\"",
+   "2026-11-24 — DECISIONS on 2c5bdfa (Ali): the ledger audit. Word density's hypothesis clause reads \"not resolved\", pass 1n short_digit kept, a split's continuation invalid from the next live run, Fig. 1 unfitted, P2b's withdrawn CI dropped"
   ],
   "qualifier": "structural: each item played once per run; the 1.41x cross-run ratio is descriptive only",
-  "notes": "Pre-roll audit (NOTES 2026-11-23): its values hold no flagged turn; with the item map's 30 flagged transcripts blanked, 1.41x n=50 is unchanged. The [1.23, 1.54] is the withdrawn scorer's (677537d); p2_score.py at HEAD prints the point and n only."
+  "notes": "Pre-roll audit (NOTES 2026-11-23): its values hold no flagged turn; with the item map's 30 flagged transcripts blanked, 1.41x n=50 is unchanged. The withdrawn scorer's CI (677537d) is dropped (Ali, DECISIONS 2026-11-24); the point and n are p2_score.py's at HEAD."
  },
  {
   "id": "P3",
@@ -332,13 +334,14 @@
   "prediction": "single_step_reasoning stt_final share falls in [56.0, 61.5]%; FALSIFIED if outside [50, 65]%",
   "registered": "PRE-REGISTRATION 2026-10-01d — word density, not duration. Before the run",
   "scored": "2026-10-01 — Word density scored. The prediction hit; the hypothesis does not hold",
-  "verdict": "PREDICTION HIT (survives): 58.2% [57.0, 59.2], 51 valid turns; but hypothesis (monotone in word density) DOES NOT HOLD",
+  "verdict": "PREDICTION HIT (survives): 58.2% [57.0, 59.2], 51 valid turns; hypothesis (monotone in word density) not resolved: single_step - dev +2.1 points [-1.2, +4.6] over items, 17 v 16 items (post hoc)",
   "corrections": [
    "2026-11-23 — PROVENANCE GAP closed (P1 and word density): a committed scorer reproduces the points, n and 8 of the 9 recorded CIs; P1's order break holds over items (post hoc); pre-roll exposure 3 unverifiable turns per pass (P1 multi_step), 3 stale (word density)",
-   "2026-11-23 — CORRECTION to \"2026-10-01 — Word density scored. The prediction hit; the hypothesis does not hold\": the inversion is not shown, and \"the hypothesis does not hold\" is withdrawn"
+   "2026-11-23 — CORRECTION to \"2026-10-01 — Word density scored. The prediction hit; the hypothesis does not hold\": the inversion is not shown, and \"the hypothesis does not hold\" is withdrawn",
+   "2026-11-24 — DECISIONS on 2c5bdfa (Ali): the ledger audit. Word density's hypothesis clause reads \"not resolved\", pass 1n short_digit kept, a split's continuation invalid from the next live run, Fig. 1 unfitted, P2b's withdrawn CI dropped"
   ],
-  "qualifier": "hypothesis verdict withdrawn 2026-11-23, its replacement pending Ali; pre-roll defect: 3 of its 51 turns held stale audio; without them 58.4 % [57.0, 59.6] over items (post hoc)",
-  "notes": "The hypothesis verdict is WITHDRAWN (CORRECTION 2026-11-23): single_step - dev +2.1 points [-1.2, +4.6] over items (17 v 16 items, post hoc), the inversion not resolved; Ali words its replacement. Scored by p1_score.py from 2026-11-23 (post hoc; reproduces the recorded point, n and CI)."
+  "qualifier": "pre-roll defect: 3 of its 51 turns held stale audio; without them 58.4 % [57.0, 59.6] over items (post hoc)",
+  "notes": "The 2026-10-01 hypothesis verdict (DOES NOT HOLD) was withdrawn (CORRECTION 2026-11-23) and reworded by Ali (DECISIONS 2026-11-24). Scored by p1_score.py from 2026-11-23 (post hoc; reproduces the recorded point, n and CI)."
  },
  {
   "id": "pass 1n",
