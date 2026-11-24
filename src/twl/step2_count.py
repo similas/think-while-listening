@@ -46,15 +46,16 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from twl.commit import Word
 from twl.runaway import runaway_reason
-from twl.survival_labels import align_units, is_scored, num_units
+from twl.survival_labels import Unit, align_units, is_scored, num_units
 
 FRESH_EPS = 1e-9
 
 # decide(h, fresh, eligible, units, aligned) -> fresh-word indices committed
-Decide = Callable[[int, list[Word], list[bool], list, list], set[int]]
+Decide = Callable[[int, list[Word], list[bool], list[Unit], list[int | None]], set[int]]
 
 
 @dataclass
@@ -72,11 +73,11 @@ class Counts:
             setattr(self, k, getattr(self, k) + getattr(o, k))
 
 
-def words_of(raw: Sequence[dict]) -> list[Word]:
+def words_of(raw: Sequence[dict[str, Any]]) -> list[Word]:
     return [Word(str(w["text"]), float(str(w["start_s"])), float(str(w["end_s"]))) for w in raw]
 
 
-def count_turn(turn: dict, decide: Decide, guarded: bool, memory: bool = True) -> Counts:
+def count_turn(turn: dict[str, Any], decide: Decide, guarded: bool, memory: bool = True) -> Counts:
     """One turn's counts for one committer (see the module docstring)."""
     final = words_of(turn["final_words"])
     fu = num_units([w.text for w in final])
