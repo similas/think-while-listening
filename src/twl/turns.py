@@ -754,7 +754,12 @@ class TurnManager:
         """
         if self.speech_end_fn is None:
             return None
-        truth = self.speech_end_fn(self._turn)
+        # The file source keys its end of speech by PLAYLIST POSITION. Looked
+        # up by turn number, the check found nothing after a run's first split
+        # (turn T plays an earlier file); NOTES 2026-11-24, CORRECTION to
+        # §3.4. Ali (2026-11-24, decision 6): look it up by the file index read
+        # at the turn's open. A run with no file index keeps the turn number.
+        truth = self.speech_end_fn(self._utterance if self._utterance > 0 else self._turn)
         detected = self._stop_ns_by_turn.get(self._turn)
         if truth is None or detected is None:
             return None
@@ -1094,6 +1099,7 @@ class TurnManager:
             contention=dict(self._contention),
             spec=dict(self._spec),
             endpoint_delay_ms=round(self._endpoint_delay_ms, 1),
+            endpoint_drift_ms=round(drift, 1) if drift is not None else None,
             wer=round(self._wer, 4),
             reference=self._reference,
             adversary_mb_per_s=round(self._adversary_mb_per_s, 1),

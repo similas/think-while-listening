@@ -226,6 +226,11 @@ class TurnRecord:
     # pre-synthesizing it would have been correct).
     spec: dict[str, Any] = field(default_factory=dict)
     endpoint_delay_ms: float = -1.0
+    # The detected endpoint minus the file's own, in ms, as the drift check
+    # computed it; None where it did not run (no file truth, a split pair).
+    # Logged from 2026-11-24: before, only a drift past ENDPOINT_DRIFT_MS left
+    # a trace (the invalid_reason).
+    endpoint_drift_ms: float | None = None
     wer: float = -1.0
     reference: str = ""
     adversary_mb_per_s: float = -1.0

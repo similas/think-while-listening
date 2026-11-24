@@ -250,3 +250,31 @@ def test_short_windows_get_an_interpolated_energy() -> None:
     assert abs(s.energy_j_interp(420_000_000, 470_000_000) - 0.3) < 1e-9
     # past the newest sample, power is held
     assert abs(s.energy_j_interp(950_000_000, 1_050_000_000) - 0.6) < 1e-9
+
+
+def test_a_drift_after_a_split_is_checked_against_its_own_file(tmp_path: Path) -> None:
+    """Ali, 2026-11-24 (decision 6): the file's end of speech is looked up by
+    the file index read at open. By turn number, every turn after a run's
+    first split found no truth and went unchecked (NOTES 2026-11-24)."""
+    t0 = now_ns()
+    truth = {1: t0 + int(10e9), 2: t0 + int(30e9), 3: t0 + int(50e9), 4: t0 + int(70e9)}
+    m = manager(tmp_path, truth)
+    current = {"pos": 1}
+    m.set_file_index_source(lambda: current["pos"])
+    play(m, t0, 0.0, 10.4)  # file 1, turn 1
+    current["pos"] = 2
+    m.turn_started(t0 + int(20e9))  # file 2 splits: this turn is force-finished
+    play(m, t0, 25.0, 30.3)  # turn 3, the split's second turn (not checked)
+    current["pos"] = 3
+    play(m, t0, 40.0, 54.0)  # turn 4 on file 3: 4 s late. By turn number: no truth
+    current["pos"] = 4
+    play(m, t0, 60.0, 70.3)  # turn 5 on file 4: on time
+    m.close()
+    recs = turn_records(tmp_path)
+    assert [r["turn"] for r in recs] == [1, 2, 3, 4, 5]
+    assert recs[2]["endpoint_drift_ms"] is None  # inside the split pair
+    assert "endpoint_drift:+4000ms" in recs[3]["invalid_reason"]
+    assert recs[3]["endpoint_drift_ms"] == 4000.0
+    assert "endpoint_drift_neighbour" in recs[4]["invalid_reason"]
+    assert recs[4]["endpoint_drift_ms"] == 300.0
+    assert m.endpoint_divergences == [(4, 4000.0)]
