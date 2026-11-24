@@ -464,19 +464,20 @@
   "id": "step 2",
   "prediction": "Learned committer, primary (out-of-domain): at LA-2's false-commit rate on the selection set (574 single_step files, guarded), commits at least half the LA-2 -> oracle gap in correct-committed words, g >= 0.5; FALSIFIED if g's CI lies entirely below 0.25",
   "registered": "2026-11-24 — PRE-REGISTRATION: step 2, the learned committer's offline evaluation (Ali's predictions, in his words; scaffolding approved by Ali). Committed before the scorer and any model code",
-  "scored": null,
-  "verdict": "PENDING",
+  "scored": "2026-11-24 — STEP 2 SCORED (the primary, offline, in-sample): g = 0.6255 [0.5806, 0.6691] at tau* 0.64, HOLDS; lag MET, calibration MET; without the guard, tau* re-chosen at LA-2's unguarded limit, g is 0.2176 [0.1577, 0.2753] (0.6254 at the guarded tau*)",
+  "verdict": "HOLDS: g = 0.6255 [0.5806, 0.6691], n=574 files, tau* 0.64 (in-sample, median of 3 seeds, guarded)",
   "corrections": [],
   "amendments": [
    "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad): the configuration is chosen by held-out log-loss (Ali's Q7); the four readings approved. Before the scorer and any fit"
-  ]
+  ],
+  "qualifier": "in-sample (tau*, seed) and off-policy until the closed loop; unguarded, tau* re-chosen at LA-2's unguarded limit, g = 0.2176 [0.1577, 0.2753] (0.6254 at the guarded tau*); the conditions differ only in the turns holding the guard's 594 discarded rows"
  },
  {
   "id": "step 2 (a)-(c)",
   "prediction": "(a) on words both commit, the primary commits >= 1.0 s earlier than LA-2 at the median (a CI touching 1.0 s is NOT MET); (b) ECE <= 0.05 (MET only if the CI lies entirely at or below 0.05); (c) the in-domain secondary beats the primary by <= 0.05 correct-committed fraction (a CI straddling 0.05 is NOT MET)",
   "registered": "2026-11-24 — PRE-REGISTRATION: step 2, the learned committer's offline evaluation (Ali's predictions, in his words; scaffolding approved by Ali). Committed before the scorer and any model code",
-  "scored": null,
-  "verdict": "PENDING",
+  "scored": "2026-11-24 — STEP 2 SCORED (the primary, offline, in-sample): g = 0.6255 [0.5806, 0.6691] at tau* 0.64, HOLDS; lag MET, calibration MET; without the guard, tau* re-chosen at LA-2's unguarded limit, g is 0.2176 [0.1577, 0.2753] (0.6254 at the guarded tau*)",
+  "verdict": "(a) MET, (b) MET, (c) PENDING: lag median +2.454 s [+2.451, +2.463], n=6170 words; ECE 0.0154 [0.0116, 0.0201], n=22871 rows; (c) after the primary's Pareto (Q5)",
   "corrections": [],
   "amendments": [
    "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad): the configuration is chosen by held-out log-loss (Ali's Q7); the four readings approved. Before the scorer and any fit"

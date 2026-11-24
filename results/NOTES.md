@@ -10595,3 +10595,127 @@ Reviewed before commit (round 37: 6 findings, 6 resolved; whose choice each
 part is, the two added features, the split call and the hash encoding,
 deterministic training, item 5 against Q5 and the held-out rows, this
 line).
+
+## 2026-11-24 — STEP 2 SCORED (the primary, offline, in-sample): g = 0.6255 [0.5806, 0.6691] at tau* 0.64, HOLDS; lag MET, calibration MET; without the guard, tau* re-chosen at LA-2's unguarded limit, g is 0.2176 [0.1577, 0.2753] (0.6254 at the guarded tau*)
+
+Registered: "2026-11-24 — PRE-REGISTRATION: step 2 ..." (345efad), as
+amended (2439df4). Scorer src/scripts/step2_score.py, committed (ad11814)
+before any fit; training src/scripts/step2_train.py (140485e); both runs on
+the clean build 140485e:
+- results/raw/run_logs/20261124_step2_train/train.log (24 fits, models and
+  predictions in results/raw/step2/primary/);
+- results/raw/run_logs/20261124_step2_score/step2_score.log, the output of
+  `step2_score.py --anchors results/raw/run_logs/20261124_step2_anchors/anchors.log
+  --models results/raw/step2/primary --log ...`.
+
+VALIDITY, all passed before any model output was used (the log's first
+lines): the label files' sha256 equal the anchors log's; 574 files and
+15220 scored final words; LA_CHECK 23465/23465 rows; the anchors log's
+ANCHORS and CHECK lines reproduced, both conditions; the models fit on the
+clean 140485e after the scorer's commit, with the scoring code unchanged
+since; the 12 label files equal the manifest's; the held-out files are the
+declared split (1101 of 11012) and every held-out file holds its 25100 rows;
+one prediction per label row for every configuration and seed (23465, 601,
+738). The guard is one flag passed to every committer, by construction.
+
+TRAINING (train.log): rows with label 0 or 1 and the guard's hypotheses
+dropped: 70158 of 73046 (librispeech-test-clean), 63957 of 67274
+(librispeech-test-other), 138194 of 147984 (peoples-speech); 247209
+training rows, 25100 held out. Each fit took 2 to 13 s.
+
+SELECTION (amendment item 1), mean held-out log-loss over the three seeds:
+
+    L15_R200_notext 0.27917    L15_R200_text 0.27154
+    L15_R600_notext 0.27795    L15_R600_text 0.27050
+    L63_R200_notext 0.27791    L63_R200_text 0.26991   <- chosen
+    L63_R600_notext 0.27899    L63_R600_text 0.27149
+
+SEEDS of L63_R200_text: tau* 0.63, g 0.6341 (seed 0); tau* 0.64, g 0.6216
+(seed 1); tau* 0.64, g 0.6255 (seed 2). The median seed is 2; the range of
+g over the seeds is 0.0125.
+
+THE VERDICT LINE, as the scorer prints it:
+
+    PRIMARY guarded (scored): tau* 0.64; g = 0.6255 [0.5806, 0.6691] -> HOLDS; model correct-committed 9925, LA-2 6718, oracle 11845, of 15220 words; model commits 10386, correct 9914, false-commit rate 0.0454 (limit 0.0458); BLOCKED units 12, commits left not correct 10
+
+The CI of g lies entirely above 0.5: HOLDS, by Ali's rule. In committed
+fraction, at tau* 0.64, the model's correct-committed fraction is 0.6521
+[0.6326, 0.6713], against LA-2's 0.4414 and the oracle's 0.7783 (PARETO
+guarded tau 0.64). Its committed fraction is 0.6824 [0.6624, 0.7017], and
+its false-commit rate is 0.0454 [0.0407, 0.0507]: within the limit 0.0458
+at the point, as the registered tau* rule reads, with a CI that includes
+the limit. Beside g: 12 blocked unit-hypotheses (the memory rule), and 10
+commits left in units never completed (any cause; LA-2 has 20).
+
+THE UNGUARDED SENSITIVITY, as printed:
+
+    UNGUARDED (sensitivity), tau* re-chosen: tau* 0.83; g = 0.2176 [0.1577, 0.2753] -> sensitivity, no verdict; ...; model commits 8154, correct 7835, false-commit rate 0.0391 (limit 0.0468)
+    UNGUARDED (sensitivity), at the guarded tau*: tau* 0.64; g = 0.6254 [0.5800, 0.6685] -> sensitivity, no verdict; ...; model commits 10593, correct 9920, false-commit rate 0.0635 (limit 0.0468)
+
+On the unguarded stream, at the guarded tau*, the model credits nearly the
+same words, but its false-commit rate rises from 0.0454 to 0.0635 [0.0432,
+0.0974], while LA-2's rises only from 0.0458 to 0.0468. To meet LA-2's
+unguarded limit, tau* must rise to 0.83, and g falls to 0.2176. The model
+was trained with the guard's hypotheses dropped (decision 5); a likely
+reason, not tested here, is that it commits into runaway hypotheses that
+LA-2's agreement rule refuses. The two conditions differ only in the turns
+that hold a hypothesis the guard discards (594 label rows of such
+hypotheses: anchors.log BASE, 23465 - 22871); the files holding them are
+not counted here, which is why the unguarded rate's CI is wide. The
+registered condition is the guarded one, and the closed-loop replay runs
+guarded (decision 5). The result depends on the guard being present.
+
+SECONDARY, as printed:
+
+    SECONDARY (a) LAG vs LA-2: 6170 words; median +2.454 s [+2.451, +2.463] -> MET; p95 +4.947 s [+4.795, +4.968]
+    SECONDARY LAG vs the oracle (descriptive): 9925 words; median +0.000 s [+0.000, +0.000]; p95 +0.000 s [+0.000, +0.000]
+    SECONDARY (b) CALIBRATION: ECE 0.0154 [0.0116, 0.0201] over 22871 rows -> MET; base rate 0.9065 (a constant predictor's ECE 0 by construction); Brier model 0.0553, constant predictor 0.0847
+
+- (a) On the 6170 words of units both the model (at tau*) and LA-2 credit,
+  the model commits 2.454 s earlier at the median, a CI entirely above
+  1.0 s: MET. Against the oracle, on the 9925 words of units both credit,
+  the median and p95 of the difference (the oracle's lag minus the
+  model's) are 0: at least 45 % of those words have a difference of
+  exactly 0, and at most 5 % are positive. The line does not show how many
+  are negative (the model completing later).
+- (b) ECE 0.0154, its CI entirely at or below 0.05: MET. The model's Brier
+  score is 0.0553, against 0.0847 for the constant predictor at the base
+  rate 0.9065.
+- (c) Not computed: the secondary is trained after this Pareto is scored
+  (Q5).
+- CLOSED LOOP: not run; a measured run, with the run skill and Ali's GO.
+
+DIGIT SETS (descriptive, guarded, at tau* 0.64), as printed:
+
+    DIGITS mqa-short_digit: correct-committed LA-2 21/462, oracle 181/462, model 130/462; false-commit rate LA-2 0.2500, model 0.2558
+    DIGITS mqa-long_digit: correct-committed LA-2 56/900, oracle 324/900, model 240/900; false-commit rate LA-2 0.3412, model 0.3689
+
+READINGS the scorer adds, none of which changed a number here:
+- a tie in held-out log-loss goes to the first declared configuration (no
+  tie occurred);
+- a tau at which the model commits nothing meets no limit (tau* was found);
+- an unscored word without a label row is passed over by the model's prefix,
+  uncommitted (every fresh word without a row is unscored: 102 in the
+  selection set over both conditions, checked by hand, not logged);
+- the unguarded sensitivity is printed both with tau* re-chosen and at the
+  guarded tau*.
+
+WHAT THIS PASS CAN AND CANNOT SHOW:
+- In-sample: tau* and the median seed are chosen on the same 574 files the
+  prediction is scored on. The configuration was chosen out of sample, by
+  held-out log-loss. The CI excludes the variance of choosing tau* and the
+  seed. The out-of-sample test is the sealed 80 after step 5.
+- Off-policy: the model is scored on LA-2's stream. The closed loop is the
+  one check of that, and it is not yet run.
+- The primary prediction holds only under the guard, which decision 5 makes
+  the scored condition.
+- The digit sets are descriptive: at tau* 0.64, the model credits more than
+  LA-2 on both, at higher false-commit rates on both (0.2558 against
+  0.2500; 0.3689 against 0.3412).
+
+Reviewed before commit (round 39: 9 findings, 8 resolved; the unguarded
+heading and its confinement, the lag-vs-oracle wording, the cause of the
+pending commits, the hand-checked count, the rate's CI, both digit sets,
+the ledger heads, this line; finding 8, a correction to the report after
+round 36, does not apply: that report gave 288,160 label rows from
+labels_table.log and no guarded count).
