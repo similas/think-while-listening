@@ -9996,3 +9996,18 @@ voids a run, so it is Ali's decision. Whether past turns after a split
 drifted is not checked here. An approximate check from the playback timeline
 (p5_score.py's endpoint_delays method) is possible wherever the utterance
 index or the pre-roll audit places a turn on its file.
+
+## 2026-11-24 — The run summary's VAD split rate changed definition in 37885c7: files with more than one turn, no longer force-finishes per file
+
+The DECISIONS entry above says the run summary "counts the continuation
+turns beside the split turns". The same commit also changed the rate the
+summary says "belongs in the set table":
+- until 37885c7: force-finishes (vad_splits) / files started;
+- from 37885c7: playlist positions that produced more than one turn / files
+  started (TurnManager.files_split).
+The two differ in two cases. A file that splits at a normal endpoint, with
+no force-finish, now counts. A file whose force-finishes chain now counts
+once, not once per force-finish. Past set-table rates, PASS 1's splits/files
+table among them, are the old quantity; a run after 37885c7 reports the new
+one. The two are not compared without saying so. The summary still prints
+the force-finish count beside the rate.
