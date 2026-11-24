@@ -11079,3 +11079,100 @@ c0c9c32.
 
 Reviewed before commit (round 48: 1 finding, 1 resolved; the draft in
 rounds 44 and 47).
+
+## 2026-11-24 — STEP 2 RELABEL ABORTED at 729 of 2620 files: a SIGTERM at about 17:27:12, most likely from the teardown of the session task I launched it from, after at least 9,360 swap-ins; no parquet written; whether to re-run is Ali's
+
+Authorised by Ali's GO, decision 2 (a) on 54fce21 (the DECISIONS entry,
+f7faef6). Driver: 21fd924 (src/scripts/step2_relabel.py). Both runs on the
+clean build 7dc34f4, through the launch snapshots
+results/raw/script_snapshots/relabel_launch_20261124.sh and
+relabel_20261124.sh (the closed loop's pair, retargeted). Logs:
+results/raw/run_logs/20261124_relabel_smoke/ and 20261124_relabel_full/
+(launch.log, driver.log, driver_py.log, watchdog.log; the full run's
+relabel.log). Output: results/raw/commit_labels/onpolicy/.
+
+THE BOARD. twl-llama.service stopped at 16:50:25 and started again at
+17:28:20 (src/scripts/llama_server.sh start); spotifyd up throughout; the
+run lock free at the start. (Read by hand from the commands' output:
+systemctl, flock, date; not in the run logs.) The relabel's freeze lift and swap rule are
+the ones Ali confirmed (the AMENDMENT above, his item 0).
+
+THE SMOKE RUN (3 files, 16:50:30 to 16:50:45) passed every check before
+its first decode and wrote 53 rows. Its files' provenance reads through
+la_operating_point.provenance, and step2_train.guarded_out runs on its
+utterances file (checked by hand after the smoke run; not logged).
+
+THE FULL RUN. Armed 16:51:08; the driver started 16:51:09. VALIDITY, all
+passed before the first decode (relabel.log):
+- the model is the one the scoring log scored (L63_R200_text, seed 2,
+  tau* 0.64);
+- the replay settings and the hypothesis model are step 1's for
+  test-clean, with the guard on;
+- step 1's test-clean label files equal the sha256 the training manifest
+  records;
+- the model reproduces its scored P on all 23465 selection-set rows
+  (largest difference 0.0e+00);
+- the corpus files' sha256 verified.
+Progress: 700 files in 2101 s; tj 64.8 C at most (the first trip point is
+74 C). Swap traffic since the start (pswpin): +39 at 500 files (1497 s),
++381 at 600 (1853 s), +9,360 at 700 (2101 s), the last count logged;
+pswpout +0 throughout. At about 17:27:12 (the .partial files' modification
+times, 17:27:11 and 17:27:12; the ABORTED line carries no time) the driver
+took a SIGTERM: "ABORTED: SystemExit: 143; 729 files written". The watchdog wrote no exit line and no summary, and the launcher
+no "watchdog exit" line: the launcher, the watchdog, the driver's shell and
+the driver ended together. The jsonl holds 729 complete file records with
+19,639 rows; both parquet files are still .partial.
+
+THE CAUSE, inferred, not proven (the facts below were read by hand after
+the abort, from ps -o lstart, /proc/<pid>/cgroup and dmesg, and from the
+coding tool's own notice; none is in the run logs):
+- At 17:22:09 the editor's server restarted, as the coding tool's editor
+  extension updated; the tool's new process started at 17:22:35. The new
+  session was told that the old session's background task had been
+  stopped.
+- I had launched the run from that background task, and kept the task open
+  with a wait on the launcher's pid. So the launcher stayed a child of the
+  task's shell: setsid gives it a new session, not a new parent, and it
+  stayed in the editor server's cgroup (session-3120.scope). The task's
+  shells were still alive at 17:23:13 (a process listing) and gone after
+  17:27:12.
+- So the SIGTERM most likely came from the teardown of that task's process
+  tree. dmesg holds no OOM kill, and the watchdog logged no trip.
+- The swap-ins between 1853 s and 2101 s (about 17:22 to 17:26) coincide
+  with the editor server's restart.
+The root is a departure from the run skill's precondition that a run
+survive a dropped session (tmux): the run was launched from the coding
+tool's task, not from tmux or a detached unit. The closed loop shared that
+departure and survived only because its launch call returned at once, so
+its launcher was reparented; this one's was not. The error is mine.
+
+THE FENCE. Besides the run, the box ran: from 16:51:08, the launching
+task itself, holding the launcher with a wait on its pid (tail --pid,
+reading no file); the editor server's and the coding tool's restart
+(17:22); one process listing (17:23:13); and from 17:23:27 a second wait
+on the launcher's pid (tail --pid, reading no file). No file under the
+repository changed between 16:51:09 and 17:27:12 except the run's own: its
+logs, its output and the run lock (checked by modification time after the
+abort).
+
+STATUS. The run is void as a relabel: it is incomplete, wrote no parquet,
+and is flagged for swap under the closed loop's rule. Its files stay where
+they are, unused. The driver refuses to start while they exist ("a relabel
+is not repeated or resumed"). No retraining has started.
+
+CORRECTION to the DECISIONS entry (f7faef6), "What follows" 2: "The
+estimate from the closed loop's time per file is about 2.4 h" is wrong.
+Per file, the closed loop's pace gives 3.1 h (2,467 s / 574 × 2,620 =
+11,261 s), but the files are not comparable. The closed loop took 1.11
+times step 1's hypothesis decodes on its corpus (2,467 s against 2,219 s),
+and step 1's hypothesis decodes of test-clean took 6,659 s, so the
+estimate is about 2.1 h (2.2 h if scaled by audio: 19,452 s of test-clean
+against the selection set's 6,080 s). This run's pace before the restart
+(500 files in 1,497 s) is consistent with that.
+
+WHAT FOLLOWS is Ali's to decide: whether to re-run the relabel and how it
+is launched. Nothing is re-run without his GO, recorded in NOTES before the
+launch (the run skill: a voided run is not re-run unless the registration
+or an amendment says so).
+
+Reviewed before commit (round 48: 5 findings, 5 resolved).
