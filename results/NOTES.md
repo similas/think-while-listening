@@ -11176,3 +11176,58 @@ launch (the run skill: a voided run is not re-run unless the registration
 or an amendment says so).
 
 Reviewed before commit (round 48: 5 findings, 5 resolved).
+
+## 2026-11-24 — STEP 2, THE FIRST MODEL'S CLOSED LOOP UNDER THE AMENDMENT'S MEASURES (post hoc: scorer written after this loop's data; reported beside, no verdict): g_cl = -0.1266 [-0.2174, -0.0414]; its false-commit rate's CI lies entirely above LA-2's 0.0458
+
+What it is: the AMENDMENT of d8797b2, item 3, reports "the first model's
+off-policy g and closed-loop g, computed the same way" beside the retrained
+model's verdict. The code that computes them (1ee4759:
+src/scripts/step2_closed_loop_score.py, extended with g_cl, the precision
+bar and the loop's lag) was written after the first loop's data, so every
+number below is post hoc and carries no verdict. The log:
+results/raw/run_logs/20261124_closed_loop_gcl/closed_loop_score.log (the
+clean build 1ee4759; the first loop's run file and its scoring log as in
+the closed-loop entry; anchors.log).
+
+VALIDITY (the log): the run's header and coverage as before (574 files,
+15220 scored final words); the five lines of the original closed-loop
+score reproduce closed_loop_score.log (compared line by line with the
+earlier log; identical); step 1's LA-2 and oracle,
+counted per file on step 1's stream, reproduce anchors.log's guarded
+totals (LA-2 commits 7038, correct 6716; correct-committed 6718; the oracle
+11845); paired by file, 574 files.
+
+THE NUMBERS, as the log prints them (95 % CIs over files, 2000 resamples,
+seed 0, one set of draws for all terms):
+- g_cl = -0.1266 [-0.2174, -0.0414]: the model credits 6069 words on its
+  own stream; LA-2 6718 and the oracle 11845 on step 1's; of 15220. On its
+  own stream, the first model credits fewer words than LA-2 does on step
+  1's. Beside it, its off-policy g = 0.6255 [0.5806, 0.6691] (step2_score.log).
+- The loop's false-commit rate 0.0561 [0.0489, 0.0639]: its CI lies
+  entirely above LA-2's 0.0458 on step 1's stream. For the retrained model,
+  this would be NOT MET ON PRECISION (A (b)); for the first, it is reported.
+- Lag on the loop's stream against LA-2 on step 1's, paired by file: 4302
+  words; median +2.434 s [+2.434, +2.434], the value of 12.8 % of the words.
+  Its CI is of zero width because the median sits in that point mass
+  (likely: the simulated clock quantizes issue times), not because it is
+  precise. p95
+  +2.657 s [+2.572, +4.906].
+
+RECORDED BEFORE ANY RETRAINED FIT:
+- step2_score.py's held-out check was extended for on-policy rows (1ee4759)
+  after the first model's fit, backward compatible (a held-out file without
+  a source column reads as step 1's). An unlogged re-run on the first
+  model's directory reproduced every VALIDITY line and g = 0.6255. Any
+  logged re-score of the first model would be flagged as changed after the
+  fit; none is planned.
+- Under Ali's decision 2 (b) (i), the on-policy rows are added to all of
+  step 1's. Within a turn, until the first commit in either stream (the
+  model's on the loop, LA-2's on step 1's), the two streams coincide (the
+  same buffers, the same words, the shadow LA-2 matching the real one), so
+  the on-policy rows of those early hypotheses
+  duplicate step 1's test-clean rows: they count twice, in training and in
+  the held-out log-loss that chooses the configuration. Their number is
+  counted and reported with the retrained model's training.
+
+Reviewed before commit (round 50: 5 findings, 5 resolved: three in the
+scorer, two recorded here; round 51: 3 findings, 3 resolved).
