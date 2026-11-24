@@ -779,7 +779,11 @@ def tex(x: str) -> str:
     ):
         x = x.replace(a_, b_)
     x = re.sub(r"(?<![A-Za-z])'([^']+)'(?![A-Za-z])", r"`\1'", x)
-    return re.sub(r'"([^"]+)"', r"``\1''", x)
+    # A double quote opens at the start or after whitespace or an opening
+    # bracket, and closes anywhere else, so nested quotes (a CORRECTION that
+    # quotes a heading quoting another) keep their direction.
+    x = re.sub(r'(^|[\s(\[])"', r"\1``", x)
+    return x.replace('"', "''")
 
 
 def table1_tex() -> str:
