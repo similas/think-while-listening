@@ -250,8 +250,8 @@ reference joined by file name (`reference` is empty today — wire it); the
 
 3.4 **Per-turn ground truth.** The file source knows `speech_end_ns[N]`. Invariant: turn
     N's `vad_user_stopped` within 1 500 ms of it, else turns N and N+1 are flagged
-    invalid; abort on the *second* divergence (one Silero split on a 30 s utterance
-    must not void 50 minutes). The current check misses turn 15's real shape (stop
+    invalid; abort on the first divergence outside a split pair (NOTES 2026-11-24,
+    decision 7; split pairs are exempt). The current check misses turn 15's real shape (stop
     present, final absent) and its test uses a shape that never occurred; replace both.
 
 3.5 **`vad_filter=True` inside every decode.** `_decode` runs Silero over the whole

@@ -10115,3 +10115,411 @@ Done:
    timeline (80 turns could not be located) (NOTES 2026-11-24)." The 80 of
    1782 post-split turns outside split pairs are summed over
    drift_posthoc.log's per-run lines (its SUMMARY does not print them).
+
+## 2026-11-24 — 7b9e8be was pushed with make check FAILING
+
+The commit of twl/step2_count.py ran on a chain that piped `make check` into
+`grep | tail`, which discards the exit status, so it went through on a
+failed gate: three mypy type-arg errors in src/twl/step2_count.py. It is
+the trap recorded on 2026-10-06 ("9c1a306 was pushed with make check
+FAILING"), walked into a third time. Fixed in 82b0308 (make check passes,
+456), and the anchors were logged again on that build. The gate is now run
+as `make check > file && git commit`, its exit status tested directly.
+
+## 2026-11-24 — PRE-REGISTRATION: step 2, the learned committer's offline evaluation (Ali's predictions, in his words; scaffolding approved by Ali). Committed before the scorer and any model code
+
+Every number below is a named script's output on a clean build, or Ali's
+own. A run voided by an invariant is reported with its cause and not
+re-run. Ali approved, 2026-11-24.
+
+### Ali's pre-registration, as he wrote it (2026-11-23)
+
+    PRE-REGISTRATION — learned committer, offline evaluation (step 2)
+
+    Data. Primary model: trained on LibriSpeech clean + other and People's
+    Speech labels only (out-of-domain). Secondary model: the same plus the
+    1,322 unsealed multi_step files, labelled in-domain wherever it appears.
+    Selection on the 574-item single_step set. The sealed 80 multi_step items
+    are not read until after step 5. Digit sets: evaluation only, reported
+    separately.
+
+    Metric. Pareto of committed fraction (LA-2's denominator) vs false-commit
+    rate at the endpoint, sweeping τ, pooled over words, with and without
+    runaway hypotheses (guard applied to all committers). Calibration of
+    P(survive). Commit lag, paired per word against LA-2 and the oracle.
+
+    Comparators. Per-word LA-2 on the same stream (the stronger baseline);
+    LA-3 from the replay; the oracle as the ceiling.
+
+    Primary prediction. At LA-2's false-commit rate (4.2 %), the primary model
+    commits ≥ 0.61 of words on the selection set — at least half the
+    LA-2→oracle gap (0.44 → 0.78). Falsified if < 0.53 (a quarter of the gap).
+
+    Secondary predictions. (a) Commit lag: on words both commit, the primary
+    model commits ≥ 1.0 s earlier than LA-2 at the median. (b) Calibration:
+    expected calibration error ≤ 0.05 on the selection set. (c) The secondary
+    (in-domain) model beats the primary by ≤ 0.05 committed fraction — if it
+    beats it by more, the primary's generalization is the finding, reported as
+    such.
+
+    Closed loop. One replay at the chosen τ on the selection set. If
+    closed-loop committed fraction or precision falls below the off-policy
+    curve by more than its CI, one on-policy relabel on LibriSpeech clean and
+    retrain; the retrained model is scored against the same prediction.
+
+    Not read before scoring: any multi_step number. Scoring order: Pareto,
+    then lag, then calibration, then closed loop.
+
+### Ali's decisions on its review, as he wrote them (2026-11-23)
+
+    Decisions on the step-2 pre-registration review and the open items:
+
+    1. Scored quantity: (a). Correct-committed fraction, anchored on LA-2
+    0.4430 → oracle 0.7786 (selection set, oracle.log), bars 0.6108 and 0.5269
+    as computed, not rounded.
+
+    2. False-commit rate: over commits (1 − precision). The bar is LA-2's own
+    logged rate on the selection set — log the 0.0441 as a claim; no typed
+    number stands in for it.
+
+    3. Estimator: the paired gap fraction g = (model − LA-2) / (oracle − LA-2),
+    pooled over the selection set's scored final words, percentile bootstrap
+    over files, 2000 resamples, seed 0; τ* chosen once on the full selection
+    set as the largest committed fraction with false-commit rate ≤ LA-2's,
+    held fixed across resamples; LA-2 and oracle anchors recomputed per
+    resample. Verdicts: HOLDS if the CI lies entirely above 0.5 of the gap;
+    MEETS if the point ≥ 0.5 and the CI includes it; BELOW PREDICTION, NOT
+    FALSIFIED if the point < 0.5 and the CI reaches above 0.25; FALSIFIED if
+    the CI lies entirely below 0.25. Commit rule: longest prefix with P ≥ τ
+    per hypothesis; a word counted once by unit alignment, as the oracle does.
+    In-sample selection stated plainly; the out-of-sample test is the sealed
+    80 after step 5.
+
+    4. Number heard in part (decision 1 of 11-22): (a) keep 0. A number counts
+    only whole — committed text is consumed before the endpoint, and "20" is
+    not "25". Same rule for LA-2, the oracle and the model, so the comparison
+    is fair; the digit sets report it as their finding.
+
+    5. Runaway definition (decision 3 of 11-22, and the guard's reading): the
+    guard's rule, read as 5+ in a row, token = whitespace word. The scored
+    condition is WITH the guard applied to every committer; unguarded is the
+    sensitivity. Step 2's labels: (a) keep step 1's stream and drop the
+    guard's hypotheses at training and evaluation; the closed-loop replay
+    runs guarded.
+
+    6. P1 and word density (decision 2 of 11-22): (a) post-hoc scorers that
+    must reproduce the recorded numbers before their counts are used.
+
+    7. Secondary predictions: (a) lag paired per word on words both commit,
+    median and p95, CI over files; a CI touching 1.0 s is NOT MET. (b) ECE
+    with 10 equal-width bins over scored rows, CI over files, reported beside
+    a constant predictor at the base rate. (c) both models at their own τ*,
+    paired per file. Three training seeds; the median seed's model is the one
+    scored, range reported.
+
+    8. Closed loop: "its CI" = the off-policy curve's 95 % CI at τ*. If
+    retrained, the retrained model's verdict is the one that counts, and the
+    first is reported beside it. Denominator and trimming-dependent features
+    defined on the closed-loop stream.
+
+    9. Wording: drop "stronger baseline"; LA-3 is descriptive, paired by file.
+    "Not read before scoring" means: no model output on multi_step, primary
+    or secondary, is computed before the selection-set Pareto is scored; the
+    sealed 80 are not read until after step 5.
+
+    10. Yes — draft the scaffolding (definitions, estimator, power, validity,
+    void rule, what the pass can and cannot show) with every number logged
+    first, as a separate block. The predictions stay in my words.
+
+Ali re-sent them on 2026-11-24. Items 1, 3 and 9 are as above; the others
+read, as he wrote them:
+
+    2. False-commit rate: over commits (1 − precision). The bar is LA-2's own
+    logged rate on the selection set — log it as a claim; no typed number
+    stands in for it.
+    4. Number heard in part (decision 1 of 11-22): (a) keep 0. A number counts
+    only whole. Same rule for LA-2, the oracle and the model; the digit sets
+    report it as their finding.
+    5. Runaway definition (decision 3 of 11-22, and the guard's reading): the
+    guard's rule, read as 5+ in a row, token = whitespace word. The scored
+    condition is WITH the guard applied to every committer; unguarded is the
+    sensitivity. Step 2's labels: keep step 1's stream and drop the guard's
+    hypotheses at training and evaluation; the closed-loop replay runs
+    guarded.
+    6. P1 and word density: done (post-hoc scorers that reproduce before use).
+    7. Secondary predictions: (a) lag paired per word on words both commit,
+    median and p95, CI over files; a CI touching 1.0 s is NOT MET. (b) ECE
+    with 10 equal-width bins over scored rows, CI over files, reported beside
+    a constant predictor at the base rate. (c) both models at their own τ*,
+    paired per file. Three training seeds; the median seed's model is scored,
+    range reported.
+    8. Closed loop: "its CI" = the off-policy curve's 95 % CI at τ*. If
+    retrained, the retrained model's verdict counts, with the first reported
+    beside it. Denominator and trimming-dependent features defined on the
+    closed-loop stream.
+    10. Draft the scaffolding (definitions, estimator, power, validity, void
+    rule, what the pass can and cannot show) with every number logged first,
+    as a separate block for my approval. The predictions stay in my words.
+
+Where they change his text, the
+decisions govern: the bar is LA-2's logged rate, not "4.2 %"; the bars are
+computed, the verdicts reading g; "Falsified if < 0.53" is now the CI of g
+entirely below 0.25; the scored quantity is the correct-committed fraction,
+(c) included; "with and without runaway hypotheses" is guarded (scored) and
+unguarded (sensitivity); "the stronger baseline" is dropped; "any
+multi_step number" is any model output on multi_step.
+
+### Ali's answers on the scaffold, as he wrote them (2026-11-24)
+
+    Q1: (b). Qualified, not void: LA-3's labels and commits stand; wall time
+    and peak tj marked as touched.
+    Q2: (a). The logged, guarded, per-unit figures are the scored ones (LA-2
+    0.4434, oracle 0.7783, limit 0.0430, bars 0.6108 / 0.5271), recomputed by
+    the scorer at run time; my typed figures are superseded.
+    Q3: (a). The model's committer has memory: a word is eligible only after
+    the later of the stream's committed end and the model's own, committed at
+    most once; one counting function for both, checked by LA-2 giving g = 0
+    and the oracle g = 1.
+    Q4: your defaults, with one change —
+      - τ grid 0.50–0.99 step 0.01; no τ meets the limit → g = −LA-2/(oracle
+        − LA-2) and the verdict follows; tie → the higher τ;
+      - ECE MET only if the CI lies entirely at or below 0.05; (c) straddling
+        0.05 → NOT MET;
+      - one median seed by g serves (a), (b), (c) and the closed loop;
+      - lag against LA-2 as scored; the oracle pairing as a descriptive line;
+      - retrain branch: seeds 0, 1, 2, τ* re-chosen by the same rule, no
+        second closed loop, stated as off-policy;
+      - at most 8 declared configurations, last checkpoint of each, no early
+        stopping on the selection set;
+      - partial units: the ALTERNATIVE — a unit counts as correct only when
+        all its scored words are committed, for the model and LA-2 alike. It
+        is the same principle as decision 4 (a number counts only whole); the
+        scorer recomputes the anchors under it and logs them.
+    Q5: (a). The secondary is trained only after the primary's Pareto is
+    scored.
+    Q6: (a). Brier beside the constant predictor's.
+    9: (a). Edit the brief's §3.4 to the rule in force.
+
+    Scaffold approved with these: Ali approved, 2026-11-24. Fill the
+    [PENDING] spots from the answers above, log the per-unit anchors under
+    the all-words rule, run the reviewer, commit the entry and its ledger
+    row, then write step2_score.py and start training the primary.
+
+FROM THE APPROVED FIGURES TO THE SCORED ONES. Q2 approved the guarded,
+per-unit figures as logged on 2026-11-23, when a unit counted as correct if
+any of its words was committed. Q4 changes that rule, and the anchors under
+it are logged (anchors.log of 2026-11-24, below): LA-2 0.4414, oracle
+0.7783, the false-commit limit 322/7038 = 0.0458, bars 0.6098 and 0.5256.
+The limit moves from 303/7051 = 0.0430 for four reasons, not one:
+- the denominator: the 2026-11-23 figure added the final side's correct
+  words (6748) to the commit side's false ones (303); the new one counts
+  commits on the commit side throughout (7038), as decision 2 (1 -
+  precision) reads;
+- 20 words committed into a unit never committed whole are now commits that
+  are not correct (Q4);
+- 3 committed into a unit whose final unit was already credited are not
+  correct;
+- the commits in units aligning nowhere are 299, against 303 counted on the
+  old basis.
+The scorer recomputes all of these at run time.
+
+### Scaffolding (drafted from Ali's decisions; Ali approved it, 2026-11-24)
+
+Filled after his approval, under his instruction "Fill the [PENDING] spots
+from the answers above": the counting function's matching rule for a word
+the committer can no longer commit (a reading of Q4), the PARETO line,
+tau*'s objective (decision 1's quantity), and the lag pairing under Q4
+(round 35's review). The configuration selection is not his yet: [PENDING
+Q7] below.
+
+DEFINITIONS.
+- Selection set: single_step items 20 to 593 (decision 6 on 7257b7f): 574
+  files, 15220 scored final words (anchors.log).
+- Labels: label_num of results/raw/commit_labels/num/ (relabel_num.py at
+  13991c3; twl.survival_labels at 3765dc8, LABEL_VERSION num-units-1; the
+  number-normalized scorer twl.wer.wer_num, whisper-normalizer 0.1.15). A
+  number heard in part does not survive, for every committer (decision 4).
+  The evaluation files' sha256 are in anchors.log's header, the training
+  corpora's in la_point.log's (20261123_la_point_num); the scorer logs all
+  of them.
+- Stream: step 1's, with the hypotheses the runaway guard discards dropped
+  for every committer (twl.runaway: faster-whisper's compression ratio over
+  2.4, or one whitespace word 5 or more times in a row; decision 5).
+  Unguarded: the sensitivity.
+- COUNTING: twl.step2_count.count_turn, one function for every committer
+  (Q3), at dc0abc9:
+  - Fresh words: those starting at or after the stream's committed end.
+  - Memory (Q3): a word is eligible only if it starts at or after the later
+    of the stream's committed end and the committer's own (the end of the
+    last word it committed in the turn). A fresh word it can no longer
+    commit counts as committed only if it matches a word it did commit in
+    the turn (the same text key, overlapping in time); otherwise a unit
+    cannot be whole while it holds such a word (Q4). A later hypothesis that
+    re-times the word to start at or after the committer's own end makes it
+    eligible again. The scorer counts these BLOCKED units per unit and
+    hypothesis, and prints, beside g, the model's blocked count and its
+    commits left not correct. Only a committer whose own end runs ahead of
+    the stream's committed end can be blocked: the model, never LA-2. So the
+    rule can only cost the model units it would otherwise complete, by an
+    amount the scorer prints. Committing an ineligible word stops the count
+    with an error; LA-2's commits are checked against the rule on every run.
+  - The model commits, per offered hypothesis, the longest prefix of its
+    eligible fresh words with P(survive) >= tau (decision 3); LA-2 commits
+    per word, re-simulated with the guard
+    (twl.la_baseline.simulated_commits). The oracle is oracle_ceiling.py's
+    rule, every final unit at its first surviving appearance; it commits no
+    prefix, so the prefix memory does not apply to it, and it commits each
+    final unit once.
+  - Units (Q4, all words): num_units over the fresh words, aligned to the
+    final's units by twl.survival_labels.align_units. A unit is whole when
+    all its scored words are committed. A whole unit aligned to a final unit
+    not yet credited credits it, and its committed scored words are correct
+    commits. A whole unit aligned nowhere, or to a final unit already
+    credited, makes them not correct. The words of a unit not yet whole wait
+    for a later hypothesis to complete it, which takes them when their
+    midpoint lies within its unit's span; at the turn's end they are commits
+    that are not correct.
+- Correct-committed fraction: the final's scored words of the credited
+  final units / the finals' scored words (the scored quantity, decision 1).
+  False-commit rate: 1 - correct commits / commits, over the scored words
+  committed (decision 2).
+- The checks of the function (Q3): LA-2's commits fed through the MODEL's
+  path (prefix_decide, P = 1 on them and 0 elsewhere, tau 0.5) reproduce
+  LA-2's counts on every turn, so g = 0 through the model's own code; the
+  oracle's give g = 1, and its count equals its rule counted directly
+  (anchors.log, CHECK: 11845 = 11845, every oracle commit correct).
+
+ANCHORS (results/raw/run_logs/20261124_step2_anchors/anchors.log,
+step2_anchors.py at dc0abc9; 95 % percentile bootstrap over files, 2000
+resamples, seed 0):
+
+    condition          LA-2 false-commit rate              LA-2 correct committed   oracle                   bars (g = 0.5, 0.25)
+    guarded (scored)   322/7038 = 0.0458 [0.0393, 0.0528]  0.4414 [0.4238, 0.4590]  0.7783 [0.7663, 0.7896]  0.6098, 0.5256
+    unguarded          330/7054 = 0.0468 [0.0403, 0.0539]  0.4419 [0.4242, 0.4596]  0.7786 [0.7668, 0.7900]  0.6103, 0.5261
+
+LA-2's 322 commits that are not correct (guarded): 299 in a whole unit
+aligned nowhere, 20 in a unit never committed whole, 3 in a unit whose
+final unit was already credited. The scorer recomputes these from the files
+at run time and stops if they differ (a validity check).
+
+ESTIMATOR (decision 3), fixed now:
+- PARETO: for each tau on the grid 0.50, 0.51, ..., 0.99 (Q4), the model's
+  committed fraction (all its scored commits over the finals' scored words,
+  LA-2's denominator), its correct-committed fraction and its false-commit
+  rate, pooled over the selection set, each with a percentile bootstrap CI
+  over files (2000 resamples, seed 0); all printed, guarded and unguarded.
+- tau*: on the full selection set, the tau of the largest correct-committed
+  fraction (the "committed fraction" of decision 3, read as decision 1's
+  scored quantity) whose pooled false-commit rate is at most LA-2's (0.0458,
+  recomputed by the scorer); fixed across resamples.
+  A tie in correct-committed fraction goes to the higher tau. If no tau
+  meets the limit, the model commits nothing at LA-2's rate: g = -LA-2 /
+  (oracle - LA-2), and the verdict follows from its CI (Q4).
+- THE NUMBER SCORED: g = (model - LA-2) / (oracle - LA-2) in correct-committed
+  words pooled over the selection set, with its 95 % percentile bootstrap
+  CI over files (2000 resamples, seed 0; LA-2 and the oracle recomputed in
+  each resample). Printed with the counts: model, LA-2 and oracle
+  correct-committed words, the model's commits and correct commits, tau*.
+- VERDICTS (Ali's words): HOLDS if the CI lies entirely above 0.5; MEETS if
+  the point >= 0.5 and the CI includes 0.5; BELOW PREDICTION, NOT FALSIFIED if
+  the point < 0.5 and the CI reaches above 0.25; FALSIFIED if the CI lies
+  entirely below 0.25.
+
+SECONDARY (decision 7):
+- (a) Lag: "on words both commit", read under Q4 as the final units both the
+  model (at tau*) and LA-2 credit (whole); per word of those units, LA-2's
+  lag minus the model's (lag: the simulated clock at the issue of the
+  hypothesis that completes the unit, minus the end of the unit's last
+  word); the median and the p95, each with a percentile bootstrap CI over
+  files (2000, seed 0). MET if the median's CI lies entirely above 1.0 s; a
+  CI touching 1.0 s is NOT MET (Ali's words). The same against the oracle is
+  a descriptive line, no bar (Q4).
+- (b) Calibration: expected calibration error of P(survive) over the scored
+  rows of the selection set's offered hypotheses (the guard's dropped), 10
+  equal-width bins, weighted by count, with a CI over files. MET only if the
+  CI lies entirely at or below 0.05 (Q4). Beside it: the base rate (guarded:
+  20733/22871 = 0.9065, anchors.log), whose constant predictor has an
+  in-sample ECE of 0 by construction, and the Brier score of the model and of
+  that constant predictor (Q6).
+- (c) Both models at their own tau*: the difference in correct-committed
+  fraction (secondary - primary), paired per file, with its CI over files;
+  MET if the CI lies entirely at or below 0.05; a CI straddling 0.05 is NOT
+  MET (Q4); if it lies above, the primary's generalization is the finding,
+  reported as such (Ali's words). The secondary is trained only after the
+  primary's Pareto is scored (Q5).
+
+POWER (anchors.log, POWER guarded): a stand-in model at about half the gap,
+each file taking the oracle's or LA-2's counts (seed 0), gives g = 0.4861
+[0.4393, 0.5320], a CI 0.093 wide. At that width HOLDS needs a point of
+about 0.55 or more, and FALSIFIED one of about 0.20 or less; a g within
+about 0.05 of a bar is not resolved from it. The stand-in is all-or-nothing
+per file, the widest case for a model between LA-2 and the oracle on every
+file; a model below LA-2 on some files can be wider. The CI excludes the
+variance of the seed and of choosing tau*, the configuration and the
+checkpoint.
+
+RUNS (Q4): at most 8 configurations, declared in the training script before
+any fit; the last checkpoint of each, no early stopping on the selection
+set; three training seeds (0, 1, 2) per model; the guard's hypotheses
+dropped from the training rows as from evaluation (decision 5). The
+configuration scored: [PENDING Q7, Ali's: how the configuration is chosen
+among those declared]. The model scored is that configuration's median
+seed, at its own tau*, the one seed serving (a), (b), (c) and the closed
+loop; the range of g over the three seeds is reported. The model is
+gradient-boosted trees on the label rows' features (NOTES 2026-11-18, "MODEL
+... Model B"; lightgbm 4.7.0 in ~/.venvs/twl-learn), trained on the primary
+corpora named in Ali's text.
+
+COMPARATORS: per-word LA-2 on the same stream (decision 3 on 7257b7f); the
+oracle as the ceiling; LA-3 (NOTES 2026-11-23, LA-3 REPLAY, qualified: its
+wall time and peak tj touched by a fence breach, Q1) DESCRIPTIVE, on its own
+stream, paired by file only.
+
+CLOSED LOOP (decision 8): one guarded replay of the selection set at tau*,
+the model committing; its correct-committed fraction and precision on its
+own stream (the denominator and every trimming-dependent feature computed on
+that stream) against the off-policy curve's 95 % CI at tau*. If either
+falls below that CI: one on-policy relabel of LibriSpeech test-clean,
+retrain with seeds 0, 1, 2 and tau* re-chosen by the same rule, and the
+retrained model's verdict is the one that counts, stated as off-policy (no
+second closed loop), the first reported beside it (Q4). The closed loop
+(about 1 h on the 574 files, by the LA-3 replay's 3821 s on 594 files,
+NOTES 2026-11-23) and the relabel are measured runs: the run skill and
+Ali's GO.
+
+VOID RULE: a run voided by an invariant is reported with its cause and not
+re-run.
+
+VALIDITY CHECKS, run by the scorer FIRST, before any model output is read
+(a failure there is fixed and the scorer re-run; only a failure after a
+model number has been read voids the scoring, reported with its cause): the
+label files' sha256 equal anchors.log's; the selection set is 574 files and
+15220 scored final words; LA-2's re-simulation reproduces the rows'
+la2_commit (LA_CHECK); LA-2's commits through count_turn reproduce
+anchors.log's guarded LA-2 line and the oracle's its oracle line; the guard
+is applied identically to every committer; the secondary's training files
+are the 1322 unsealed multi_step files (la_point.log, 20261123_la_point_num),
+disjoint from the seal file
+(results/raw/spoken_mqa/multi_step_fresh80-seed20261118.json).
+
+WHAT THIS PASS CAN AND CANNOT SHOW: tau*, the configuration and the
+checkpoint are chosen on the same 574 files the prediction is scored on: an
+in-sample result (decision 3); the out-of-sample test is the sealed 80
+after step 5. Off-policy: the model is scored on LA-2's stream; the closed
+loop is the one check of that. The primary model is trained out-of-domain
+and selected on single_step (Spoken-MQA). Digit sets: evaluation only, at
+tau*, DESCRIPTIVE. Not computed before the selection-set Pareto is scored:
+any model output on multi_step (decision 9); the sealed 80 are not read
+until after step 5.
+
+SCORER: src/scripts/step2_score.py, committed before any model is fit.
+
+BRIEF: RESEARCH_BRIEF_v3.md §3.4's abort clause now states the rule in force
+(Ali's answer 9), in the commit of this entry.
+
+Reviewed before commit (round 35: 13 findings, 12 resolved; the counting
+function's matching rule, the model-path check of LA-2, the four reasons
+for the limit's move, the Pareto, tau*'s objective, the lag pairing, the
+guard at training, Ali's re-sent text, the ledger form, BLOCKED's wording
+and direction, the tie rule's quantity, the reviewer count; the
+configuration selection left to Ali, marked PENDING Q7).
