@@ -11734,3 +11734,111 @@ beside it, and its COMPARISON line is item 6's trigger.
 
 Reviewed before commit (round 62: 5 findings, 5 resolved; round 63: 1 finding,
 1 resolved).
+
+## 2026-11-25 — STEP 2, THE RETRAINED MODEL'S CLOSED LOOP SCORED: NOT MET ON PRECISION (false-commit rate 0.0572 [0.0500, 0.0651], entirely above LA-2's 0.0458); g_cl = -0.1539 [-0.2437, -0.0689]; BELOW its off-policy CI, so a tail guard is the next declared change
+
+The retrained model (L15_R600_text, seed 0, tau* 0.66; e8a5cd6), one
+guarded closed loop over the selection set (574 single_step files), as the
+AMENDMENT of 2026-11-24 (d8797b2) registers it, on the clean build b94190d,
+16:41:18 to 17:23:11. Run results/raw/step2/closed_loop_retrained/
+closed_loop.jsonl (results/raw/run_logs/20261125_closed_loop_retrained_full/).
+Scored once by src/scripts/step2_closed_loop_score.py (1ee4759), committed
+before the run; the log results/raw/run_logs/
+20261125_closed_loop_retrained_score/closed_loop_score.log, the output of
+the invocation the GO entry (b94190d) records.
+
+    VERDICT (AMENDMENT 2026-11-24, the retrained model): g_cl = -0.1539 [-0.2437, -0.0689] (model 5929 on its own stream; LA-2 6718, oracle 11845 on step 1's; of 15220 words) -> NOT MET ON PRECISION
+    PRECISION BAR: the loop's false-commit rate 0.0572 [0.0500, 0.0651] lies entirely above LA-2's 0.0458 (step 1's stream); NOT MET ON PRECISION
+    -> NOT MET ON PRECISION (A (b): "whatever g_cl"). g_cl's CI also lies
+       entirely below 0.25, the bound at which the registered g rules
+       (twl.step2_rules.verdict) read FALSIFIED. Under A (b) the head is
+       NOT MET ON PRECISION; whether the ledger also states the
+       falsification bound in the head is put to Ali.
+
+THE OTHER LINES, verbatim (95 % CIs over files, 2000 resamples, seed 0, one
+set of draws for all terms):
+
+    CLOSED LOOP (guarded, its own stream): committed fraction 0.4132 [0.3859, 0.4406]; correct-committed 0.3896 [0.3628, 0.4162]; false-commit rate 0.0572 [0.0500, 0.0651], precision 0.9428; commits 6289, correct 5929; BLOCKED units 0, commits left not correct 8
+    OFF-POLICY CI at tau* 0.66: correct-committed [0.6250, 0.6658]; precision [0.9495, 0.9597] (scoring log, PARETO guarded)
+    COMPARISON (decision 8; the AMENDMENT's item 6 trigger): BELOW the off-policy CI (correct-committed 0.3896 < 0.6250; precision 0.9428 < 0.9495): a tail guard on the model's commits is the next declared change
+    OFF-POLICY g of this model (the scoring log's PRIMARY guarded line, beside): 0.6056 [0.5579, 0.6512]
+    LAG (the loop's stream vs LA-2 on step 1's, paired by file; no verdict): 4215 words; median +2.434 s [+2.434, +2.434], the value of 13.1% of the words (a CI of zero width means the median sits in that point mass, not precision); p95 +4.846 s [+2.598, +4.947]
+
+VALIDITY (the log): the run's build b94190d, clean; L15_R600_text, seed 0,
+tau 0.66, as the scoring log scored, and the model file as the run loaded
+it; coverage 574 files and 15220 scored final words; step 1's LA-2 and
+oracle, counted per file on step 1's stream, reproduce anchors.log's totals
+(LA-2 commits 7038, correct 6716; correct-committed 6718; the oracle 11845;
+LA-2's false-commit rate 0.0458); paired by file, 574 files.
+
+BESIDE IT (AMENDMENT item 3), each already in NOTES: the retrained model's
+off-policy g, 0.6056 [0.5579, 0.6512] (in-sample; e8a5cd6); the first
+model's off-policy g, 0.6255 [0.5806, 0.6691], and its closed-loop g_cl,
+-0.1266 [-0.2174, -0.0414] (post hoc: scorer written after that loop's
+data), with its false-commit rate 0.0561 [0.0489, 0.0639]. Descriptive:
+on its own stream the retrained model credits 5929 words, the first 6069;
+the two loops are different runs of different models, and no paired
+comparison of them was registered or is made here. The secondaries'
+verdicts are off-policy (D (b)): (a) MET, (b) MET (e8a5cd6); the loop's lag
+above carries none.
+
+One run: the AMENDMENT registers one guarded closed loop of the median
+seed, so CLAUDE.md §2's three runs are not met; the deviation is the
+registration's. EXCLUSIONS: none; 574 files and 15220 scored words, as
+step 1's anchors; BLOCKED units 0.
+
+THE RUN, under the GO entry (b94190d):
+- THE BOARD. twl-llama.service stopped 16:34:47 and started again 17:23:19
+  (the user journal; src/scripts/llama_server.sh). Ali ran swapoff -a and
+  swapon -a at 16:40:33 (the system journal: sudo lines, swapfile.swap
+  deactivated, the kernel adding /swapfile), and his "swap cleared" came
+  at 16:40:43; swap used 0 MB at 16:40:47 (free, by hand). The zram swaps
+  off (Ali's 3 (a)); spotifyd up; the run lock free; the editor session
+  up, recorded as a lesser breach (Ali's 4 (a)); auto-update off; clocks not
+  pinned (the departure the GO entry records).
+- THE SMOKE RUN (unit twl-closed-loop-retrained-smoke-20261125, 16:40:54
+  to 16:41:12; 3 files; output results/raw/step2/closed_loop_retrained_smoke/,
+  which the scorer refuses) passed every check before its first decode:
+  3 files in 11 s; swap traffic pswpin +0, pswpout +0.
+- THE FULL RUN (unit twl-closed-loop-retrained-full-20261125). Launched
+  16:41:18, armed 16:41:19, the driver started 16:41:20 on b94190d. BOARD
+  start: tj 58.0 C; swap used 0 MB; MAXN_SUPER; clocks not pinned. VALIDITY,
+  all passed before the first decode: the selection set's label files equal
+  the anchors log's; the model choice ('L15_R600_text', 0, 0.66), as the
+  scoring log scored; the replay is step 1's settings and hypothesis model,
+  with the guard on; the model file (sha256 2df5b873...) reproduces its
+  scored P on 23465 rows (largest difference 0.0e+00); the corpus files'
+  sha256 verified. DONE: 574 files in 2505 s; tj 65.1 C at most at the
+  driver's marks, 65.4 C over the watchdog's 1255 samples (the first trip
+  point 74 C; not breached); swap traffic since the start pswpin +0,
+  pswpout +0 at every mark through the last. The driver wrote "=== done" at
+  17:23:09; the watchdog exited 0 at 17:23:11. The unit's journal holds its
+  start (16:41:18), the driver's own nvpmodel query (16:41:21) and its
+  end at 17:23:11 ("Consumed 1h 53min 17.523s CPU time"); no
+  failure line. 2505 s (about 42 min), as B (a)'s ~41 min.
+- THE RUN SKILL'S AFTER-RUN CHECKS. No swap activity (above). No OOM kill
+  and no thermal throttle: the kernel journal holds no entry between
+  16:41:18 and 17:23:11, and tj peaked below the first trip point. Turns: the
+  loop replays step 1's turns and finals, and the scorer's coverage line
+  reads all 574 files and 15220 scored words.
+- THE FENCE. Besides the run, the box ran the editor session, kept up
+  (Ali's 4 (a)), and one wait on the unit's main pid (tail --pid, reading
+  no file) in that session's task. No file under the repository changed
+  between 16:41:20 and 17:23:11 except the run's own: its logs, its output
+  and the run lock (find -newermt after the run; .git unchanged). The score
+  ran after the run, as a user unit (twl-closed-loop-retrained-score-20261125,
+  17:23:37 to 17:23:50 in its journal), on the clean b94190d.
+
+PER THE REGISTERED BRANCH (AMENDMENT item 6, Ali's decisions on 54fce21):
+the retrained loop falls below its own off-policy CI on both counts, so a
+tail guard on the model's commits is the next change, declared in its own
+amendment, not silent. Ali's H2 ("The on-policy relabel tests H2"): the
+retrained model did not close the gap in C (b)'s sense (below its own
+off-policy CI on both counts). One round of on-policy rows, from the first
+model's stream, did not close it; the retrained model's own stream was in
+no training. Whether H2's mechanism holds is untested, as is H1's (the
+model commits up to the buffer edge, where LA-2's tail guard would not). The verdict of the retrained model is
+NOT MET ON PRECISION; the first model's off-policy HOLDS and its closed
+loop are reported beside it, as decided.
+
+Reviewed before commit (round 64: 5 findings, 5 resolved).
