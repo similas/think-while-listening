@@ -47,7 +47,7 @@ pass 6 (ALLOCATOR) & \texttt{71d1612} & \texttt{c7410d4} & every registered chec
 pass 7 & \texttt{16f7da2} & \texttt{24597e8} & DESCRIPTIVE & scorer written after the run; interleave broke at the first split \\
 pass 1r & \texttt{71d1612} & \texttt{4bf7953} & NO RESIDENCY COST DETECTED & headline drops one rep run during a fence breach \\
 pass 9 & \texttt{16f7da2} & \texttt{--} & PENDING (descriptive only) &  \\
-step 2 & \texttt{345efad} & \texttt{e207b70} & PENDING & the first model, off-policy: g = 0.6255 [0.5806, 0.6691], n=574 files (HOLDS), reported beside; unguarded sensitivity g = 0.2176 [0.1577, 0.2753] with tau* re-chosen; the retrained model, offline, in-sample, off-policy: g = 0.6056 [0.5579, 0.6512], n=574 files, reported beside (its verdict is the closed loop's) \\
+step 2 & \texttt{345efad} & \texttt{a6ac6d5} & NOT MET ON PRECISION & A (b): reported as NOT MET ON PRECISION whatever g\_cl; g\_cl's CI also lies entirely below 0.25, the g rules' FALSIFIED bound. Beside: the retrained model, offline, in-sample, off-policy: g = 0.6056 [0.5579, 0.6512]; the first model, off-policy: g = 0.6255 [0.5806, 0.6691] (HOLDS), its closed loop g\_cl = -0.1266 [-0.2174, -0.0414] (post hoc); unguarded sensitivity, tau* re-chosen: g = 0.2470 [0.1869, 0.3056] (retrained), 0.2176 [0.1577, 0.2753] (first model) \\
 step 2 (a)-(c) & \texttt{345efad} & \texttt{e8a5cd6} & (a) MET, (b) MET, (c) PENDING & scored again on the retrained model (Ali, 2026-11-24); the first model's beside: lag median +2.454 s [+2.451, +2.463], n=6170 words; ECE 0.0154 [0.0116, 0.0201], n=22871 rows \\
 \bottomrule
 \end{tabular}
