@@ -11477,3 +11477,137 @@ on the same split; then the off-policy score, the retrained closed loop
 Reviewed before commit (round 55: 8 findings, 8 resolved; round 56: 2
 findings, 2 resolved, the first withdrawn: the relabel reuses step 1's
 turns, and the entry's turns wording says so; round 57: no findings).
+
+## 2026-11-25 — STEP 2, THE RETRAINED MODEL SCORED (offline, in-sample, off-policy; reported beside: its verdict is the closed loop's): L15_R600_text, seed 0, tau* 0.66; g = 0.6056 [0.5579, 0.6512]; lag MET, calibration MET
+
+Registered: the step-2 PRE-REGISTRATION (345efad) as amended (2439df4), and
+the AMENDMENT of 2026-11-24 on the retrained model (d8797b2). Its item 1:
+the same 8 configurations, seeds and parameters, trained on all the
+existing rows plus the relabel's on-policy rows; the configuration chosen
+again by the lowest held-out log-loss over the same split; tau* and the
+median seed chosen as registered, off-policy on the selection set. Its
+item 4: the secondaries (a) and (b) scored again on the retrained model,
+off-policy carrying their verdicts (D (b)), the first model's beside them.
+
+Runs, both on the clean build 65d5683, each as a user unit in twl.slice
+(systemd-run --user --collect --wait), with twl-llama up. Neither is a
+measured run: the fit is deterministic and its timing enters no number, and
+the score reads files, as for the first model.
+- Training: src/scripts/step2_train.py (adca1e7), unit
+  twl-train-retrained-20261125, 14:39:40 to 14:42:42;
+  results/raw/run_logs/20261125_step2_train_retrained/train.log; models
+  and predictions in results/raw/step2/retrained/.
+- Score: src/scripts/step2_score.py, unchanged since 1ee4759, before the
+  fit; unit twl-score-retrained-20261125, 14:43:15 to 14:45:48;
+  results/raw/run_logs/20261125_step2_score_retrained/step2_score.log, the
+  output of `step2_score.py --anchors
+  results/raw/run_logs/20261124_step2_anchors/anchors.log --models
+  results/raw/step2/retrained --log ...`.
+
+VALIDITY, all passed before any model output was used (the score log's
+first lines): the selection set's label files equal the anchors log's; 574
+files and 15220 scored final words; LA_CHECK 23465/23465 rows; the anchors
+log's ANCHORS and CHECK lines reproduced, both conditions; the models fit
+on the clean 65d5683 after the scorer's commit, with the scoring code
+unchanged since; the 14 label files (step 1's 12 and the relabel's 2) equal
+the manifest's; the held-out files are the declared split (1101 of 11012)
+and every held-out file holds the 31541 held-out rows, labels as filed;
+one prediction per label row for every configuration and seed (23465, 601,
+738).
+
+TRAINING (train.log). Rows with label 0 or 1 and the guard's hypotheses
+dropped: 70158 of 73046 (librispeech-test-clean), 63957 of 67274
+(librispeech-test-other), 138194 of 147984 (peoples-speech), and 64045 of
+69401 on-policy rows of 2503 test-clean files, adding no file to the split;
+304813 training rows, 31541 held out. The duplicates (RECORDED BEFORE ANY
+RETRAINED FIT), as the log counts them:
+
+    DUPLICATES librispeech-test-clean.onpolicy: of 64045 kept rows, 56917 share a kept step-1 row's position (file, turn, hypothesis, word) and 14709 equal it (label, text_hash, every feature bit for bit), 0 with the same inputs but another label; held out: 1449 identical of 6441 kept. All stay, so the identical rows weigh twice (decision 2 (b) (i))
+
+So 1,449 of the 31,541 held-out rows that choose the configuration, and
+13,260 of the 304,813 training rows, are the duplicates. Each is held out
+or trained on beside its step-1 twin, since the two share the file key: of
+the held-out rows, 2,898 form such pairs. The 56,917 rows that share a
+position are mostly not duplicates: after the first commit the two streams
+diverge, and the same indices point at other buffers. Descriptive: the
+relabel's rows lose more to the filter than step 1's test-clean rows do,
+5,356 of 69,401 (7.7 %) against 2,888 of 73,046 (4.0 %) (the ROWS lines).
+
+SELECTION (amendment 2439df4, item 1), mean held-out log-loss over the
+three seeds:
+
+    L15_R200_notext 0.26915    L15_R200_text 0.26144
+    L15_R600_notext 0.26752    L15_R600_text 0.26023   <- chosen
+    L63_R200_notext 0.26737    L63_R200_text 0.26043
+    L63_R600_notext 0.26799    L63_R600_text 0.26149
+
+The next, L63_R200_text (the first model's configuration), is 0.00020
+behind: less than the spread over seeds within either (0.00068 for
+L15_R600_text, 0.25984 to 0.26052; 0.00058 for L63_R200_text, 0.26021 to
+0.26079; the HELDOUT lines). Whether the choice turns on the duplicates is
+untested; the rule was fixed before the fit, so the choice stands and no
+re-selection is made. These log-losses are over a held-out set that now
+holds the on-policy rows, so they do not compare with the first model's.
+
+SEEDS of L15_R600_text: tau* 0.66, g 0.6056 (seed 0); tau* 0.65, g 0.6245
+(seed 1); tau* 0.66, g 0.6041 (seed 2). The median seed is 0; the range of
+g over the seeds is 0.0205.
+
+THE SCORER'S LINES, verbatim:
+
+    PRIMARY guarded (scored): tau* 0.66; g = 0.6056 [0.5579, 0.6512] -> HOLDS; model correct-committed 9823, LA-2 6718, oracle 11845, of 15220 words; model commits 10275, correct 9811, false-commit rate 0.0452 (limit 0.0458); BLOCKED units 11, commits left not correct 8
+    -> reported beside, not the verdict. The HOLDS is the off-policy rule's;
+       under the AMENDMENT (item 2) the retrained model's verdict is g_cl on
+       its own closed loop.
+    UNGUARDED (sensitivity), tau* re-chosen: tau* 0.82; g = 0.2470 [0.1869, 0.3056] -> sensitivity, no verdict; model correct-committed 7992, LA-2 6726, oracle 11851, of 15220 words; model commits 8291, correct 7987, false-commit rate 0.0367 (limit 0.0468); BLOCKED units 4, commits left not correct 10
+    UNGUARDED (sensitivity), at the guarded tau*: tau* 0.66; g = 0.6057 [0.5580, 0.6513] -> sensitivity, no verdict; model correct-committed 9830, LA-2 6726, oracle 11851, of 15220 words; model commits 10473, correct 9818, false-commit rate 0.0625 (limit 0.0468); BLOCKED units 11, commits left not correct 8
+    SECONDARY (a) LAG vs LA-2: 6134 words; median +2.454 s [+2.451, +2.463] -> MET; p95 +4.948 s [+4.806, +4.972]
+    SECONDARY (b) CALIBRATION: ECE 0.0144 [0.0110, 0.0191] over 22871 rows -> MET; base rate 0.9065 (a constant predictor's ECE 0 by construction); Brier model 0.0555, constant predictor 0.0847
+    -> (a) MET, (b) MET, on the retrained model (off-policy carries their
+       verdicts, D (b)).
+
+DIGIT SETS (descriptive, guarded, at tau* 0.66), as printed:
+
+    DIGITS mqa-short_digit (descriptive, guarded, tau* 0.66): correct-committed LA-2 21/462, oracle 181/462, model 125/462; false-commit rate LA-2 0.2500, model 0.2619
+    DIGITS mqa-long_digit (descriptive, guarded, tau* 0.66): correct-committed LA-2 56/900, oracle 324/900, model 241/900; false-commit rate LA-2 0.3412, model 0.3594
+
+Beside them, the first model (L63_R200_text, seed 2, tau* 0.64;
+20261124_step2_score/step2_score.log): g = 0.6255 [0.5806, 0.6691], model
+correct-committed 9925 of 15220; (a) 6170 words, median +2.454 s [+2.451,
++2.463], MET; (b) ECE 0.0154 [0.0116, 0.0201] over 22871 rows, MET. The two
+models differ in configuration as well as in training data, and no paired
+comparison of them was registered or is made here.
+
+WHAT THIS PASS CAN AND CANNOT SHOW:
+- In-sample: tau* and the median seed are chosen on the same 574 files the
+  g is scored on, and the CI excludes the variance of those choices. The
+  configuration was chosen out of sample, by held-out log-loss, over a
+  held-out set that now counts the 1,449 duplicates twice.
+- Off-policy: the model is scored on LA-2's stream. Its closed loop is the
+  check, and under the AMENDMENT it decides the verdict.
+- The g holds only under the guard: unguarded, with tau* re-chosen, it is
+  0.2470 [0.1869, 0.3056] (sensitivity).
+- The digit sets are descriptive: at tau* 0.66 the model credits more than
+  LA-2 on both, at higher false-commit rates on both (0.2619 against
+  0.2500; 0.3594 against 0.3412), as the first model did.
+
+Three seeds, as CLAUDE.md §2 asks. EXCLUSIONS: the selection set and its
+scored words are the first score's (574 files, 15220 words; the VALIDITY
+lines); nothing else is excluded.
+
+PER THE AMENDMENT (items 2, 5, 6), what follows: the closed loop of
+L15_R600_text, seed 0, at tau* 0.66, a measured run under the run skill,
+scored once by step2_closed_loop_score.py (committed in 1ee4759) with
+--retrained and --score pointing at this log. Ali's B (a) is its GO. The
+freeze (since 2026-10-13) is lifted for a measured run only by Ali,
+recorded in NOTES before the launch; the lift is to be read from B (a) for
+this run only and put to Ali to confirm, as for the relabel (his item 0).
+The item-6 trigger is that scorer's comparison against this log's PARETO
+guarded line at tau* 0.66: correct-committed 0.6454 [0.6250, 0.6658],
+false-commit rate 0.0452 [0.0403, 0.0505], so precision [0.9495, 0.9597].
+For g_cl's point to reach 0.5 (MEETS; HOLDS needs the CI's lower bound
+above 0.5; NOT MET ON PRECISION overrides either), the loop must credit at
+least 9,282 correct-committed words on its own stream (LA-2's 6,718 and the
+oracle's 11,845 on step 1's).
+
+Reviewed before commit (round 58: 8 findings, 8 resolved; round 59: no findings).
