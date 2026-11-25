@@ -26,7 +26,12 @@ declared there, before any fit.
   (guarded_out on the relabel's utterances file), keyed as
   f"librispeech-test-clean:{utt}". They add no file to the split: a file
   outside step 1's test-clean stops the fit. Their rows of held-out files are
-  held out. Their sha256 enter the manifest with the others.
+  held out. Their sha256 enter the manifest with the others. Until the first
+  commit in either stream the two streams coincide, so some on-policy rows
+  duplicate step 1's test-clean rows (NOTES, RECORDED BEFORE ANY RETRAINED
+  FIT): the DUPLICATES line counts them (twl.step2_rows.duplicates), all and
+  held out, and any with the same inputs but another label, before the fit;
+  they are kept, as decision 2 (b) (i) adds the rows to all of step 1's.
 
 Writes, under --out: manifest.json; models/<config>_s<seed>.txt;
 heldout/<config>_s<seed>.parquet (source, key, turn, hyp_index, word_index,
@@ -58,6 +63,7 @@ import pyarrow.parquet as pq
 
 from twl.runaway import runaway_reason
 from twl.step2_count import words_of
+from twl.step2_rows import duplicates
 
 TRAIN = ("librispeech-test-clean", "librispeech-test-other", "peoples-speech")
 SEL = "mqa-single_step"
@@ -231,8 +237,13 @@ def main() -> None:
             f"ROWS {c}: {len(keep)} label rows; kept {int(keep.sum())} (label 0/1, guard's dropped)"
         )
     onpolicy: dict[str, object] | None = None
+    dup_masks: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None = None
     if args.onpolicy:
         op, onpolicy = read_onpolicy(args.onpolicy, ids)
+        dup_masks = (
+            *duplicates(parts[TRAIN.index(ONPOLICY)], op, LABEL, NUMERIC),
+            op["key"],
+        )
         parts.append(op)
         say(
             f"ROWS {ONPOLICY_STEM}: {onpolicy['label_rows']} label rows of {onpolicy['files']} "
@@ -248,6 +259,26 @@ def main() -> None:
         f"held-out rows {int(is_held.sum())}"
     )
     say(f"SPLIT: {rows_line}")
+    if onpolicy is not None and dup_masks is not None:
+        same_pos, same, conflict, op_keys = dup_masks
+        op_held = np.array([k in held for k in op_keys], dtype=bool)
+        dup = {
+            "kept": len(same),
+            "same_position": int(same_pos.sum()),
+            "identical": int(same.sum()),
+            "conflicting": int(conflict.sum()),
+            "kept_held_out": int(op_held.sum()),
+            "identical_held_out": int((same & op_held).sum()),
+        }
+        onpolicy["duplicates"] = dup
+        say(
+            f"DUPLICATES {ONPOLICY_STEM}: of {dup['kept']} kept rows, {dup['same_position']} "
+            "share a kept step-1 row's position (file, turn, hypothesis, word) and "
+            f"{dup['identical']} equal it (label, text_hash, every feature bit for bit), "
+            f"{dup['conflicting']} with the same inputs but another label; held out: "
+            f"{dup['identical_held_out']} identical of {dup['kept_held_out']} kept. All "
+            "stay, so the identical rows weigh twice (decision 2 (b) (i))"
+        )
     tr, ho = take(rows, ~is_held), take(rows, is_held)
 
     # the evaluation rows: the selection set (items 20 and up) and the digit sets
