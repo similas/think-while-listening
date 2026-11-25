@@ -11338,3 +11338,142 @@ with these, as round 53 asked:
   resolved; round 53: 2 findings, 2 resolved)."
 
 Reviewed before commit (round 54: 1 finding, 1 resolved).
+
+## 2026-11-25 — STEP 2 RELABEL of test-clean DONE: 2620 files, 69,401 rows in 7,948 s; every validity check passed; swap traffic +0; tj 65.6 C at most
+
+Authorised by Ali's GO, decision 1 (a) on the relabel's abort (the DECISIONS
+entry, 3b05cd8, read with its addendum, ee8ccbf). Driver: 21fd924
+(src/scripts/step2_relabel.py), on the clean build ee8ccbf (make check
+green before the launch), through the launch snapshots
+results/raw/script_snapshots/relabel_launch_20261125.sh and
+relabel_20261125.sh. Both runs were launched as systemd user units in
+twl.slice (systemd-run --user --slice=twl.slice --collect), outside the
+editor's session, as the GO asked. Logs: results/raw/run_logs/
+20261125_relabel_smoke/ and 20261125_relabel_full/ (launch.log, driver.log,
+driver_py.log, watchdog.log, watchdog.json; the full run's relabel.log).
+Output: results/raw/commit_labels/onpolicy/.
+
+TWO BOARD DECISIONS (Ali, before the launch). The questions as I put them
+to him:
+
+    Decision 3, swap. 331 MB of swap is in use, and the run skill
+    requires none.
+      (a) After I stop twl-llama, you clear it with
+          `sudo swapoff -a && sudo swapon -a`. It needs root, so it's
+          yours to run.
+      (b) Leave it and record the departure, as on 2026-11-24.
+    I recommend (a): any swap-in during the run is then the run's own.
+
+    Decision 4, the editor session.
+      (a) Keep it up during the run, recorded.
+      (b) Close it for the run.
+    I recommend (a): with auto-update off, nothing in it should restart,
+    and I can restart twl-llama and report as soon as the run ends.
+
+Ali's answer, as he wrote it (received 12:03:17):
+
+    done — auto-update is off on the box.
+    3. (a). Stop twl-llama, then tell me "clear swap now"; I'll run it and
+    say "swap cleared".
+    4. (a). Keep the session up, recorded.
+
+THE BOARD. From the journals (the user journal: twl-llama.service; the
+system journal: sudo, swap units, kernel):
+- 12:03:29 twl-llama.service stopped.
+- 12:04:05 Ali ran swapoff -a: /swapfile and the zram swaps zram0 to zram5
+  deactivated (12:04:05 to 12:04:06). 12:04:06 swapon -a: the kernel added
+  /swapfile only.
+- 14:18:40 twl-llama.service started again (src/scripts/llama_server.sh
+  start), after the run.
+Read by hand from the commands' output (date, free, sha256sum, stat,
+systemctl); not in the logs:
+- 12:03:23 the aborted run's three files moved to
+  results/raw/commit_labels/onpolicy_aborted_20261124/ (the directory's
+  modification time), their sha256 unchanged by the move. Swap in use
+  336 MB after twl-llama stopped.
+- 12:05:15 swap used 0 MB, after Ali's "swap cleared" (received 12:05:12).
+  Swap total is now 8,191 MB, against 12,001 MB before: swapon -a enables
+  what /etc/fstab lists, /swapfile only, so the zram swaps that swapoff -a
+  turned off stay off. (nvzramconfig.service, which sets them up at boot,
+  has read failed since 2026-09-16, two months before this; the clearing
+  did not cause that.) It enters no number here; it is raised with Ali.
+- spotifyd up throughout (active since 2026-09-14); the run lock free at
+  the start; the editor session kept up, recorded (Ali's 4 (a)).
+
+THE SMOKE RUN (unit twl-relabel-smoke-20261125, 12:05:23 to 12:05:41, the
+first 3 files; output results/raw/commit_labels/onpolicy_smoke_20261125/)
+passed every check before its first decode and wrote 53 rows in 8 s, as
+the 2026-11-24 smoke run did; swap traffic pswpin +0, pswpout +0.
+
+THE FULL RUN (unit twl-relabel-full-20261125). Launched 12:05:51, armed
+12:05:52, the driver started 12:05:53. BOARD start: tj 58.2 C; swap used
+0 MB; MAXN_SUPER; clocks not pinned (the replay's clock is simulated, as
+the BOARD line states), the departure from the run skill's --clocks the GO
+entry records. VALIDITY, all passed before the first decode (relabel.log):
+- the model is the one the scoring log scored (L63_R200_text, seed 2,
+  tau* 0.64);
+- the replay settings and the hypothesis model are step 1's for
+  test-clean, with the guard on;
+- step 1's test-clean label files equal the sha256 the training manifest
+  records;
+- the model reproduces its scored P on all 23465 selection-set rows
+  (largest difference 0.0e+00);
+- the corpus files' sha256 verified.
+DONE: 2620 files, 69,401 rows in 7,948 s (2.2 h, within the corrected
+estimate of 2.1 to 2.2 h, 950d305; the cap 12,600 s). tj 65.2 C at most at
+the driver's marks, 65.6 C at most over the watchdog's 3,974 samples (the
+first trip point 74 C; not breached). Swap traffic since the start pswpin
++0, pswpout +0 at every mark through the last. The driver wrote DONE and
+"=== done" at 14:18:28; the watchdog exited 0 at 14:18:29. The run's
+outcome is that DONE line: the unit itself is unloaded on exit (--collect),
+and its main process is the launcher, whose status says nothing of the
+run. The unit's journal holds its start (12:05:51), the driver's own
+nvpmodel and jetson_clocks queries (12:05:55, 12:05:59) and its end at
+14:18:29 ("Consumed 5h 49min 36.195s CPU time"); no failure line.
+sha256 (relabel.log): librispeech-test-clean.onpolicy.parquet 45136b27...,
+.utterances.parquet 271bffa1....
+
+THE RUN SKILL'S AFTER-RUN CHECKS. No swap activity (above). No OOM kill and
+no thermal throttle: the kernel journal holds no entry between 12:05:51
+and 14:18:29, and tj peaked at 65.6 C, below the first trip point, 74 C.
+Turns: the relabel does not split the files again; it reads each file's
+turns (origin, endpoint, final words) from step 1's utterances file, whose
+sha256 its validity line checks (step2_relabel.py: "the turns, finals and
+utt ids reused"). Its check is that the output carries them all: the same
+2,620 files with the same number of turns in each, 2,838 in all (by hand),
+as step 1's LABELS table logs for test-clean (2026-11-20, STEP 1 LABELS
+COMPLETE: 2620 files, 2838 turns, 117 without rows).
+
+THE FENCE. Besides the run, the box ran the editor session, kept up, and
+from the launch one wait on the unit's main pid (tail --pid, reading no
+file) in that session's task, which is not the run's parent: the run is the
+unit's, in twl.slice. No file under the repository changed between 12:05:53
+and 14:18:29 except the run's own: its logs, its output and the run lock
+(find -newermt after the run; .git unchanged).
+
+AFTER THE RUN. Swap used 1 MB a minute after twl-llama's start. Checked by
+hand, not logged:
+- the jsonl holds a header and 2,620 file records; the two parquet files
+  carry the same provenance (role train, label_num_version num-units-1, the
+  build ee8ccbf and the invocation);
+- the same 117 files as step 1's have no rows (no hypothesis offered),
+  the count step 1's LABELS table logs;
+- step2_train.read_onpolicy reads the rows into step 1's split (11,012
+  files) without adding a file, and guarded_out runs on the utterances
+  file.
+The rows kept, and the duplicates (RECORDED BEFORE ANY RETRAINED FIT,
+above), are counted in the training's log: step2_train.py gains a
+DUPLICATES line (adca1e7; twl.step2_rows.duplicates, with fixture tests). A
+dry run of it (no fit, no log, its configuration list emptied) printed the
+counts before any fit. They choose nothing: under decision 2 (b) (i) the
+rows are kept whatever their number.
+
+STATUS. The relabel is complete and valid. Next, under the AMENDMENT
+(2026-11-24): the retraining with --onpolicy (8 configurations, 3 seeds)
+into a new directory, the configuration chosen again by held-out log-loss
+on the same split; then the off-policy score, the retrained closed loop
+(Ali's B (a), box quiet) and its --retrained score.
+
+Reviewed before commit (round 55: 8 findings, 8 resolved; round 56: 2
+findings, 2 resolved, the first withdrawn: the relabel reuses step 1's
+turns, and the entry's turns wording says so; round 57: no findings).
