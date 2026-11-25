@@ -11320,3 +11320,21 @@ first relabel. CLAUDE.md ("backed up nightly to the Mac") and the run skill
 active; whether to correct them is Ali's.
 
 Reviewed before commit (round 52: 8 findings, 8 resolved).
+
+## 2026-11-25 — ADDENDUM to the entry above (3b05cd8): review round 53's two wording fixes, which that commit lacks by my error
+
+The entry above was committed with its round-52 text, not with round 53's
+two fixes. An edit script's last check failed (a wrong test of the text's
+line breaks), so it wrote nothing; the commit, chained after it with ";"
+instead of "&&", ran anyway. make check passed on the commit, and nothing
+else in it differs from what the reviewer read. The entry is to be read
+with these, as round 53 asked:
+- "here, Ali's decision 1." reads "here, Ali's decision 1, which this entry
+  records before the launch as that amendment."
+- "the clocks not pinned (the replay's clock is simulated, as the driver's
+  BOARD line states)" continues ", a departure from the run skill's
+  --clocks, as on 2026-11-24."
+- Its reviewer line reads "Reviewed before commit (round 52: 8 findings, 8
+  resolved; round 53: 2 findings, 2 resolved)."
+
+Reviewed before commit (round 54: 1 finding, 1 resolved).
