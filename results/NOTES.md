@@ -11611,3 +11611,126 @@ least 9,282 correct-committed words on its own stream (LA-2's 6,718 and the
 oracle's 11,845 on step 1's).
 
 Reviewed before commit (round 58: 8 findings, 8 resolved; round 59: no findings).
+
+## 2026-11-25 — DECISIONS on the retrained model's closed loop (Ali): the freeze lifted for this loop only (his B (a)); swap cleared before it; zram left off; the editor session kept up. Before the launch
+
+Ali (2026-11-25), on the report of the retrained model's off-policy score
+(e8a5cd6), as he wrote it:
+
+    1. (a). B (a) lifts the freeze for this loop only; record it.
+    2. (a). Stop twl-llama, say "clear swap now"; I'll clear it and say
+    "swap cleared".
+    3. (a). zram stays off until step 2's measured runs are done,
+    recorded.
+    4. (a). Session stays up, recorded.
+
+The questions as I put them (the report):
+
+    1. The freeze. Since 2026-10-13, a measured run needs you to lift the
+    freeze for it, recorded in NOTES before the launch. Your B (a) is the
+    GO for this loop.
+      (a) Confirm that B (a) lifts the freeze for the retrained loop only,
+          as your item 0 did for the relabel. I record it in the loop's
+          pre-launch entry.
+      (b) Hold the loop.
+    I recommend (a).
+    2. Swap before the loop. About 5 MB is in use now (read by hand,
+    /proc/swaps), and the run skill wants none.
+      (a) As for the relabel: I stop twl-llama, tell you "clear swap now",
+          and you run `sudo swapoff -a && sudo swapon -a`. This cycles only
+          /swapfile now.
+      (b) Leave it, and record the departure.
+    I recommend (a): any swap-in during the loop is then the loop's own.
+    3. The zram swap.
+      (a) Leave it off until step 2's measured runs are done, recorded.
+      (b) Restore it before the loop: `sudo systemctl restart
+          nvzramconfig` (its September failure was a re-run while the swaps
+          were busy; they are off now, so it may succeed), or a reboot, the
+          sure way. Yours either way, as both need root.
+    I recommend (a): swap enters no number, since the replay's clock is
+    simulated (the BOARD line), and the swap rule flags any swap-in
+    whatever the total. The first loop ran with zram on, so either choice
+    is recorded as a board difference.
+    4. The editor session during the loop (~41 min). The run skill's fence
+    wants nothing else on the box.
+      (a) Keep it up, recorded as a lesser breach, as for the relabel. I
+          hold one wait on the unit, reading no file, and report as soon as
+          it ends.
+      (b) Close it for the loop. The unit survives that; I pick up when you
+          reopen, and twl-llama stays stopped until then.
+    I recommend (a): the clock is simulated, so the session's load cannot
+    move a number, and the relabel ran 2.2 h beside it with no swap
+    traffic.
+
+This entry is the record, made before the launch.
+
+THE FREEZE (since 2026-10-13) is lifted for one run: the retrained model's
+closed loop, read from Ali's B (a) in the AMENDMENT (d8797b2) and confirmed
+by his 1 (a). It covers that loop's smoke run and full run, and nothing
+else.
+
+THE RUN. step2_closed_loop.py (5e98e59), as the first loop ran, on the clean
+build current at the launch (this entry's commit or later). The model: the
+retrained L15_R600_text, seed 0, at tau* 0.66, from results/raw/step2/
+retrained/, as the retrained score log chose it (e8a5cd6); the driver checks
+that log's choice and stops on a mismatch. It holds the run lock, refuses to
+start at tj 65 C or above, and runs under the thermal watchdog (AMENDMENT
+item 5). Launch snapshots results/raw/script_snapshots/
+closed_loop_retrained_launch_20261125.sh and closed_loop_retrained_20261125.sh
+(reviewed, round 61), each run as a systemd user unit in twl.slice
+(systemd-run --user --slice=twl.slice
+--unit=twl-closed-loop-retrained-<smoke|full>-20261125 --collect), outside
+the editor's session: a smoke run of 3 files (output
+results/raw/step2/closed_loop_retrained_smoke/, which the scorer refuses),
+then the full run. Logs: results/raw/run_logs/
+20261125_closed_loop_retrained_smoke/ and _full/. Output:
+results/raw/step2/closed_loop_retrained/. The run names keep the date
+20261125 even if the launch falls after midnight.
+
+THE UNIT'S LIFE is the relabel's (3b05cd8): the stop after the launcher
+exits cannot reach the run before "=== done"; the closing "STOP: the
+watchdog (pid ...) is gone" line will likely be missing, which is expected;
+if the watchdog exits mid-run, the unit's stop sends the driver a SIGTERM
+and it writes its ABORTED line; a session ending cannot kill the unit
+(lingering is on), a reboot or a restart of the user manager would.
+
+THE BOARD. twl-llama stopped before the launch and started again after it;
+swap cleared by Ali (2 (a)), which now cycles only /swapfile (8,191 MB, read
+by hand); the zram swaps off since 12:04:06 today (3 (a)), a board
+difference from the first loop, which ran with them on; spotifyd up; the
+run lock free; the editor's auto-update off; the editor session up,
+recorded as a lesser breach (4 (a)), with one wait on the unit's main pid
+that reads no file. The clocks are not pinned (the replay's clock is
+simulated, as the driver's BOARD line states), a departure from the run
+skill's --clocks, as for the first loop and the relabel. The backup timer
+has been disabled since 2026-10-01. The closed loop's swap rule (the
+AMENDMENT of c0c9c32) applies: "ANY growth in pswpin or pswpout during the
+run is reported and the run flagged invalid under CLAUDE.md §6; whether it
+stands, given the simulated clock, is Ali's to decide then."
+
+NO TIME CAP. step2_closed_loop.py has none, unlike the relabel's driver.
+B (a) covers about 41 minutes; the first loop took 2,467 s. If this one runs
+well past that, I tell Ali and do not stop it myself, as the report said;
+he said nothing otherwise.
+
+RECORDED WITH THE RUN: the launch build's commit and make check green on
+it; the journal times of twl-llama's stop and start and of the swapoff and
+swapon; the time of Ali's "swap cleared" and the swap read after it; the
+units' journal (journalctl --user -u
+twl-closed-loop-retrained-{smoke,full}-20261125: its start and its end,
+"Consumed ... CPU time"; a failure line only on a failure), since --collect
+unloads a unit when it exits.
+
+SCORING, once, after the run: step2_closed_loop_score.py (1ee4759):
+
+    step2_closed_loop_score.py --run results/raw/step2/closed_loop_retrained/closed_loop.jsonl
+      --score results/raw/run_logs/20261125_step2_score_retrained/step2_score.log
+      --anchors results/raw/run_logs/20261124_step2_anchors/anchors.log --retrained
+      --log results/raw/run_logs/20261125_closed_loop_retrained_score/closed_loop_score.log
+
+Its VERDICT line is the retrained model's verdict (AMENDMENT item 2: g_cl
+paired by file, with the precision bar, A (b)), item 3's lines are reported
+beside it, and its COMPARISON line is item 6's trigger.
+
+Reviewed before commit (round 62: 5 findings, 5 resolved; round 63: 1 finding,
+1 resolved).
