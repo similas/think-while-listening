@@ -11231,3 +11231,92 @@ RECORDED BEFORE ANY RETRAINED FIT:
 
 Reviewed before commit (round 50: 5 findings, 5 resolved: three in the
 scorer, two recorded here; round 51: 3 findings, 3 resolved).
+
+## 2026-11-25 — DECISIONS on the relabel's abort (Ali): GO for the full re-run, launched outside the editor session; the editor's auto-update turned off before the launch
+
+Ali (2026-11-25), on the report of the abort, as he wrote it:
+
+    Decisions on the aborted relabel:
+    1. (a). GO for the full re-run, same driver on the then-current clean
+    build, ≤ 3.5 h, box quiet, launched with systemd-run --user in
+    twl.slice so no session restart can kill it; the aborted files moved
+    to onpolicy_aborted_20261124/; the GO recorded in NOTES before launch.
+    2. (ii). I'm turning auto-update off on the box before you launch; wait
+    for my "done".
+
+This entry is that record, made before the launch. The run skill re-runs a
+void run only when the registration or an amendment says so; here, Ali's
+decision 1.
+
+THE RE-RUN, as it will be launched:
+- The driver of 21fd924 (src/scripts/step2_relabel.py, unchanged since), on
+  the clean HEAD at the launch, with the aborted run's arguments: the first
+  model (L63_R200_text, seed 2) at tau* 0.64 as the scoring log scored it,
+  guarded, --out results/raw/commit_labels/onpolicy.
+- Before the launch, the aborted run's three files are moved, not deleted,
+  from results/raw/commit_labels/onpolicy/ to
+  results/raw/commit_labels/onpolicy_aborted_20261124/ (the driver refuses
+  existing outputs).
+- The launch snapshots, results/raw/script_snapshots/relabel_launch_20261125.sh
+  and relabel_20261125.sh, are the 2026-11-24 pair with only these changed:
+  the dates (in the file names, the DRIVER line and the armed check's
+  pattern), the log directories (results/raw/run_logs/20261125_relabel_
+  {smoke,full}/), the smoke's output directory
+  (results/raw/commit_labels/onpolicy_smoke_20261125, since the first
+  smoke's files exist), the driver's header comment, and the launcher's
+  usage comment.
+- Each run is started as a transient user unit, from a call that returns at
+  once: systemd-run --user --slice=twl.slice
+  --unit=twl-relabel-<smoke|full>-20261125 --collect. Two test units on
+  2026-11-25, before this entry, ran in user@1000.service/twl.slice, outside
+  the editor's session scope, in the repository, with git, ps, awk and
+  setsid found, the twl venv's python (the watchdog's) present, and the
+  twl-learn venv (the relabel's) importing lightgbm 4.7.0, pyarrow,
+  faster_whisper and the driver. twl.slice sets no memory, task or CPU
+  limit. The detached unit is how the re-run meets the run skill's
+  precondition that a run survive a dropped session (tmux), the departure
+  the abort entry named.
+- The unit's life: the launcher is its main process; it waits on the
+  watchdog, which exits only after the driver's shell, which waits on the
+  driver. So the unit's stop after the launcher exits (a SIGTERM to all of
+  its cgroup) cannot reach the run before "=== done". It does kill the
+  driver's liveness subshell, so the closing "STOP: the watchdog (pid ...)
+  is gone" line that ended both 2026-11-24 driver logs will likely be
+  missing: expected, not a fault. If the watchdog exits mid-run, the unit's
+  stop sends the driver a SIGTERM, and it writes its ABORTED line: the
+  liveness rule's intent, by another path. A session ending cannot kill the
+  unit (lingering is on); a reboot or a restart of the user manager would.
+- A smoke run of 3 files first, then the full run, as on 2026-11-24.
+- The board as for the first attempt: twl-llama stopped before and started
+  again after, both times recorded; spotifyd up; the run lock free; the
+  clocks not pinned (the replay's clock is simulated, as the driver's BOARD
+  line states). The freeze lift and the swap rule Ali confirmed for the
+  relabel (his item 0 in the AMENDMENT of d8797b2) hold for the re-run. The
+  backup timer has been disabled since the DECISION of 2026-10-01, so no
+  backup runs during the run.
+- Two board questions are put to Ali before the launch, and his answers are
+  recorded with the run:
+  - the run skill's "no swap in use": swap is in use on the box (the
+    driver's BOARD line logs how much at the start); clearing it needs root;
+  - what runs beside it: the editor's server, its extension processes and
+    the coding tool's session stay up unless Ali closes them. The session
+    holds the one wait on the unit's main process (tail --pid, which reads
+    no file) and restarts twl-llama after the run. Nothing else is started
+    on the box during the run.
+- The cap: 3.5 h; the driver stops itself at 12600 s.
+- The launch waits for Ali's "done" on the auto-update (his item 2).
+- Recorded with the run: the launch build's commit and make check green on
+  it; the time of Ali's "done"; the units' journal (journalctl --user -u
+  twl-relabel-{smoke,full}-20261125: start, the main process's exit, stop),
+  since --collect unloads a unit when it exits.
+
+CORRECTION to the AMENDMENT of 2026-11-24 on the secondary and the freeze
+lift (c0c9c32): "The run starts in the afternoon, so its hour does not
+reach the nightly backup at 04:30, which skips only for run_reactive.py" is
+wrong. The backup timer has been disabled since the DECISION of 2026-10-01
+("installed and DISABLED"), so no backup ran during the closed loop or the
+first relabel. CLAUDE.md ("backed up nightly to the Mac") and the run skill
+("The backup timer skips itself during a run") still describe the timer as
+active; whether to correct them is Ali's.
+
+Reviewed before commit (round 52: 8 findings, 8 resolved).
