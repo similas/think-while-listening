@@ -12012,3 +12012,63 @@ zram stays off (Ali's 3 (a) of 2026-11-25) until step 2's measured runs are
 done.
 
 Reviewed before commit (round 66: 7 findings, 7 resolved).
+
+## 2026-11-26 — STEP 2, THE EDGE DIAGNOSTIC: the edge commits carry the excess false-commit rate (YES, both loops), but the hypotheses after them do not go wrong (NO; descriptively, their first word survives more often); by Ali's rule, the amendment proposes committing only at segment boundaries
+
+Registered before it was run: the DECISIONS entry above (d808d73). Run
+once, as a user unit (twl-edge-diagnostic-20261126; its journal: started
+12:02:28, ended 12:02:39, "Consumed 10.452s CPU time"; exit 0), on the
+clean build d808d73; log results/raw/run_logs/20261126_edge_diagnostic/
+edge_diagnostic.log. Both loops' VALIDITY lines passed: 574 files, 15220
+scored final words, and the two classes' commits and correct commits sum
+to each loop's CLOSED LOOP line. No NOTE line: no resample left a class
+empty. A diagnostic of two recorded runs; it changes no verdict.
+
+THE RETRAINED LOOP (L15_R600_text, seed 0, tau* 0.66), verbatim:
+
+    COMMITS retrained EDGE: 949 of 6289 (15.1%); correct 845; false 104; false-commit rate 0.1096 [0.0906, 0.1295]
+    COMMITS retrained INTERIOR: 5340 of 6289 (84.9%); correct 5084; false 256; false-commit rate 0.0479 [0.0413, 0.0555]
+    DIFFERENCE retrained false-commit rate EDGE - INTERIOR: +0.0616 [+0.0429, +0.0809]
+    NEXT retrained after EDGE events (713): END 160; DISCARDED 0; NO LABELLED WORD 3; LABELLED 550. Of the 550 LABELLED: first word survives 420 = 0.7636 [0.7271, 0.7982]; committed anything 328 = 0.5964 [0.5542, 0.6378]
+    NEXT retrained after INTERIOR events (519): END 95; DISCARDED 2; NO LABELLED WORD 0; LABELLED 422. Of the 422 LABELLED: first word survives 292 = 0.6919 [0.6457, 0.7359]; committed anything 222 = 0.5261 [0.4749, 0.5775]
+    DIFFERENCE retrained first-word survival INTERIOR - EDGE: -0.0717 [-0.1283, -0.0126]
+    READING retrained: (1) the edge commits carry the excess: YES (difference CI above 0: True; INTERIOR CI entirely above 0.0458: False); (2) the following hypotheses go wrong: NO (survival difference CI above 0: False)
+
+THE FIRST MODEL'S LOOP (L63_R200_text, seed 2, tau* 0.64), beside: EDGE
+927 of 6433 commits (14.4 %), false-commit rate 0.1046 [0.0856, 0.1240];
+INTERIOR 0.0479 [0.0411, 0.0557]; difference +0.0567 [+0.0378, +0.0754].
+After EDGE events the next first word survives 0.7712 [0.7323, 0.8075] (n
+520), after INTERIOR ones 0.6968 [0.6505, 0.7405] (n 409); difference
+INTERIOR - EDGE -0.0743 [-0.1282, -0.0147]. Committed anything
+(descriptive, no test registered): 0.4615 [0.4131, 0.5047] after EDGE
+events, 0.5086 [0.4591, 0.5585] after INTERIOR ones; on the retrained
+loop it is 0.5964 against 0.5261, so the two loops point in opposite
+directions on it. The same reading: (1) YES, (2) NO. The log: "BESIDE
+first: the same reading agrees".
+
+    -> not shown on the retrained loop: the amendment proposes committing only at segment boundaries
+
+READ AS REGISTERED:
+- (1) holds on both loops. 15.1 % of the retrained loop's commits (14.4 %
+  of the first's) sit in a unit whose last word ends within 0.3 s of the
+  buffer's end, and their false-commit rate exceeds the rest's by +0.0616
+  [+0.0429, +0.0809] (+0.0567 [+0.0378, +0.0754] on the first loop); as a
+  ratio of the logged rates, 2.3 times (2.2 on the first), no CI. The
+  rest, alone, are not distinguishable from LA-2's rate on this set: 0.0479
+  [0.0413, 0.0555] contains 0.0458, so the precision bar's test would not
+  fire on them.
+- (2) does not hold. Beyond the registered test (descriptive): on both
+  loops the CI of the survival difference lies entirely below 0, so the
+  next hypothesis's first word survives more often after an edge commit
+  than after an interior one. The cause is untested.
+- Ali's rule needs both, so the tail guard is not the declared fix on this
+  reason, and the amendment proposes the next candidate, committing only at
+  segment boundaries. The draft goes to Ali with the report, for his
+  approval before any code or run.
+
+What the split cannot show (the DECISIONS entry): edge and interior commits
+differ in more than the guard, so the difference is an association, not a
+guard's effect, and what a guarded or segment-bound loop would credit is
+untested.
+
+Reviewed before commit (round 67: 6 findings, 6 resolved).
