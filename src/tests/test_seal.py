@@ -59,3 +59,14 @@ def test_a_uid_that_does_not_parse_raises() -> None:
         unsealed([("multi_step_reasoning:x7", "t")], frozenset({7}), "multi_step_reasoning")
     with pytest.raises(SealError):
         unsealed([("other:7", "t")], frozenset({7}), "multi_step_reasoning")
+
+
+def test_check_unsealed_counts_unsealed_rows_and_raises_on_a_sealed_one() -> None:
+    from twl.seal import check_unsealed
+
+    sealed = frozenset({3, 5})
+    assert check_unsealed(["p:1", "p:2", "p:4"], sealed, "p") == 3
+    with pytest.raises(SealError):
+        check_unsealed(["p:1", "p:3"], sealed, "p")
+    with pytest.raises(SealError):
+        check_unsealed(["q:1"], sealed, "p")

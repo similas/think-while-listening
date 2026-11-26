@@ -8,8 +8,8 @@ row list before any audio is touched. Pure: the caller reads the files.
 Invariants, tested in src/tests/test_seal.py:
 - a seal whose sorted indices do not hash to ``SEAL_SHA256`` raises;
 - rows out of the index's order raise;
-- a sealed row is never returned by ``unsealed``; a uid that does not parse
-  raises rather than slipping through.
+- a sealed row is never returned by ``unsealed``, and ``check_unsealed`` raises
+  on one; a uid that does not parse raises rather than slipping through.
 """
 
 from __future__ import annotations
@@ -69,3 +69,17 @@ def unsealed(
         if int(row) not in sealed:
             out.append((uid, ref))
     return out
+
+
+def check_unsealed(uids: Iterable[str], sealed: frozenset[int], prefix: str) -> int:
+    """How many uids there are, after checking that none is sealed.
+
+    Raises:
+        SealError: a uid is sealed, or does not have the form <prefix>:<row>.
+    """
+    refs = [(u, u) for u in uids]
+    kept = {u for u, _ in unsealed(refs, sealed, prefix)}
+    bad = sorted({u for u, _ in refs} - kept)
+    if bad:
+        raise SealError(f"{len(bad)} sealed rows among them, e.g. {bad[:3]}")
+    return len(refs)

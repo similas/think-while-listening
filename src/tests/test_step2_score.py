@@ -68,3 +68,27 @@ def test_quantiles() -> None:
     assert quantile([1, 2, 3, 4], 0.5) == 2.5
     assert quantile(list(range(1, 101)), 0.95) == 95
     assert math.isnan(quantile([], 0.5))
+
+
+@pytest.mark.parametrize(
+    ("lo", "hi", "want"),
+    [
+        (-0.02, 0.03, "MET"),
+        (0.01, 0.05, "MET"),
+        (0.02, 0.07, "NOT MET"),
+        (0.05, 0.09, "NOT MET"),
+        (0.06, 0.10, "NOT MET, ABOVE 0.05: the primary's generalization is the finding"),
+    ],
+)
+def test_c_follows_alis_rules(lo: float, hi: float, want: str) -> None:
+    from twl.step2_rules import c_verdict
+
+    assert c_verdict(lo, hi) == want
+
+
+def test_the_secondary_shows_no_verdict_word() -> None:
+    from twl.step2_rules import DESCRIPTIVE, shown
+
+    assert shown("HOLDS", secondary=False) == "HOLDS"
+    assert shown("HOLDS", secondary=True) == DESCRIPTIVE
+    assert shown("NOT MET", secondary=True) == DESCRIPTIVE

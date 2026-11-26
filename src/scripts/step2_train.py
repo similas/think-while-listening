@@ -1,4 +1,4 @@
-"""Step 2: train the primary learned committer (Model B, gradient-boosted trees).
+"""Step 2: train the learned committer (Model B, gradient-boosted trees): primary or secondary.
 
 PRE-REGISTRATION 2026-11-24 (345efad), AMENDMENT 2439df4: every choice here is
 declared there, before any fit.
@@ -32,6 +32,16 @@ declared there, before any fit.
   FIT): the DUPLICATES line counts them (twl.step2_rows.duplicates), all and
   held out, and any with the same inputs but another label, before the fit;
   they are kept, as decision 2 (b) (i) adds the rows to all of step 1's.
+- The secondary model (AMENDMENT 2026-11-24, c0c9c32, items 1, 2 and 4), with
+  --secondary: the three corpora above plus mqa-multi_step's label rows, the
+  1322 unsealed files, keyed f"mqa-multi_step:{utt}". Before any row is read,
+  every multi_step file is checked against the seal (results/raw/spoken_mqa/
+  multi_step_fresh80-seed20261118.json, twl.seal): one of the sealed 80
+  stops the fit. Everything else is the primary's: the configurations,
+  seeds, features and settings, the guard's hypotheses dropped, and the
+  split rule, now over the four corpora. Held-out predictions include the
+  held-out multi_step files (item 4); none is written on the sealed 80. Not
+  with --onpolicy.
 
 Writes, under --out: manifest.json; models/<config>_s<seed>.txt;
 heldout/<config>_s<seed>.parquet (source, key, turn, hyp_index, word_index,
@@ -42,6 +52,7 @@ Run in ~/.venvs/twl-learn with PYTHONPATH=src, from the repository root:
 
     step2_train.py --out results/raw/step2/primary
                    [--labels results/raw/commit_labels/num] [--onpolicy DIR] [--log FILE]
+    step2_train.py --out results/raw/step2/secondary --secondary [--log FILE]
 """
 
 from __future__ import annotations
@@ -62,6 +73,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from twl.runaway import runaway_reason
+from twl.seal import check_unsealed, sealed_indices
 from twl.step2_count import words_of
 from twl.step2_rows import duplicates
 
@@ -71,6 +83,9 @@ SELECTION_FROM = 20
 DIGITS = ("mqa-short_digit", "mqa-long_digit")
 ONPOLICY = "librispeech-test-clean"  # the relabelled corpus (Ali's decision 2 on 54fce21)
 ONPOLICY_STEM = f"{ONPOLICY}.onpolicy"
+MULTI = "mqa-multi_step"  # the secondary's in-domain corpus (c0c9c32 item 1)
+SEAL_FILE = Path("results/raw/spoken_mqa/multi_step_fresh80-seed20261118.json")
+SEAL_PREFIX = "multi_step_reasoning"
 LABEL = "label_num"
 NUMERIC = (
     "pos_from_end_s",
@@ -187,8 +202,12 @@ def main() -> None:
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--labels", type=Path, default=Path("results/raw/commit_labels/num"))
     p.add_argument("--onpolicy", type=Path, default=None, help="step2_relabel.py's output")
+    p.add_argument("--secondary", action="store_true", help="add mqa-multi_step's unsealed files")
     p.add_argument("--log", type=Path, default=None)
     args = p.parse_args()
+    if args.secondary and args.onpolicy:
+        raise SystemExit("--secondary trains on step 1's rows only: not with --onpolicy")
+    corpora = (*TRAIN, MULTI) if args.secondary else TRAIN
     build = subprocess.run(
         ["git", "describe", "--always", "--dirty", "--abbrev=40"],
         capture_output=True,
@@ -205,8 +224,29 @@ def main() -> None:
         lines.append(line)
         print(line, flush=True)
 
+    seal: dict[str, object] | None = None
+    if args.secondary:
+        # the seal before any row: no sealed multi_step file may be read
+        sealed = sealed_indices(SEAL_FILE.read_text())
+        n_multi = {}
+        for suffix in (".parquet", ".utterances.parquet"):
+            t = pq.read_table(args.labels / f"{MULTI}{suffix}", columns=["utt"])
+            n_multi[suffix] = check_unsealed(
+                set(map(str, t.column("utt").to_pylist())), sealed, SEAL_PREFIX
+            )
+        seal = {
+            "file": str(SEAL_FILE),
+            "sha256": hashlib.sha256(SEAL_FILE.read_bytes()).hexdigest(),
+            "sealed": len(sealed),
+            "files_checked": n_multi[".utterances.parquet"],
+        }
+        say(
+            f"SEAL: the {MULTI} files, {n_multi['.utterances.parquet']} in its utterances file "
+            f"and {n_multi['.parquet']} in its rows file, are none of the sealed {len(sealed)} "
+            f"({SEAL_FILE})"
+        )
     sha = {}
-    for c in (*TRAIN, SEL, *DIGITS):
+    for c in (*corpora, SEL, *DIGITS):
         for suffix in (".parquet", ".utterances.parquet"):
             f = args.labels / f"{c}{suffix}"
             sha[str(f)] = hashlib.sha256(f.read_bytes()).hexdigest()
@@ -219,7 +259,7 @@ def main() -> None:
 
     # the training rows: label 0/1, the guard's hypotheses dropped, keyed by file
     parts, ids = [], set()
-    for c in TRAIN:
+    for c in corpora:
         r = read_rows(args.labels, c)
         ids |= {f"{c}:{u}" for u in set(r["utt"].tolist())}
         drop = guarded_out(args.labels, c)
@@ -345,6 +385,9 @@ def main() -> None:
         "held_out": sorted(held),
         "sha256": sha,
         "onpolicy": onpolicy,
+        "corpora": list(corpora),
+        "secondary": bool(args.secondary),
+        "seal": seal,
     }
     (args.out / "manifest.json").write_text(json.dumps(manifest, indent=1) + "\n")
     if args.log:

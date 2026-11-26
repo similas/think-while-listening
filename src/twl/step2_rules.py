@@ -60,3 +60,28 @@ def median_seed(g_by_seed: dict[int, float]) -> int:
     """The seed whose g is the median of the seeds' (three seeds: the middle)."""
     order = sorted(g_by_seed, key=lambda s: (g_by_seed[s], s))
     return order[(len(order) - 1) // 2]
+
+
+C_BAR = 0.05
+
+
+def c_verdict(lo: float, hi: float, bar: float = C_BAR) -> str:
+    """(c), Ali's words (decision 7; 345efad, c0c9c32 item 3), on the CI of the
+    correct-committed fraction's difference (secondary - primary): MET if it
+    lies entirely at or below the bar; a CI straddling the bar is NOT MET;
+    above it, the primary's generalization is the finding, reported as such."""
+    if hi <= bar:
+        return "MET"
+    if lo > bar:
+        return f"NOT MET, ABOVE {bar}: the primary's generalization is the finding"
+    return "NOT MET"
+
+
+DESCRIPTIVE = "descriptive (the secondary's test is (c))"
+
+
+def shown(word: str, secondary: bool) -> str:
+    """The verdict word step2_score prints: on the secondary's directory its g,
+    lag and calibration are descriptive (c0c9c32), so no verdict word is
+    printed for them."""
+    return DESCRIPTIVE if secondary else word

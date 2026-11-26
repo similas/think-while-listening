@@ -12072,3 +12072,76 @@ guard's effect, and what a guarded or segment-bound loop would credit is
 untested.
 
 Reviewed before commit (round 67: 6 findings, 6 resolved).
+
+## 2026-11-26 — STEP 2, THE SECONDARY: its training script and (c)'s scorer, committed before its first fit (AMENDMENT 2026-11-24, c0c9c32, item 5)
+
+As Ali's 3 (a) of today orders it. The code, in this entry's commit:
+- src/scripts/step2_train.py --secondary: the three primary corpora plus
+  mqa-multi_step's label rows (results/raw/commit_labels/num), keyed
+  f"mqa-multi_step:{utt}". Before any row is read, every multi_step file
+  is checked against the seal (results/raw/spoken_mqa/
+  multi_step_fresh80-seed20261118.json, by twl.seal.check_unsealed): one
+  of the sealed 80 stops the fit. Everything else is the primary's
+  (c0c9c32 item 2): the 8 configurations and their parameters, seeds 0 to
+  2, the features, the deterministic settings, the guard's hypotheses
+  dropped, the last checkpoint, and the split rule over the four corpora.
+  Predictions on the held-out files (the multi_step ones included), the
+  selection set and the digit sets (item 4). The manifest records the
+  corpora and the seal check. Not with --onpolicy.
+- src/scripts/step2_score.py: a model directory's held-out split is
+  checked over its manifest's corpora (the primary's manifests name none,
+  so the three, as before); for the secondary, its multi_step files are
+  checked against the seal in VALIDITY, before any of its output is read.
+  Its selection, tau* and median seed are the primary's rules; its g, lag
+  and calibration are descriptive, and on the secondary's directory the
+  scorer prints no verdict word for them ("descriptive (the secondary's
+  test is (c))", twl.step2_rules.shown, tested).
+- src/scripts/step2_secondary_score.py, (c): each model at its own scoring
+  log's choice (configuration, median seed, guarded tau*), counted guarded
+  on the selection set by step2_score's functions; the difference in
+  correct-committed fraction (secondary - primary), paired by file, with a
+  percentile bootstrap CI over files (2000 resamples, seed 0);
+  twl.step2_rules.c_verdict: MET if the CI lies entirely at or below 0.05,
+  NOT MET if it straddles 0.05, and above it "the primary's generalization
+  is the finding". Against the first primary (L63_R200_text, seed 2, tau*
+  0.64; e207b70), the registered partner, and the retrained one
+  (L15_R600_text, seed 0, tau* 0.66; e8a5cd6), reported as well. Each
+  model's correct-committed words must reproduce its scoring log's PRIMARY
+  line, or the scorer stops; on the two primaries they do (9925 and 9823,
+  by hand, not logged: a call to the scorer's own functions before this
+  entry, no secondary output read). The first --primary must be named
+  "first" and be e207b70's choice, or the scorer stops. If a scoring log
+  has no tau* (the model commits nothing at LA-2's rate), (c) is not
+  scorable: the scorer stops saying so, and that goes to Ali.
+- src/twl/seal.py check_unsealed and src/twl/step2_rules.py c_verdict and
+  shown, each with tests. step2_count.py (changed in d808d73, the fates
+  record), step2_score.py and step2_rules.py are in step2_score's
+  SCORING_CODE, so any rescoring of either primary since d808d73 prints
+  its post-hoc flag; none is planned.
+- Checked before this entry, by hand, not logged: the 1322 multi_step files
+  of both label files are none of the sealed 80 (twl.seal on the real seal
+  file). The logged checks follow: the training log's SEAL line,
+  step2_score's VALIDITY seal line and (c)'s VALIDITY seal line and
+  reproduction check.
+
+THE RUNS, in order, each as a user unit in twl.slice (systemd-run --user
+--wait), on this entry's clean build or later; none is a measured run, and
+nothing else of step 2 runs meanwhile:
+1. step2_train.py --out results/raw/step2/secondary --secondary --log
+   results/raw/run_logs/20261126_step2_train_secondary/train.log
+2. step2_score.py --anchors results/raw/run_logs/20261124_step2_anchors/
+   anchors.log --models results/raw/step2/secondary --log
+   results/raw/run_logs/20261126_step2_score_secondary/step2_score.log
+3. step2_secondary_score.py --secondary results/raw/step2/secondary
+   results/raw/run_logs/20261126_step2_score_secondary/step2_score.log
+   --primary first results/raw/step2/primary results/raw/run_logs/
+   20261124_step2_score/step2_score.log --primary retrained
+   results/raw/step2/retrained results/raw/run_logs/
+   20261125_step2_score_retrained/step2_score.log --anchors
+   results/raw/run_logs/20261124_step2_anchors/anchors.log --log
+   results/raw/run_logs/20261126_step2_secondary_c/secondary_c.log
+Its (c) lines are the verdicts: the first, registered; the second,
+reported as well. The run names keep the date 20261126 even if a run falls
+after midnight.
+
+Reviewed before commit (round 67: 5 findings, 5 resolved).

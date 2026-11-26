@@ -41,6 +41,16 @@ Order, as the entry fixes it:
    the primary's Pareto is scored, Q5; the closed loop is a measured run).
 6. DIGIT SETS, descriptive: LA-2, the oracle and the model at tau*.
 
+THE SECONDARY (AMENDMENT 2026-11-24, c0c9c32): a model directory whose
+manifest names mqa-multi_step among its corpora (step2_train.py
+--secondary) is scored by the same rules, with two changes: in VALIDITY,
+before any of its output is read, its multi_step files are checked against
+the seal (twl.seal; one of the sealed 80 stops the scorer), and the
+held-out split is checked over the manifest's four corpora. Its selection,
+tau* and median seed are the primary's rules (item 2); its g, lag and
+calibration are descriptive, printed with no verdict word (twl.step2_rules.
+shown), and its registered test, (c), is step2_secondary_score.py's.
+
 The model directory (step2_train.py's output): manifest.json, heldout/ and
 preds/ parquet files, one per configuration and seed.
 
@@ -49,6 +59,7 @@ Run in ~/.venvs/twl-learn with PYTHONPATH=src, from the repository root:
     step2_score.py --anchors results/raw/run_logs/20261124_step2_anchors/anchors.log
                    [--models results/raw/step2/primary] [--labels results/raw/commit_labels/num]
                    [--log FILE]
+    step2_score.py --anchors ... --models results/raw/step2/secondary [--log FILE]
 """
 
 from __future__ import annotations
@@ -73,6 +84,7 @@ import pyarrow.parquet as pq
 from scripts.la_operating_point import BOOT, provenance
 from scripts.step2_anchors import file_counts, lines_for
 from twl.la_baseline import LABEL, simulated_commits
+from twl.seal import check_unsealed, sealed_indices
 from twl.step2_count import (
     Counts,
     Prepared,
@@ -82,12 +94,15 @@ from twl.step2_count import (
     prefix_decide,
     prepare_turn,
 )
-from twl.step2_rules import choose_tau, ece, median_seed, quantile, rate, verdict
+from twl.step2_rules import choose_tau, ece, median_seed, quantile, rate, shown, verdict
 
 SEL = "mqa-single_step"
 SELECTION_FROM = 20
 TRAIN = ("librispeech-test-clean", "librispeech-test-other", "peoples-speech")
 ONPOLICY = "librispeech-test-clean"  # the retrained model's on-policy rows (step2_train)
+MULTI = "mqa-multi_step"  # the secondary's fourth corpus (step2_train --secondary)
+SEAL_FILE = Path("results/raw/spoken_mqa/multi_step_fresh80-seed20261118.json")
+SEAL_PREFIX = "multi_step_reasoning"
 SCORING_CODE = (
     "src/scripts/step2_score.py",
     "src/scripts/step2_anchors.py",
@@ -294,7 +309,35 @@ def main() -> None:
                 stop(f"anchors not reproduced: {line[:120]}")
     say("VALIDITY anchors: the ANCHORS and CHECK lines reproduce the anchors log, both conditions")
     say("guard: by construction, one flag passed to LA-2, the oracle and the model alike")
-    say("secondary's training files: not applicable until the secondary is trained (Q5)")
+    manifest = json.loads((args.models / "manifest.json").read_text()) if args.models else {}
+    corpora = [str(c) for c in manifest.get("corpora", TRAIN)]
+    secondary = MULTI in corpora
+    if secondary:
+        # the secondary (c0c9c32 item 1): its multi_step files against the seal,
+        # before any of its output is read
+        sealed = sealed_indices(SEAL_FILE.read_text())
+        n_multi = check_unsealed(
+            set(
+                map(
+                    str,
+                    pq.read_table(args.labels / f"{MULTI}.parquet", columns=["utt"])
+                    .column("utt")
+                    .to_pylist(),
+                )
+            ),
+            sealed,
+            SEAL_PREFIX,
+        )
+        say(
+            f"VALIDITY secondary's training files: the {n_multi} {MULTI} files are none of the "
+            f"sealed {len(sealed)} ({SEAL_FILE})"
+        )
+        say(
+            "SECONDARY MODEL: its g, lag and calibration below are descriptive; its registered "
+            "test is (c) (step2_secondary_score.py)"
+        )
+    else:
+        say("secondary's training files: not applicable until the secondary is trained (Q5)")
     if args.models is None:
         say("no --models: VALIDITY only")
         finish(out, args.log)
@@ -315,7 +358,6 @@ def main() -> None:
     }
 
     # ---- 2. SELECTION by held-out log-loss (amendment item 1)
-    manifest = json.loads((args.models / "manifest.json").read_text())
     say(f"MODELS {args.models}: build {manifest['build']}; {manifest['rows_line']}")
     configs = [c["name"] for c in manifest["configs"]]
     seeds = [int(s) for s in manifest["seeds"]]
@@ -356,7 +398,7 @@ def main() -> None:
                 stop(f"{fname}: sha256 differs from the manifest's")
         say(f"VALIDITY models: the {len(manifest['sha256'])} label files equal the manifest's")
         ids = set()
-        for c in TRAIN:
+        for c in corpora:
             t = pq.read_table(args.labels / f"{c}.parquet", columns=["utt"])
             ids |= {f"{c}:{u}" for u in set(t.column("utt").to_pylist())}
         held = sorted(random.Random(0).sample(sorted(ids), round(0.1 * len(ids))))
@@ -370,7 +412,7 @@ def main() -> None:
         held_set = set(held)
         # the retrained model's on-policy rows (AMENDMENT 2026-11-24, item 1) share
         # step 1's keys, so a row is (source, key, turn, hyp_index, word_index)
-        sources = [("step1", args.labels / f"{c}.parquet", c) for c in TRAIN]
+        sources = [("step1", args.labels / f"{c}.parquet", c) for c in corpora]
         if manifest.get("onpolicy"):
             od = Path(str(manifest["onpolicy"]["dir"]))
             sources.append(("onpolicy", od / f"{ONPOLICY}.onpolicy.parquet", ONPOLICY))
@@ -526,7 +568,8 @@ def main() -> None:
         tot = pooled(mf)
         say(
             f"{cond}: tau* {tau}; g = {point:.4f} [{lo:.4f}, {hi:.4f}] -> "
-            f"{verdict(point, lo, hi) if g else 'sensitivity, no verdict'}; model "
+            f"{shown(verdict(point, lo, hi), secondary) if g else 'sensitivity, no verdict'}; "
+            "model "
             f"correct-committed {sum(m)}, LA-2 {sum(la)}, oracle {sum(orc)}, of "
             f"{sum(c.words for c in mf)} words; model "
             f"commits {tot.commits}, correct {tot.correct_commits}, false-commit rate "
@@ -560,7 +603,11 @@ def main() -> None:
         med, p95 = quantile(allv, 0.5), quantile(allv, 0.95)
         mlo, mhi = pct([quantile([x for i in dd for x in per[i]], 0.5) for dd in dr])
         plo, phi = pct([quantile([x for i in dd for x in per[i]], 0.95) for dd in dr])
-        met = "" if "oracle" in label else (" -> MET" if mlo > LAG_BAR_S else " -> NOT MET")
+        met = (
+            ""
+            if "oracle" in label
+            else " -> " + shown("MET" if mlo > LAG_BAR_S else "NOT MET", secondary)
+        )
         say(
             f"SECONDARY {label}: {len(allv)} words; median {med:+.3f} s [{mlo:+.3f}, {mhi:+.3f}]"
             f"{met}; p95 {p95:+.3f} s [{plo:+.3f}, {phi:+.3f}]"
@@ -606,7 +653,8 @@ def main() -> None:
     brier_const = base * (1 - base)  # mean (base - y)^2 over the same rows
     say(
         f"SECONDARY (b) CALIBRATION: ECE {e:.4f} [{elo:.4f}, {ehi:.4f}] over {N} rows -> "
-        f"{'MET' if ehi <= ECE_BAR else 'NOT MET'}; base rate {base:.4f} (a constant predictor's "
+        f"{shown('MET' if ehi <= ECE_BAR else 'NOT MET', secondary)}; base rate {base:.4f} "
+        "(a constant predictor's "
         f"ECE 0 by construction); Brier model {brier:.4f}, constant predictor {brier_const:.4f}"
     )
     say(
