@@ -113,3 +113,30 @@ def test_a_scored_word_without_a_p_is_an_error() -> None:
     t = turn((FINAL[:2], 0.0))
     with pytest.raises(ValueError, match="has no P"):
         count_turn(t, prefix_decide(lambda h, i: None, 0.5), guarded=False)
+
+
+def test_fates_record_each_commit_outcome_without_changing_the_counts() -> None:
+    # The three cases above, with each committed word's outcome recorded
+    # under (h, fresh index) of the hypothesis that committed it.
+    t = turn((FINAL[:4], 0.0), (FINAL, 0.0))
+    p = {(1, 0): 0.9, (1, 1): 0.9, (1, 2): 0.9, (1, 3): 0.1, (2, 3): 0.9, (2, 4): 0.9}
+    fates: dict[tuple[int, int], str] = {}
+    c = count_turn(t, prefix_decide(p_table(p), 0.5), guarded=False, fates=fates)
+    assert c == count_turn(t, prefix_decide(p_table(p), 0.5), guarded=False)
+    assert fates == {(1, 0): "correct", (1, 1): "correct", (1, 2): "correct"} | {
+        (2, 3): "correct",
+        (2, 4): "correct",
+    }
+
+    t = turn((FINAL[:4], 0.0), (FINAL[3:], 0.7))
+    fates = {}
+    count_turn(t, la2_decide({(1, 0), (1, 1), (1, 2)}), guarded=False, fates=fates)
+    assert fates == {(1, 0): "correct", (1, 1): "correct", (1, 2): "pending"}
+
+    wrong = [*FINAL[:4], ("pears.", 0.9, 1.3)]
+    fates = {}
+    c = count_turn(
+        turn((wrong, 0.0)), la2_decide({(1, i) for i in range(5)}), guarded=False, fates=fates
+    )
+    assert sorted(fates.values()).count("correct") == c.correct_commits == 4
+    assert fates[(1, 4)] == "unaligned" and len(fates) == c.commits

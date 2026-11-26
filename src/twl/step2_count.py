@@ -127,18 +127,36 @@ def prepare_turn(turn: dict[str, Any], guarded: bool) -> Prepared:
     return prep
 
 
-def count_turn(turn: dict[str, Any], decide: Decide, guarded: bool, memory: bool = True) -> Counts:
+def count_turn(
+    turn: dict[str, Any],
+    decide: Decide,
+    guarded: bool,
+    memory: bool = True,
+    fates: dict[tuple[int, int], str] | None = None,
+) -> Counts:
     """One turn's counts for one committer (see the module docstring)."""
-    return count_prepared(prepare_turn(turn, guarded), decide, memory)
+    return count_prepared(prepare_turn(turn, guarded), decide, memory, fates)
 
 
-def count_prepared(prep: Prepared, decide: Decide, memory: bool = True) -> Counts:
-    """count_turn on a prepared turn: the one counting function."""
+def count_prepared(
+    prep: Prepared,
+    decide: Decide,
+    memory: bool = True,
+    fates: dict[tuple[int, int], str] | None = None,
+) -> Counts:
+    """count_turn on a prepared turn: the one counting function.
+
+    ``fates``, if given, receives each committed scored word's outcome, keyed
+    (h, fresh index) of the hypothesis that committed it: "correct",
+    "unaligned", "duplicate" or "pending" (left not correct at the turn's
+    end). It only records; the counts are the same with or without it.
+    """
     c = Counts(words=prep.final_words)
     own_end = float("-inf")  # the end of the last word this committer committed
     done: list[Word] = []  # every word this committer committed in the turn
     credited: set[int] = set()
-    pending: list[Word] = []  # committed scored words awaiting their unit's completion
+    # committed scored words awaiting their unit's completion, with their (h, i)
+    pending: list[tuple[Word, tuple[int, int]]] = []
     for h, issued, ce, fresh, units, aligned in prep.hyps:
         if memory:
             eligible = [w.start_s >= max(ce, own_end) - FRESH_EPS for w in fresh]
@@ -161,27 +179,35 @@ def count_prepared(prep: Prepared, decide: Decide, memory: bool = True) -> Count
         for k, (idx, _tokens) in enumerate(units):
             span = (min(fresh[i].start_s for i in idx), max(fresh[i].end_s for i in idx))
             mine = [i for i in idx if i in new_scored]
-            held = [w for w in pending if span[0] <= (w.start_s + w.end_s) / 2 <= span[1]]
+            held = [q for q in pending if span[0] <= (q[0].start_s + q[0].end_s) / 2 <= span[1]]
             if not mine and not held:
                 continue
             missing = [i for i in idx if is_scored(fresh[i]) and not (before[i] or i in now)]
             if missing:
-                pending += [fresh[i] for i in mine]
+                pending += [(fresh[i], (h, i)) for i in mine]
                 c.blocked += any(not eligible[i] for i in missing)
                 continue
-            for w in held:
-                pending.remove(w)
+            for q in held:
+                pending.remove(q)
             n = len(mine) + len(held)
             j = aligned[k]
             if j is None:
                 c.unaligned += n
+                fate = "unaligned"
             elif j in credited:
                 c.duplicate += n
+                fate = "duplicate"
             else:
                 credited.add(j)
                 c.correct_commits += n
                 c.credited_at[j] = (issued, span[1], prep.unit_words[j])
+                fate = "correct"
+            if fates is not None:
+                fates.update({(h, i): fate for i in mine})
+                fates.update({key: fate for _, key in held})
     c.pending_left += len(pending)
+    if fates is not None:
+        fates.update({key: "pending" for _, key in pending})
     c.correct_words += sum(prep.unit_words[j] for j in credited)
     return c
 

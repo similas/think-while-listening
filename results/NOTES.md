@@ -11842,3 +11842,173 @@ NOT MET ON PRECISION; the first model's off-policy HOLDS and its closed
 loop are reported beside it, as decided.
 
 Reviewed before commit (round 64: 5 findings, 5 resolved).
+
+## 2026-11-26 — DECISIONS on the retrained loop's report (Ali): the head stays; an edge diagnostic before the tail-guard amendment, registered here before it is run; the secondary now. The verdict stands as scored
+
+Ali (2026-11-26), on the report of the retrained model's closed loop
+(a6ac6d5), as he wrote it:
+
+    1 (a), 2 (a), 3 (a).
+
+    Before drafting the tail-guard amendment, one diagnostic from the two
+    closed-loop logs already recorded, no new run: split the model's
+    commits by whether the committed unit's last word ends within 0.3 s of
+    the buffer end. For each half report: commits, false-commit rate, and
+    what the next hypothesis on that turn did (its first word's survival,
+    whether it committed anything). If the edge commits carry the excess
+    false rate and the following hypotheses are the ones that go wrong, the
+    tail guard is the declared fix, with that as its reason. If they don't,
+    say so, and the amendment proposes the next candidate instead:
+    committing only at segment boundaries.
+
+    The verdict stands as scored and is recorded as it is: the learned
+    committer, as built, loses to the heuristic on its own stream.
+
+    Then: the secondary's training script and (c)'s scorer, committed
+    before its first fit; train it; score (c).
+
+The questions as I put them (the report):
+
+    1. The ledger head. NOT MET ON PRECISION is your own registered wording
+    (A (b)), not a new convention, though it is a new head in the score
+    skill's list.
+      (a) Keep it as the head, with "g_cl's CI also lies entirely below
+          0.25, the g rules' FALSIFIED bound" in the qualifier (as
+          committed).
+      (b) Put both in the head: "NOT MET ON PRECISION; FALSIFIED on g_cl".
+    I recommend (a): it is what A (b) says, and the bound is stated beside
+    it.
+    2. The tail guard (item 6: "declared in its own amendment, not
+    silent"). The model's committer has no tail guard on its own commits
+    today; LA-2's 0.3 s guard is used only for the shadow LA-2's count.
+      (a) I draft the amendment for your approval: the retrained model,
+          unrefit, its commits stopped at the first fresh word ending within
+          0.3 s of the buffer's edge (LA-2's tail_guard_s, as twl.commit
+          applies it); tau* re-chosen off-policy under that guard by the
+          registered rule; one guarded closed loop of it, judged by the same
+          g_cl and precision bar. Nothing is looked at in the loop's data
+          for H1 before it is committed, so the guard's form is fixed blind;
+          a descriptive look afterwards would be labelled post hoc.
+      (b) Stop the primary's branch here: step 2's primary stands NOT MET
+          ON PRECISION, the first model's off-policy HOLDS beside it; go on
+          to the secondary (c) and step 3.
+    I recommend (a): it is the change you declared, and H1 is the
+    hypothesis it tests.
+    3. The secondary model now, in parallel with 2's drafting:
+      (a) Yes: write its training script and (c)'s scorer, review and
+          commit them, then fit (training is not a measured run; the box is
+          otherwise idle).
+      (b) After the tail guard's loop.
+    I recommend (a): it does not touch the primary's runs and is already
+    authorised by your 2439df4 decision 2.
+
+RECORDED:
+
+1 (a). The ledger's head for step 2 stays NOT MET ON PRECISION, with the
+FALSIFIED bound in the qualifier, as committed (a6ac6d5, 2693b9c); nothing
+in the ledger changes. Ali's reading, in his words: "the learned committer,
+as built, loses to the heuristic on its own stream." The verdict stands as
+scored.
+
+2 (a), with a diagnostic first. The guard's form is the one the report's
+2 (a) fixed before any split (LA-2's 0.3 s cut as twl.commit applies it,
+the model unrefit, tau* re-chosen off-policy under it, one loop). What the
+split now decides, after a look at the loops' data, is whether the
+amendment proposes that guard or segment boundaries; the amendment will
+state the look and what it showed. No number of the split has been looked
+at before this entry; both loops were scored before (a6ac6d5; the first
+loop's g_cl, post hoc, 2026-11-24).
+
+THE DIAGNOSTIC, registered here before it is run. Code: twl.step2_edge (the
+split), src/scripts/step2_edge_diagnostic.py (the lines), and an optional
+record in twl.step2_count.count_prepared of each commit's outcome
+("correct", "unaligned", "duplicate", "pending"), which changes no count
+(tested); committed with this entry. Data: the two closed-loop records,
+results/raw/step2/closed_loop_retrained/closed_loop.jsonl (the retrained
+model, L15_R600_text seed 0 tau* 0.66) and results/raw/step2/closed_loop/
+closed_loop.jsonl (the first model, L63_R200_text seed 2 tau* 0.64); no
+new run. It is computed once, as a user unit (systemd-run --user --wait),
+on this entry's clean build; log results/raw/run_logs/
+20261126_edge_diagnostic/edge_diagnostic.log. It is not a measured run.
+Before this entry it was run once on the uncommitted tree with its output
+discarded unread (to /dev/null), to check that it runs to the end and
+passes its validity checks; it did (exit 0).
+
+DEFINITIONS (each turn counted by twl.step2_count's one function exactly as
+step2_closed_loop_score.py counts the loop: guarded, with memory, the
+model's recorded commits):
+- A COMMIT is a scored word the model committed (the scorer's "commits");
+  it is correct or not as the counting decides.
+- A COMMITTED UNIT is a number unit (num_units over the hypothesis's fresh
+  words, the counting's unit) holding at least one commit. It is EDGE when
+  its last word ends within 0.3 s of the buffer's end: end_s > issued_s -
+  0.3 (the buffer ends at the issue time, as twl.label_replay offers it;
+  LA-2's cut as twl.commit applies it; the run's tail_guard_s), committed
+  or not; else INTERIOR. Each commit takes its unit's class.
+- A COMMIT EVENT is an offered hypothesis with at least one commit; its
+  class is its last committed unit's.
+- THE NEXT HYPOTHESIS of an event is the turn's next offered (not frozen)
+  hypothesis: END if none (the final decodes the rest), DISCARDED if the
+  runaway guard drops it, NO LABELLED WORD if none of its fresh words has a
+  number-unit token or if it has no fresh word at all; otherwise LABELLED:
+  its FIRST WORD is its first fresh word whose unit has a token, which
+  SURVIVES when that unit aligns to a final unit (label_num 1, the training
+  label), and it COMMITTED ANYTHING when the model made a commit (a scored
+  word) on it. Survival and "committed anything" are over the LABELLED
+  next hypotheses only.
+
+LINES, per loop and class: commits, correct and false commits, the
+false-commit rate with a 95 % percentile bootstrap CI over files (2000
+resamples, seed 0, one set of draws per loop), and the difference EDGE -
+INTERIOR with its CI; the events; their next hypotheses by outcome; the
+first word's survival and the share that committed anything, with CIs; the
+survival difference INTERIOR - EDGE with its CI. A resample that leaves a
+class empty has no rate: a NOTE line counts such resamples, and that CI is
+over the rest. VALIDITY: a clean run
+build and a tail guard of 0.3 s in each header; 574 files and 15220 scored
+final words; the two classes' commits and correct commits sum to the
+loop's scoring log's CLOSED LOOP line (6289 and 5929; 6433 and 6072).
+
+THE READING. Ali's rule is as he wrote it above. The two tests below are my
+reading of "carry the excess false rate" and "go wrong", fixed here before
+any number of the split exists; Ali may reword them, and a change after
+the numbers is recorded as such:
+(1) THE EDGE COMMITS CARRY THE EXCESS when the CI of the false-commit
+    rate's difference (EDGE - INTERIOR) lies entirely above 0 and the
+    INTERIOR rate's CI does not lie entirely above LA-2's 0.0458 (322/7038,
+    step 1's stream): without the edge commits, the precision bar's own
+    test (A (b)) would not fire.
+(2) THE FOLLOWING HYPOTHESES GO WRONG when the CI of the first word's
+    survival difference (INTERIOR - EDGE) lies entirely above 0. Whether the
+    next hypothesis committed anything is reported beside it, no test.
+Both on the retrained loop (the model the amendment would change): the
+tail guard is the declared fix, with that as its reason. Otherwise the
+draft says so and proposes committing only at segment boundaries. The
+first model's loop is read the same way and reported beside; if the two
+disagree, the log says so, and which reading the draft follows is Ali's.
+The draft goes to Ali for approval before any code or run, as 2 (a) has
+it.
+
+What the split cannot show: the edge commits and the interior ones differ
+in more than the guard (position in the turn, the words, the buffer), so a
+difference between them is an association, not the guard's effect. A
+guarded loop is the test of the guard.
+
+3 (a). The secondary, now, in the order Ali gave: its training script and
+(c)'s scorer, reviewed and committed before its first fit; then the fit;
+then its own selection and tau* (step2_score.py, the primary's rules) and
+(c). Everything as the AMENDMENT of 2026-11-24 (c0c9c32) declares it: the
+three primary corpora plus mqa-multi_step's 1322 unsealed files, none of
+the sealed 80 (checked by step2_train.py against the seal before any row
+is read; reviewed and committed before the fit); the 8 configurations, seeds 0 to 2, the held-out
+split rule over the four corpora; (c) against the first primary
+(L63_R200_text, seed 2, tau* 0.64; e207b70) and, since the closed loop sent
+the primary to the retrain branch, against the retrained one
+(L15_R600_text, seed 0, tau* 0.66; e8a5cd6). Whether (c) is also scored
+against a tail-guarded primary is settled in the amendment's draft.
+Training and scoring read recorded labels; neither is a measured run.
+
+zram stays off (Ali's 3 (a) of 2026-11-25) until step 2's measured runs are
+done.
+
+Reviewed before commit (round 66: 7 findings, 7 resolved).
