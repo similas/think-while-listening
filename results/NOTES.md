@@ -12454,3 +12454,52 @@ NEXT: tau* by step2_segment_score.py, logged (results/raw/run_logs/
 build, as a user unit; not a measured run. Then the loop, under its own GO.
 
 Reviewed before commit (round 70: 3 findings, 3 resolved).
+
+## 2026-11-26 — STEP 2, tau* UNDER THE SEGMENT RULE: 0.50, the grid's floor; off-policy g = -0.7975 [-0.8923, -0.7081] (beside, not a verdict); on the grid the rule commits at most 0.1791 of the words (tau 0.50); the loop waits on Ali
+
+The AMENDMENT of today (a465664), item 3, by src/scripts/step2_segment_score.py
+(21f34e6, committed before this run), once, as a user unit
+(twl-step2-segment-score-20261126; its journal: 16:54:49 to 16:55:29,
+"Consumed 40.106s CPU time"; exit 0) on the clean build
+21f34e6; log results/raw/run_logs/20261126_step2_segment_score/
+segment_score.log. Every VALIDITY line passed: the selection set (574
+files, 15220 words); the replay (build a465664, clean, the guard off; 617
+turns, every hypothesis step 1's word for word, every offered word with its
+segment; its DONE line); LA-2's anchors (7038 commits, 6716 correct; the
+limit 0.0458); the model (L15_R600_text, seed 0) under the plain rule at
+its scored tau* 0.66 crediting 9823 words, as its scoring log.
+
+Its PRIMARY line, verbatim:
+
+    PRIMARY guarded (scored): tau* 0.5; g = -0.7975 [-0.8923, -0.7081] -> descriptive (item 3: beside, not a verdict; the segment rule); model correct-committed 2629, LA-2 6718, oracle 11845, of 15220 words; model commits 2726, correct 2628, false-commit rate 0.0360 (limit 0.0458); BLOCKED units 0, commits left not correct 0
+
+PARETO (guarded, the log): at tau 0.50 the committed fraction is 0.1791
+[0.1611, 0.1966], correct-committed 0.1727 [0.1552, 0.1900], false-commit
+rate 0.0360 [0.0269, 0.0456]; at 0.66, the plain rule's tau*, 0.1464,
+0.1422 and 0.0287; the fractions fall as tau rises. Under the plain rule at
+its tau* 0.66 the same model's correct-committed fraction is 0.6454 [0.6250,
+0.6658] (e8a5cd6).
+
+READ AS REGISTERED: tau* is 0.50, the lowest tau of the registered grid
+(0.50 to 0.99): every tau on the grid meets the limit, and the largest
+correct-committed fraction is at its floor. Whether a tau below the grid
+would credit more is not computed; the grid is the registered one. The g of
+-0.7975 is item 3's "beside, not a verdict"; its CI lies entirely below
+0.25, where the registered g rules would read FALSIFIED for a verdict.
+
+WHY THE CUT REMOVES SO MUCH (read by hand from the replay's output, a
+one-off count, not logged; the runaway hypotheses, which the guarded count
+skips, included): of the 2256 offered hypotheses with a fresh word, 1727
+(76.6 %) have all their fresh words in one segment; of the 2256
+hypotheses' 23516 fresh words, 18647 (79.3 %) lie in their hypothesis's
+last segment, which D1 (i) never commits. So at any one offer about a
+fifth of the fresh words (20.7 %) lie before their hypothesis's last
+segment, whatever tau. A word not committed is offered again, and in a
+later, longer hypothesis it may lie before the last segment, so this
+bounds one offer, not the share of the final's words the rule can reach.
+Why most hypotheses decode as one segment is untested.
+
+THE LOOP (item 4) needs Ali's GO, and is put to him with this result
+before it runs: what it would test is the rule this log describes.
+
+Reviewed before commit (round 71: 4 findings, 4 resolved).
