@@ -297,6 +297,12 @@ def replay(
             kept = [] if guarded else model.offer_rows(fresh, hyp_rows)
             out.hyps[-1]["committed_idx"] = [] if guarded else list(model.last_idx)
             if not guarded:
+                # the AMENDMENT of 2026-11-26, item 8: each fresh word's P (None:
+                # no row), where the prefix rule stopped, where the cut fell
+                out.hyps[-1]["p"] = [model.last_p.get(i) for i in range(len(fresh))]
+                out.hyps[-1]["stop"] = model.last_stop
+                out.hyps[-1]["cut"] = model.last_cut
+            if not guarded:
                 model.note_offered(fresh)
         out.empty_words += sum(1 for h in fresh if not is_scored(h.word))
         ratio = compression_ratio([h.word for h in hyp])

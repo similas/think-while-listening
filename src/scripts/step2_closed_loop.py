@@ -35,6 +35,14 @@ Writes --out/closed_loop.jsonl: a header, then one record per file (its
 turns, every hypothesis with the fresh indices the model committed, and the
 final's words). step2_closed_loop_score.py scores it.
 
+WITH --segments (the AMENDMENT of 2026-11-26): tiny decodes through
+twl.stt_engine.transcribe_words_segmented, so each word carries its segment;
+the committer cuts its prefix back to the last segment boundary (item 2);
+every offered hypothesis records each fresh word's P, where the prefix rule
+stopped and where the cut fell (item 8); the header says segments true. Its
+--score is step2_segment_score.py's log (tau* under the rule), and the
+scoring log must be that script's, and only with --segments.
+
 Run in ~/.venvs/twl-learn with PYTHONPATH=src, from the repository root:
 
     step2_closed_loop.py --models results/raw/step2/primary --config L63_R200_text --seed 2
@@ -79,7 +87,7 @@ from twl.commit import Word
 from twl.config import load_config
 from twl.label_replay import replay
 from twl.provenance import nvpmodel_mode
-from twl.stt_engine import load_pinned, transcribe_words_scored
+from twl.stt_engine import load_pinned, transcribe_words_scored, transcribe_words_segmented
 from twl.survival_labels import HypWord
 from twl.telemetry import read_swaps, read_tj_c, read_vmstat
 
@@ -117,6 +125,9 @@ def main() -> None:
     p.add_argument("--log", type=Path, default=None)
     p.add_argument(
         "--limit", type=int, default=0, help="the first N files only: a smoke test, never scored"
+    )
+    p.add_argument(
+        "--segments", action="store_true", help="the segment rule (AMENDMENT 2026-11-26, item 2)"
     )
     args = p.parse_args()
     # SIGTERM (the launcher's stop, the watchdog's) raises SystemExit, so the
@@ -176,6 +187,9 @@ def main() -> None:
             stop(f"{f}: sha256 not the anchors log's")
     say("VALIDITY sha256: the selection set's label files equal the anchors log's")
     score = args.score.read_text()
+    by_segment_scorer = score.startswith("# step2_segment_score.py")
+    if by_segment_scorer != args.segments:
+        stop(f"--segments is {args.segments}, but the scoring log is {score.split(';')[0]!r}")
     chosen = re.search(r"-> (\S+) \(lowest mean held-out log-loss", score)
     mseed = re.search(r"^MEDIAN SEED (\d+);", score, re.M)
     mtau = re.search(r"^PRIMARY guarded \(scored\): tau\* ([0-9.]+);", score, re.M)
@@ -246,6 +260,14 @@ def main() -> None:
     lang = cfg.stt.language
 
     def decode_hyp(buf, base_s, prompt):  # type: ignore[no-untyped-def]
+        if args.segments:
+            seg, wordless = transcribe_words_segmented(
+                tiny, buf, language=lang, base_s=base_s, initial_prompt=prompt
+            )
+            return [
+                HypWord(Word(t, s0, s1), pr, alp, nsp, segment=k)
+                for t, s0, s1, pr, alp, nsp, k in seg
+            ], wordless
         raw, wordless = transcribe_words_scored(
             tiny, buf, language=lang, base_s=base_s, initial_prompt=prompt
         )
@@ -261,6 +283,7 @@ def main() -> None:
         "tau": args.tau,
         "files": len(utts),
         "limit": args.limit,
+        "segments": args.segments,
     }
     t_run = time.monotonic()
     try:
@@ -304,7 +327,10 @@ def run_files(  # type: ignore[no-untyped-def]
                     for w in t["final_words"]
                 ]
                 m = ModelCommitter(
-                    predict=predict, tau=args.tau, tail_guard_s=settings.tail_guard_s
+                    predict=predict,
+                    tau=args.tau,
+                    tail_guard_s=settings.tail_guard_s,
+                    segments=args.segments,
                 )
                 res = replay(
                     audio,

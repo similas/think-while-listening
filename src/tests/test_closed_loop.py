@@ -89,3 +89,33 @@ def test_a_model_below_tau_stops_its_prefix() -> None:
     )
     out = replay(pcm(5.0), TRUTH, perfect, SETTINGS, EP, model=m)
     assert all(h["committed_idx"] in ([], [0]) for h in out.hyps if not h["frozen"])
+
+
+def segmented(buf, base_s, prompt):  # type: ignore[no-untyped-def]
+    """As perfect, the words in segments of two (AMENDMENT 2026-11-26)."""
+    words, n = perfect(buf, base_s, prompt)
+    return [HypWord(h.word, 0.9, -0.1, 0.01, segment=i // 2) for i, h in enumerate(words)], n
+
+
+def test_the_segment_rule_commits_only_up_to_the_last_boundary_and_records_why() -> None:
+    m = model(1.0)
+    m.segments = True
+    out = replay(pcm(5.0), TRUTH, segmented, SETTINGS, EP, model=m)
+    offered = [h for h in out.hyps if not h["frozen"] and not h["runaway"]]
+    assert offered
+    for h in offered:
+        fresh = [w for w in h["words"] if w["start_s"] >= h["committed_end_s"] - 1e-9]
+        seg = [w["segment"] for w in fresh]
+        assert h["stop"] == len(fresh)  # P 1.0: the prefix never stops early
+        assert len(h["p"]) == len(fresh) and all(q == 1.0 for q in h["p"])
+        # committed: everything up to the last word whose next is in another segment
+        last = max((i for i in range(len(seg) - 1) if seg[i] != seg[i + 1]), default=-1)
+        assert h["cut"] == last
+        assert h["committed_idx"] == list(range(last + 1))
+
+
+def test_without_segments_the_record_has_the_stop_and_no_cut() -> None:
+    out = replay(pcm(5.0), TRUTH, perfect, SETTINGS, EP, model=model(0.0))
+    offered = [h for h in out.hyps if not h["frozen"]]
+    assert offered and all(h["stop"] == 0 and h["cut"] == -1 for h in offered)
+    assert all(h["committed_idx"] == [] for h in offered)

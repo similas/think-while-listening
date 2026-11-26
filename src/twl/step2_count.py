@@ -55,6 +55,7 @@ from typing import Any
 
 from twl.commit import Word
 from twl.runaway import runaway_reason
+from twl.step2_segments import segment_cut
 from twl.survival_labels import Unit, align_units, is_scored, num_units
 
 FRESH_EPS = 1e-9
@@ -239,6 +240,32 @@ def oracle_decide() -> Decide:
     return decide
 
 
+def prefix_stop(
+    p: Callable[[int, int], float | None],
+    tau: float,
+    h: int,
+    fresh: Sequence[Word],
+    eligible: Sequence[bool],
+) -> tuple[set[int], int]:
+    """The longest-prefix rule on one hypothesis: the eligible fresh indices
+    with P >= tau before the first scored one below it, and where it stopped
+    (that word's index, or the number of fresh words). Unscored words have no
+    P and are passed over; a scored word without one is an error."""
+    out: set[int] = set()
+    for i in range(len(fresh)):
+        if not eligible[i]:
+            continue
+        q = p(h, i)
+        if q is None:
+            if is_scored(fresh[i]):
+                raise ValueError(f"hypothesis {h}: scored fresh word {i} has no P")
+            continue
+        if q < tau:
+            return out, i
+        out.add(i)
+    return out, len(fresh)
+
+
 def prefix_decide(p: Callable[[int, int], float | None], tau: float) -> Decide:
     """The model: the longest prefix of the eligible fresh words with P >= tau.
     p(h, i) is P(survive) for fresh word i of hypothesis h, None where the word
@@ -248,18 +275,26 @@ def prefix_decide(p: Callable[[int, int], float | None], tau: float) -> Decide:
     without a P is an error."""
 
     def decide(h: int, fresh, eligible, units, aligned) -> set[int]:  # type: ignore[no-untyped-def]
-        out: set[int] = set()
-        for i in range(len(fresh)):
-            if not eligible[i]:
-                continue
-            q = p(h, i)
-            if q is None:
-                if is_scored(fresh[i]):
-                    raise ValueError(f"hypothesis {h}: scored fresh word {i} has no P")
-                continue
-            if q < tau:
-                break
-            out.add(i)
-        return out
+        return prefix_stop(p, tau, h, fresh, eligible)[0]
+
+    return decide
+
+
+def segment_prefix_decide(
+    p: Callable[[int, int], float | None],
+    tau: float,
+    seg_of: Callable[[int], Sequence[int]],
+) -> Decide:
+    """The model under the AMENDMENT of 2026-11-26 (segment boundaries, item
+    2): prefix_decide's prefix, cut back to its last segment boundary
+    (twl.step2_segments.segment_cut). seg_of(h) is each fresh word's segment
+    ordinal for hypothesis h, one per fresh word."""
+
+    def decide(h: int, fresh, eligible, units, aligned) -> set[int]:  # type: ignore[no-untyped-def]
+        seg = seg_of(h)
+        if len(seg) != len(fresh):
+            raise ValueError(f"hypothesis {h}: {len(seg)} segments for {len(fresh)} fresh words")
+        kept, stop = prefix_stop(p, tau, h, fresh, eligible)
+        return segment_cut(kept, stop, seg)[0]
 
     return decide

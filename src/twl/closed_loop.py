@@ -9,8 +9,12 @@ takes a ModelCommitter in place of LocalAgreement-2.
 THE MODEL COMMITS as it was scored off-policy (decision 3; twl.step2_count.
 prefix_decide): per offered hypothesis, the longest prefix of the fresh words
 with P(survive) >= tau, passing over an unscored word that has no row (only
-those have none), with no tail guard. Its commits trim the stream: the next
-buffer starts at its committed end, and the prompt is its committed text.
+those have none), with no tail guard. With ``segments`` (the AMENDMENT of
+2026-11-26, item 2), that prefix is cut back to its last segment boundary,
+as twl.step2_count.segment_prefix_decide counts it off-policy; the offer
+records where the prefix stopped and where the cut fell (item 8). Its
+commits trim the stream: the next buffer starts at its committed end, and
+the prompt is its committed text.
 
 THE FEATURES are the label rows' (twl.survival_labels.rows), computed on this
 stream: the buffer, the position from its end, the time since the model's
@@ -27,6 +31,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 from twl.commit import Word
+from twl.step2_segments import segment_cut
 from twl.survival_labels import HypWord, is_scored
 
 Row = dict[str, float | int | str]
@@ -46,6 +51,11 @@ class ModelCommitter:
     _prev: list[Word] | None = field(default=None, repr=False)
     last_idx: list[int] = field(default_factory=list)  # fresh indices committed by the last offer
     last_p: dict[int, float] = field(default_factory=dict)  # fresh index -> P, the last offer
+    # AMENDMENT 2026-11-26 (segment boundaries): the prefix is cut back to its
+    # last segment boundary (twl.step2_segments.segment_cut; item 2)
+    segments: bool = False
+    last_stop: int = -1  # where the longest-prefix rule stopped, the last offer
+    last_cut: int = -1  # the segment cut's index (-1: none, or the rule is off)
 
     @property
     def pending_agreement(self) -> int:
@@ -72,6 +82,7 @@ class ModelCommitter:
             zip((int(r["word_index"]) for r in rows), map(float, self.predict(rows)), strict=True)
         )
         keep: list[int] = []
+        stop = len(fresh)
         for i, h in enumerate(fresh):
             q = p.get(i)
             if q is None:
@@ -79,8 +90,13 @@ class ModelCommitter:
                     raise ValueError(f"scored fresh word {i} ({h.word.text!r}) has no row")
                 continue
             if q < self.tau:
+                stop = i
                 break
             keep.append(i)
+        self.last_stop, self.last_cut = stop, -1
+        if self.segments:
+            cut_keep, self.last_cut = segment_cut(keep, stop, [h.segment for h in fresh])
+            keep = sorted(cut_keep)
         kept = [fresh[i].word for i in keep]
         if kept:
             self.committed.extend(kept)

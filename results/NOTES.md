@@ -12361,3 +12361,96 @@ GO for the loop is Ali's. If it STOPs: reported to Ali, and nothing reads
 its output.
 
 Reviewed before commit (round 69: 5 findings, 5 resolved).
+
+## 2026-11-26 — STEP 2, THE SEGMENT-INDEX REPLAY: DONE, every hypothesis step 1's word for word (574 files, 617 turns), each word's segment recorded; the run clean
+
+Under the AMENDMENT of today (a465664), item 5, and Ali's GO (his 3 (a):
+the freeze lifted for this replay only). Before the launch, Ali was told
+the correction (the replay runs with the guard off, as step 1 ran it; a
+guarded replay could not reproduce step 1's hypotheses) and asked to clear
+swap. His reply, as he wrote it:
+
+    swap cleared — guard off for the replay, approved.
+
+THE BOARD. twl-llama stopped 16:06:08 (user journal). Ali's swapoff -a and
+swapon -a at 16:06:40 and 16:06:41 (system journal: sudo lines, swapfile
+deactivated, the kernel adding /swapfile); swap used 0 MB at 16:06:54
+(/proc/swaps, read by hand). The zram swaps off; spotifyd up; the run lock
+free; the editor session up with one wait on the unit's main pid that read
+no file (a lesser breach, as before); auto-update off; the clocks not
+pinned (the replay's clock is simulated). twl-llama was restarted 16:47:25
+(user journal) by src/scripts/llama_server.sh start: it runs as a transient
+unit, which `systemctl --user start` cannot restart once stopped.
+
+THE SMOKE RUN (unit twl-segment-replay-smoke-20261126, 16:06:59 to
+16:07:13; output results/raw/step2/segment_replay_smoke/, which nothing
+reads): every VALIDITY line passed; "DONE: 3 files, 3 turns, every
+hypothesis step 1's word for word, in 10 s"; swap traffic +0 in, +0 out.
+
+THE FULL RUN (unit twl-segment-replay-full-20261126; build a465664,
+clean). Launched 16:07:23, armed 16:07:24. BOARD start: tj 58.8 C; swap
+used 0 MB; MAXN_SUPER; clocks not pinned. VALIDITY, all passed before the
+first decode: the selection set's label files equal the anchors log's;
+step 1's replay settings and hypothesis model with the guard off; "the
+decoder: faster-whisper 1.2.1 and ctranslate2 4.8.1, as step 1 ran them";
+the corpus files' sha256. Its log's last line, verbatim:
+
+    DONE: 574 files, 617 turns, every hypothesis step 1's word for word, in 2371 s; tj max 65.4 C, now 65.3 C; swap used 0 MB; swap traffic since the start pswpin +0, pswpout +0; results/raw/step2/segment_replay/segment_replay.jsonl
+
+The watchdog: peak tj 65.66 C over 1187 samples, not breached (the first
+trip 74 C); it exited 0 at 16:47:00. The unit's journal: started 16:07:23,
+"Consumed 1h 50min 52.070s CPU time" at 16:47:00; no failure line. 2371 s
+is under the 50 min at which Ali would have been told. Logs results/raw/
+run_logs/20261126_segment_replay_{smoke,full}/; output results/raw/step2/
+segment_replay/segment_replay.jsonl (a header and 574 file records).
+
+THE RUN SKILL'S AFTER-RUN CHECKS. No swap activity (above). No OOM kill and
+no thermal throttle: the kernel journal holds no line between 16:07:23 and
+16:47:01, and tj stayed below the first trip point. Turns: 617, all
+step 1's. THE FENCE: no file under the repository changed between 16:07:23
+and 16:47:01 except the run's own (its logs, its output) and the run lock
+(find -newermt after the run; .git unchanged).
+
+WHAT IT GIVES: step 1's stream, unchanged, with each hypothesis word's
+decoder segment. The replay reproduced step 1's hypotheses exactly a week
+after step 1 ran them, on the same box and decoder versions.
+
+THE CODE OF ITEMS 2, 3 AND 8, committed with this entry, before tau* is
+chosen:
+- twl.step2_segments.boundaries and segment_cut: item 2's cut (a boundary
+  follows a word when the next word of the hypothesis came from another
+  segment; the cut keeps the prefix's scored words up to and including the
+  last boundary before the prefix's stop; nothing without one; a word without
+  its segment raises); tested.
+- twl.step2_count: prefix_stop (the longest-prefix rule, now also returning
+  where it stopped; prefix_decide is unchanged in what it decides, its
+  tests pass) and segment_prefix_decide (item 2 off-policy); tested.
+- twl.closed_loop.ModelCommitter: ``segments`` (item 2 in the loop), and
+  last_stop and last_cut; twl.label_replay records, per offered hypothesis
+  of a model loop, each fresh word's P (None without a row), the stop and
+  the cut (item 8); tested through the replay.
+- src/scripts/step2_segment_score.py (item 3): tau* under the rule, in
+  step2_score's line formats; its VALIDITY: the label files, the replay
+  (its header, its DONE line, step 1's hypotheses again, every offered
+  word's segment), LA-2's anchors, and the model under the plain rule at
+  its scored tau* reproducing its scoring log's PRIMARY line (9823).
+- src/scripts/step2_closed_loop.py --segments: the segmented decode, the
+  committer's cut, the header's "segments"; its scoring log must be
+  step2_segment_score.py's, and only with --segments.
+- src/scripts/step2_closed_loop_score.py --segments: the loop's verdict
+  line under this AMENDMENT (g_cl and the precision bar, A (b)); the
+  comparison with the off-policy CI descriptive (item 6); the run's header
+  must say segments true, and the scoring log must be step2_segment_score.py's
+  (only with --segments) and the one the run read. Rerun without --log on the
+  retrained loop (a6ac6d5's), it prints the logged closed_loop_score.log
+  line for line (by hand, diff, not logged).
+Before this entry, step2_segment_score.py was run once on the uncommitted
+tree with its output discarded unread (to /dev/null), to check that it
+runs to the end and passes its VALIDITY; it did (exit 0). No number of it
+has been read.
+
+NEXT: tau* by step2_segment_score.py, logged (results/raw/run_logs/
+20261126_step2_segment_score/segment_score.log), on this entry's clean
+build, as a user unit; not a measured run. Then the loop, under its own GO.
+
+Reviewed before commit (round 70: 3 findings, 3 resolved).

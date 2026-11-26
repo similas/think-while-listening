@@ -46,6 +46,11 @@ computed for the first model, reported beside it:
 - With --retrained, the comparison above is item 6's trigger (BELOW: a tail
   guard is the next declared change), and the G_CL line is the verdict that
   counts; without it, both are the first model's, reported beside.
+- With --segments (the AMENDMENT of 2026-11-26: the retrained model under
+  the segment rule; the run's header must say so), the G_CL line, with the
+  precision bar, is that loop's verdict, and the comparison is descriptive
+  (item 6: the branch ends with this loop). Its --score is
+  step2_segment_score.py's log, which prints the same lines.
 
 Run in ~/.venvs/twl-learn with PYTHONPATH=src, from the repository root:
 
@@ -98,8 +103,18 @@ def main() -> None:
     p.add_argument("--anchors", type=Path, required=True, help="step2_anchors.py's log")
     p.add_argument("--labels", type=Path, default=Path("results/raw/commit_labels/num"))
     p.add_argument("--retrained", action="store_true", help="the retrained model's loop")
+    p.add_argument(
+        "--segments",
+        action="store_true",
+        help="the retrained model's loop under the segment rule (AMENDMENT 2026-11-26)",
+    )
     p.add_argument("--log", type=Path, default=None)
     args = p.parse_args()
+    if args.segments and args.retrained:
+        raise SystemExit(
+            "--segments is the segment rule's loop; --retrained the first retrained one"
+        )
+    verdictful = args.retrained or args.segments
     build = subprocess.run(
         ["git", "describe", "--always", "--dirty", "--abbrev=40"],
         capture_output=True,
@@ -118,6 +133,14 @@ def main() -> None:
     header = recs[0]["header"]
     files = [r for r in recs[1:]]
     score = args.score.read_text()
+    if score.startswith("# step2_segment_score.py") != args.segments:
+        raise SystemExit(
+            f"--segments is {args.segments}, but the scoring log is {score.split(';')[0]!r}"
+        )
+    if "--score" in header["args"] and Path(
+        header["args"][header["args"].index("--score") + 1]
+    ) != Path(args.score):
+        raise SystemExit("--score is not the scoring log the run read")
     chosen = re.search(r"-> (\S+) \(lowest mean held-out log-loss", score)
     seed = re.search(r"^MEDIAN SEED (\d+);", score, re.M)
     tau = re.search(r"^PRIMARY guarded \(scored\): tau\* ([0-9.]+);", score, re.M)
@@ -134,6 +157,11 @@ def main() -> None:
         raise SystemExit(f"the run used {got}; the scoring log scored {want}")
     if str(header["build"]).endswith("-dirty"):
         raise SystemExit(f"the run's build {header['build']} is dirty")
+    if bool(header.get("segments", False)) != args.segments:
+        raise SystemExit(
+            f"the run's segment rule is {header.get('segments', False)}; --segments "
+            f"is {args.segments}"
+        )
     mf = Path(header["model_file"])
     if hashlib.sha256(mf.read_bytes()).hexdigest() != header["model_sha256"]:
         raise SystemExit(f"{mf}: sha256 differs from the run's")
@@ -199,7 +227,17 @@ def main() -> None:
         f"OFF-POLICY CI at tau* {want[2]}: correct-committed [{c_lo:.4f}, {c_hi:.4f}]; precision "
         f"[{1 - fr_hi:.4f}, {1 - fr_lo:.4f}] (scoring log, PARETO guarded)"
     )
-    if args.retrained:
+    if args.segments:
+        say(
+            "COMPARISON (descriptive: the AMENDMENT of 2026-11-26, item 6, ends the branch with "
+            "this loop): "
+            + (
+                f"BELOW the off-policy CI ({'; '.join(below)})"
+                if below
+                else "WITHIN the off-policy CI on both"
+            )
+        )
+    elif args.retrained:
         say(
             "COMPARISON (decision 8; the AMENDMENT's item 6 trigger): "
             + (
@@ -264,18 +302,19 @@ def main() -> None:
     bar_broken = r_lo > limit
     # without --retrained: the first model, reported beside, by a scorer written
     # after its loop's data
-    ph = "" if args.retrained else " (post hoc: scorer written after this loop's data)"
-    head = (
-        "VERDICT (AMENDMENT 2026-11-24, the retrained model)"
-        if args.retrained
-        else f"G_CL{ph} (the first model, computed the same way, reported beside; no verdict)"
-    )
+    ph = "" if verdictful else " (post hoc: scorer written after this loop's data)"
+    if args.segments:
+        head = "VERDICT (AMENDMENT 2026-11-26, the retrained model under the segment rule)"
+    elif args.retrained:
+        head = "VERDICT (AMENDMENT 2026-11-24, the retrained model)"
+    else:
+        head = f"G_CL{ph} (the first model, computed the same way, reported beside; no verdict)"
     say(
         f"{head}: g_cl = {g_pt:.4f} [{g_lo:.4f}, {g_hi:.4f}] (model {sum(m_cw)} on its own stream; "
         f"LA-2 {sum(la_cw)}, oracle {sum(orc_cw)} on step 1's; of {words} words)"
-        + (f" -> {'NOT MET ON PRECISION' if bar_broken else g_word}" if args.retrained else "")
+        + (f" -> {'NOT MET ON PRECISION' if bar_broken else g_word}" if verdictful else "")
     )
-    if args.retrained:
+    if verdictful:
         tail = "NOT MET ON PRECISION" if bar_broken else "the bar is met"
     else:
         tail = "for the retrained model this would be " + (

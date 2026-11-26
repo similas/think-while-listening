@@ -140,3 +140,20 @@ def test_fates_record_each_commit_outcome_without_changing_the_counts() -> None:
     )
     assert sorted(fates.values()).count("correct") == c.correct_commits == 4
     assert fates[(1, 4)] == "unaligned" and len(fates) == c.commits
+
+
+def test_the_segment_rule_cuts_the_prefix_back_to_its_last_boundary() -> None:
+    # AMENDMENT 2026-11-26, item 2. Segments [0, 0, 1, 1, 2]: boundaries
+    # follow "have" and "five"; every P is above tau, so the prefix holds all
+    # five words and is cut after "five": "apples." (the last segment) waits.
+    from twl.step2_count import segment_prefix_decide
+
+    t = turn((FINAL, 0.0))
+    p = {(1, i): 0.9 for i in range(5)}
+    c = count_turn(t, segment_prefix_decide(p_table(p), 0.5, lambda h: [0, 0, 1, 1, 2]), False)
+    assert (c.commits, c.correct_commits, c.correct_words) == (4, 4, 4)
+    # one segment: nothing is committed; a wrong segment count is an error
+    c = count_turn(t, segment_prefix_decide(p_table(p), 0.5, lambda h: [0] * 5), False)
+    assert c.commits == 0
+    with pytest.raises(ValueError):
+        count_turn(t, segment_prefix_decide(p_table(p), 0.5, lambda h: [0, 1]), False)
