@@ -275,7 +275,9 @@ def replay(
             {"issued_s": now, "committed_end_s": ce, "buffer_s": buffer_s,
              "modelled_ms": model_ms, "wall_ms": wall_ms, "frozen": False,
              "words": [{"text": h.word.text, "start_s": h.word.start_s,
-                        "end_s": h.word.end_s} for h in hyp]}
+                        "end_s": h.word.end_s,
+                        **({"segment": h.segment} if h.segment >= 0 else {})}
+                       for h in hyp]}
         )  # fmt: skip
         verdict = runaway_reason([h.word for h in hyp])
         out.hyps[-1]["runaway"] = verdict

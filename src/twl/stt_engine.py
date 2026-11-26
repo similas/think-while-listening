@@ -120,14 +120,35 @@ def transcribe_words_scored(
     ``word_probability`` is faster-whisper's: the mean decoder probability of
     the word's tokens in its word-timestamp pass. The learned committer's
     labels use this; the hypothesis worker uses ``transcribe_words_raw``, and
-    both go through ``_segments``.
+    both go through ``_segments``. It is transcribe_words_segmented without
+    the segment ordinal.
+    """
+    words, wordless = transcribe_words_segmented(
+        model, audio, language=language, base_s=base_s, initial_prompt=initial_prompt
+    )
+    return [w[:6] for w in words], wordless
+
+
+def transcribe_words_segmented(
+    model: Any,
+    audio: npt.NDArray[np.float32],
+    *,
+    language: str,
+    base_s: float,
+    initial_prompt: str,
+) -> tuple[list[tuple[str, float, float, float, float, float, int]], int]:
+    """transcribe_words_scored's words, each with the ordinal of its segment.
+
+    The ordinal counts the segments as the decoder yields them, the ones
+    dropped for no speech included, so two words share it exactly when they
+    came from one segment (AMENDMENT 2026-11-26, segment boundaries).
     """
     segments = _segments(
         model, audio, language=language, initial_prompt=initial_prompt, want_words=True
     )
-    out: list[tuple[str, float, float, float, float, float]] = []
+    out: list[tuple[str, float, float, float, float, float, int]] = []
     wordless = 0
-    for seg in segments:
+    for k, seg in enumerate(segments):
         if seg.no_speech_prob >= NO_SPEECH_MAX:
             continue
         if not seg.words and seg.text.strip():
@@ -142,6 +163,7 @@ def transcribe_words_scored(
                         float(w.probability),
                         float(seg.avg_logprob),
                         float(seg.no_speech_prob),
+                        k,
                     )
                 )
     return out, wordless

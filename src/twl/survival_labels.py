@@ -107,6 +107,10 @@ class HypWord:
     probability: float  # faster-whisper word probability (twl.stt_engine)
     seg_avg_logprob: float  # the segment's average token log-probability
     no_speech_prob: float  # of the segment the word came from
+    # the ordinal of the decoder segment the word came from, within its decode
+    # (twl.stt_engine.transcribe_words_segmented); -1 where not recorded. No
+    # feature or label reads it (AMENDMENT 2026-11-26, segment boundaries).
+    segment: int = -1
 
 
 def exact_tokens(text: str) -> list[str]:

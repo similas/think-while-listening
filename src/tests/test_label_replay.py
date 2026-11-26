@@ -158,3 +158,28 @@ def test_speech_at_the_file_start_still_gets_a_full_preroll() -> None:
     assert t.opens_s - t.origin_s == pytest.approx(0.6)
     assert t.origin_s == pytest.approx(-0.4)
     assert t.length_s == pytest.approx(2.8 + 0.4)
+
+
+def test_a_word_records_its_segment_only_when_the_decoder_gave_one() -> None:
+    # AMENDMENT 2026-11-26: the segment replay records each hypothesis word's
+    # decoder segment; a decode without segments writes the record as before.
+    def segmented(buf, base_s, prompt):  # type: ignore[no-untyped-def]
+        words, n = perfect(buf, base_s, prompt)
+        return [HypWord(h.word, 0.9, -0.1, 0.01, segment=i // 3) for i, h in enumerate(words)], n
+
+    out = replay(pcm(5.0), TRUTH, segmented, SETTINGS, EP)
+    decoded = [h for h in out.hyps if not h["frozen"]]
+    assert all(w["segment"] == i // 3 for h in decoded for i, w in enumerate(h["words"]))
+    plain = replay(pcm(5.0), TRUTH, perfect, SETTINGS, EP)
+    assert all("segment" not in w for h in plain.hyps for w in h["words"])
+    # the segment changes no row and no other field of the record (wall_ms is
+    # the real decode's time, recorded, never used)
+    assert plain.rows == out.rows
+
+    def same(h):  # type: ignore[no-untyped-def]
+        return {
+            **{k: v for k, v in h.items() if k != "wall_ms"},
+            "words": [{k: v for k, v in w.items() if k != "segment"} for w in h["words"]],
+        }
+
+    assert [same(h) for h in out.hyps] == [same(h) for h in plain.hyps]

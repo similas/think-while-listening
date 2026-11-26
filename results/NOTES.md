@@ -12208,3 +12208,156 @@ score's (574 files, 15220 words; the VALIDITY lines); nothing else is
 excluded.
 
 Reviewed before commit (round 68: 1 finding, 1 resolved).
+
+## 2026-11-26 — AMENDMENT to step 2's retrain branch (Ali): the retrained model commits only at segment boundaries; the loop records P and the stop position; the freeze lifted for the segment-index replay. Before any of its code or runs
+
+Ali (2026-11-26), on the report of the edge diagnostic and (c) (ef58550),
+as he wrote it:
+
+    1 (a). 2 (i). 3 (a) — GO for the 40-min segment-index replay; the
+    freeze lifted for it, recorded first; it stops unless it reproduces
+    step 1's hypotheses word for word. 4 (a).
+
+    Two additions to the amendment:
+    - The loop records, per hypothesis, each fresh word's P and the
+      position where the longest-prefix rule stopped. Both loops so far
+      recorded words and times only, so the on-policy recall deficit (9.8k
+      words credited off-policy, 5.9k on-policy) still has no diagnosis;
+      the precision excess is explained, the recall deficit is not. The
+      amendment names it as the open half, and the next loop makes it
+      answerable.
+    - The hypothesis to record, untested: after a model commit that ends
+      mid-phrase, the next buffer begins with a cut word of low P, and the
+      prefix rule blocks everything behind it. Segment boundaries would
+      remove the cause if that is it; the recorded P and stop position will
+      say.
+
+His choices among the report's options: 1 (a) segment boundaries, not the
+tail guard; 2 (i), a boundary is the end of any segment except the
+hypothesis's last; 3 (a), the segments recorded by a replay of step 1's
+selection set; 4 (a), the draft's items 6 and 7 kept. The draft, as the
+report put it, is in the report of ef58550; the amendment below is that
+draft with his choices and additions.
+
+THE AMENDMENT (to the AMENDMENT of 2026-11-24 on the retrained model,
+d8797b2, whose verdict, NOT MET ON PRECISION, stands as scored):
+0. WHY. The edge diagnostic (d808d73, 62c42ee) was looked at before this
+   amendment: (1) the edge commits carry the excess false-commit rate, YES;
+   (2) the hypotheses after them go wrong, NO. By Ali's rule the candidate
+   is segment boundaries. D1 (i) was chosen after the diagnostic, on its
+   (1): it also keeps the model's commits off the hypothesis's last
+   segment, which ends at the buffer's edge, likely where the edge commits
+   sit (untested: no word carried a segment index). A loop under it tests
+   committing at segment boundaries and avoiding the buffer's edge
+   together; it cannot separate the two.
+1. THE MODEL: the retrained one (L15_R600_text, seed 0; e8a5cd6), unrefit;
+   its P unchanged.
+2. THE RULE: on each offered hypothesis, the longest prefix of the eligible
+   fresh words with P >= tau, as now (eligibility as now; it stops at the
+   first scored word with P < tau; unscored words, which have no P, are
+   passed over), cut back to its last segment boundary. The cut point is
+   the last word before the prefix's stop that is followed, in the
+   hypothesis, by a word of another decoder segment, whether or not that
+   next word is in the prefix (D1 (i): the end of any segment except the
+   hypothesis's last). Committed: the prefix's scored words up to and
+   including the cut point. If no word before the stop is followed by
+   another segment's word, nothing is committed. Unscored words count for
+   segment membership and boundaries like any word.
+3. tau* is re-chosen off-policy on step 1's stream under the rule (the
+   segments from the replay in 5), by the registered rule: the largest
+   correct-committed fraction whose false-commit rate is at most LA-2's
+   (0.0458), a tie to the higher tau, guarded. Its g is reported beside, not
+   as a verdict.
+4. ONE guarded closed loop at that tau*, on the 574 files, judged by the same
+   g_cl and precision bar (A (b) of d8797b2), under the thermal watchdog,
+   with its own GO from Ali, which lifts the freeze for it.
+5. THE SEGMENTS: each word's ordinal among its decode's segments
+   (twl.stt_engine.transcribe_words_segmented; no feature or label reads
+   it). Step 1's stream gets them by one replay (D2 (a)): step 1's
+   selection-set replay again (574 files, LocalAgreement-2 committing,
+   step 1's settings and tiny, the runaway guard off as step 1 ran it,
+   step 1's finals reused, not decoded), each
+   word's segment recorded and nothing else changed. It stops unless it
+   reproduces step 1's hypotheses word for word: per turn, the number of
+   hypotheses and, per hypothesis, its frozen flag, issue time and
+   committed end, and its words' text, start and end, compared exactly.
+6. THE BRANCH ENDS with this loop, whatever its verdict: no third candidate.
+7. (c) is not scored against this primary: (c) compares models under one
+   commit rule, and this changes the rule, not the model.
+8. THE LOOP RECORDS (Ali's first addition), per offered hypothesis: each
+   fresh word's P and the position where the longest-prefix rule stopped;
+   and (mine, needed by the rule) where the segment cut fell and each
+   word's segment. THE OPEN HALF: the two loops so far recorded words and
+   times only, so the on-policy recall deficit has no diagnosis.
+   Off-policy the retrained model credits 9823 words, on its own stream
+   5929 (e8a5cd6, a6ac6d5; Ali's 9.8k and 5.9k). Ali: "the precision
+   excess is explained, the recall deficit is not." This loop makes it
+   answerable.
+9. THE HYPOTHESIS, recorded untested (Ali's second addition): after a model
+   commit that ends mid-phrase, the next buffer begins with a cut word of
+   low P, and the prefix rule blocks everything behind it. Segment
+   boundaries would remove the cause if that is it; the recorded P and stop
+   position will say. (Mine:) how they are read is registered in its own
+   entry before the loop is scored.
+
+A CORRECTION to the draft (mine): its D2 (a) said the replay runs "guard on,
+as step 1 ran it". Step 1's replay predates the runaway guard: its label
+file's provenance holds no runaway_guard setting, and twl.label_replay's
+ReplaySettings default, off, is the one that "reproduces step 1's
+unguarded stream". The replay therefore runs with the guard off, as step 1
+ran it, which is what Ali's condition, step 1's hypotheses word for word,
+requires: a guarded replay could not reproduce step 1 even in principle,
+since one discarded hypothesis changes LA-2's commits and with them every
+later committed end. The guard applies in the counting, as it does to
+every committer (decision 5). I tell Ali before the launch, in the message
+that asks him to clear swap; the launch waits for his reply, which the
+run's entry records.
+
+THE FREEZE (since 2026-10-13) is lifted for one run: the segment-index
+replay, by Ali's 3 (a) above. It covers that replay's smoke run and full
+run, and nothing else; the loop of item 4 needs its own GO.
+
+THE RUN. src/scripts/step2_segment_replay.py, committed with this entry
+(with twl.step2_segments.replay_difference, the word-for-word check;
+twl.stt_engine.transcribe_words_segmented; HypWord's segment; the replay
+record's "segment" per word; each tested), on the clean build current at
+the launch (this entry's commit or later). Its VALIDITY also checks that
+faster-whisper and ctranslate2 are the versions step 1's provenance
+names. It holds the run lock, refuses to
+start at tj 65 C or above, and runs under the thermal watchdog. Launch
+snapshots results/raw/script_snapshots/segment_replay_launch_20261126.sh
+and segment_replay_20261126.sh (gitignored), each run as a systemd user
+unit in twl.slice (systemd-run --user --slice=twl.slice
+--unit=twl-segment-replay-<smoke|full>-20261126 --collect), outside the
+editor's session: a smoke run of 3 files (output results/raw/step2/
+segment_replay_smoke/, which nothing reads), then the full run. Logs:
+results/raw/run_logs/20261126_segment_replay_smoke/ and _full/. Output:
+results/raw/step2/segment_replay/segment_replay.jsonl. The unit's life is
+the loops' (b94190d). The run names keep the date 20261126 even if the
+launch falls after midnight.
+
+THE BOARD. twl-llama stopped before the smoke run and started again after
+the full run, both times recorded. Swap: 16 MB in use now (read by hand,
+/proc/swaps); as for the retrained loop, I tell Ali "clear swap now" with
+twl-llama stopped, and launch after his "swap cleared". The zram swaps off
+(his 3 (a) of 2026-11-25). spotifyd up. The editor session up, one wait on
+the unit's main pid that reads no file, recorded as a lesser breach, as for
+the relabel and both loops. Auto-update off. The clocks not pinned (the
+replay's clock is simulated), a departure from the run skill's --clocks, as
+before. The swap rule of the AMENDMENT of c0c9c32 applies: "ANY growth in
+pswpin or pswpout during the run is reported and the run flagged invalid
+under CLAUDE.md §6; whether it stands, given the simulated clock, is Ali's
+to decide then."
+
+NO TIME CAP. Ali's GO names about 40 min. Step 1's replay of this corpus,
+which also decoded the finals, logged wall 3797 s for 594 files (its COST
+line), about 61 min for 574 files; this one does not decode the finals. If
+it runs past about 50 min, I tell Ali and do not stop it myself.
+
+AFTER THE RUN. If its DONE line says every hypothesis matched: the code of
+items 2, 3 and 8 (the cut, the off-policy count under it, the loop's
+records), reviewed and committed; then tau* by its logged scorer; then the
+GO for the loop is Ali's. If it STOPs: reported to Ali, and nothing reads
+its output.
+
+Reviewed before commit (round 69: 5 findings, 5 resolved).
