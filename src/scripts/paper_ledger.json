@@ -479,15 +479,15 @@
   "id": "step 2 (a)-(c)",
   "prediction": "(a) on words both commit, the primary commits >= 1.0 s earlier than LA-2 at the median (a CI touching 1.0 s is NOT MET); (b) ECE <= 0.05 (MET only if the CI lies entirely at or below 0.05); (c) the in-domain secondary beats the primary by <= 0.05 correct-committed fraction (a CI straddling 0.05 is NOT MET)",
   "registered": "2026-11-24 — PRE-REGISTRATION: step 2, the learned committer's offline evaluation (Ali's predictions, in his words; scaffolding approved by Ali). Committed before the scorer and any model code",
-  "scored": "2026-11-25 — STEP 2, THE RETRAINED MODEL SCORED (offline, in-sample, off-policy; reported beside: its verdict is the closed loop's): L15_R600_text, seed 0, tau* 0.66; g = 0.6056 [0.5579, 0.6512]; lag MET, calibration MET",
-  "verdict": "(a) MET, (b) MET, (c) PENDING: on the retrained model, lag median +2.454 s [+2.451, +2.463], n=6134 words; ECE 0.0144 [0.0110, 0.0191], n=22871 rows; (c) the secondary not yet trained, to be scored against the first model and the retrained one (2439df4)",
+  "scored": "2026-11-26 — STEP 2, THE SECONDARY SCORED: (c) MET against the first primary, +0.0133 [+0.0040, +0.0233], and against the retrained one, +0.0200 [+0.0089, +0.0309] (offline, off-policy, in-sample)",
+  "verdict": "(a) MET, (b) MET, (c) MET: on the retrained model, lag median +2.454 s [+2.451, +2.463], n=6134 words; ECE 0.0144 [0.0110, 0.0191], n=22871 rows; (c) the secondary minus the first primary (registered) +0.0133 [+0.0040, +0.0233], minus the retrained one +0.0200 [+0.0089, +0.0309], correct-committed fraction, paired by file, n=574 files",
   "corrections": [],
   "amendments": [
    "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad): the configuration is chosen by held-out log-loss (Ali's Q7); the four readings approved. Before the scorer and any fit",
    "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad, 2439df4): the secondary model's declarations, and (c)'s partner (Ali's decision 2); the freeze lifted for the closed-loop run. Before the run and before the secondary's training",
    "2026-11-24 — AMENDMENT to the step-2 PRE-REGISTRATION (345efad): the retrained model's verdict is decided by one guarded closed loop (Ali's decision 4 on 54fce21). Before any retrained model exists"
   ],
-  "qualifier": "scored again on the retrained model (Ali, 2026-11-24); the first model's beside: lag median +2.454 s [+2.451, +2.463], n=6170 words; ECE 0.0154 [0.0116, 0.0201], n=22871 rows",
-  "notes": "The first model's scoring: 2026-11-24 — STEP 2 SCORED (the primary, offline, in-sample): g = 0.6255 [0.5806, 0.6691] at tau* 0.64, HOLDS; lag MET, calibration MET; without the guard, tau* re-chosen at LA-2's unguarded limit, g is 0.2176 [0.1577, 0.2753] (0.6254 at the guarded tau*)"
+  "qualifier": "scored again on the retrained model (Ali, 2026-11-24); the first model's beside: lag median +2.454 s [+2.451, +2.463], n=6170 words; ECE 0.0154 [0.0116, 0.0201], n=22871 rows; (c) offline, off-policy and in-sample, as registered; the secondary (L63_R200_text, seed 2, tau* 0.65) has no closed loop, and both CIs also lie above 0",
+  "notes": "The first model's scoring: 2026-11-24 — STEP 2 SCORED (the primary, offline, in-sample): g = 0.6255 [0.5806, 0.6691] at tau* 0.64, HOLDS; lag MET, calibration MET; without the guard, tau* re-chosen at LA-2's unguarded limit, g is 0.2176 [0.1577, 0.2753] (0.6254 at the guarded tau*); the retrained model's scoring: 2026-11-25 — STEP 2, THE RETRAINED MODEL SCORED (offline, in-sample, off-policy; reported beside: its verdict is the closed loop's): L15_R600_text, seed 0, tau* 0.66; g = 0.6056 [0.5579, 0.6512]; lag MET, calibration MET"
  }
 ]

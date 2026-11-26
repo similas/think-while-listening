@@ -12145,3 +12145,66 @@ reported as well. The run names keep the date 20261126 even if a run falls
 after midnight.
 
 Reviewed before commit (round 67: 5 findings, 5 resolved).
+
+## 2026-11-26 — STEP 2, THE SECONDARY SCORED: (c) MET against the first primary, +0.0133 [+0.0040, +0.0233], and against the retrained one, +0.0200 [+0.0089, +0.0309] (offline, off-policy, in-sample)
+
+As the entry above (b329dc3) declares it, on that clean build, three user
+units in twl.slice, in order:
+1. THE FIT (twl-step2-train-secondary-20261126; 3 min 22 s, exit 0): log
+   results/raw/run_logs/20261126_step2_train_secondary/train.log; output
+   results/raw/step2/secondary/. Its SEAL line: "the mqa-multi_step files,
+   1322 in its utterances file and 1322 in its rows file, are none of the
+   sealed 80". Rows kept (label 0/1, the guard's hypotheses dropped):
+   librispeech-test-clean 70158, librispeech-test-other 63957,
+   peoples-speech 138194, mqa-multi_step 111587. "SPLIT: files 12334, held
+   out 1233; training rows 345685, held-out rows 38211". 24 fits.
+2. ITS SCORE (twl-step2-score-secondary-20261126; 2 min 34 s, exit 0):
+   step2_score.py, log results/raw/run_logs/20261126_step2_score_secondary/
+   step2_score.log. Every VALIDITY line passed, among them: "the 1322
+   mqa-multi_step files are none of the sealed 80"; "fit on clean b329dc3";
+   "the scoring code is unchanged since the fit"; "the held-out files are
+   the declared split (1233 of 12334)". SELECTION (mean held-out log-loss
+   over 3 seeds): L63_R200_text 0.23961 against L15_R600_text 0.23966, the
+   next; median seed 2 (g over the seeds 0.6575, 0.6651, 0.6708); tau* 0.65.
+   Its lines, descriptive, with no verdict word, as declared:
+       PRIMARY guarded (scored): tau* 0.65; g = 0.6651 [0.6166, 0.7092] -> descriptive (the secondary's test is (c)); model correct-committed 10128, LA-2 6718, oracle 11845, of 15220 words; model commits 10595, correct 10119, false-commit rate 0.0449 (limit 0.0458); BLOCKED units 12, commits left not correct 8
+       SECONDARY (a) LAG vs LA-2: 6174 words; median +2.454 s [+2.454, +2.464] -> descriptive (the secondary's test is (c)); p95 +4.949 s [+4.846, +4.970]
+       SECONDARY (b) CALIBRATION: ECE 0.0072 [0.0051, 0.0113] over 22871 rows -> descriptive (the secondary's test is (c)); base rate 0.9065 (a constant predictor's ECE 0 by construction); Brier model 0.0516, constant predictor 0.0847
+   Unguarded (sensitivity, tau* re-chosen): g = 0.3444 [0.2854, 0.4011] at
+   tau* 0.83. The log's line "SECONDARY (c): not computed here: the
+   secondary is trained after this Pareto is scored (Q5)" is the primary's
+   wording, printed for every directory; (c) is the next run's.
+3. (c) (twl-step2-secondary-c-20261126; its journal: 12:15:59 to 12:16:09,
+   "Consumed 10.165s CPU time"; exit 0):
+   step2_secondary_score.py, log results/raw/run_logs/
+   20261126_step2_secondary_c/secondary_c.log. VALIDITY: the seal (the
+   1322 files, the label files as the secondary's manifest hashed them);
+   the selection set, 574 files and 15220 words, its label files the
+   anchors log's; each model's correct-committed words reproduce its
+   scoring log's PRIMARY line. Verbatim:
+
+    MODEL secondary (results/raw/step2/secondary): L63_R200_text, seed 2, tau* 0.65, as results/raw/run_logs/20261126_step2_score_secondary/step2_score.log chose it; correct-committed 0.6654 [0.6448, 0.6849] (10128 of 15220 words; reproduces its log's PRIMARY line)
+    MODEL first (results/raw/step2/primary): L63_R200_text, seed 2, tau* 0.64, as results/raw/run_logs/20261124_step2_score/step2_score.log chose it; correct-committed 0.6521 [0.6326, 0.6713] (9925 of 15220 words; reproduces its log's PRIMARY line)
+    MODEL retrained (results/raw/step2/retrained): L15_R600_text, seed 0, tau* 0.66, as results/raw/run_logs/20261125_step2_score_retrained/step2_score.log chose it; correct-committed 0.6454 [0.6250, 0.6658] (9823 of 15220 words; reproduces its log's PRIMARY line)
+    (c) vs first, registered (345efad; c0c9c32 item 3): correct-committed fraction, secondary - first, paired by file: +0.0133 [+0.0040, +0.0233] (bar 0.05) -> MET
+    (c) vs retrained, reported as well (item 3): correct-committed fraction, secondary - retrained, paired by file: +0.0200 [+0.0089, +0.0309] (bar 0.05) -> MET
+
+THE VERDICT: (c) MET (registered: against the first primary; reported as
+well: against the retrained one). Both CIs lie entirely at or below 0.05,
+the registered bar. Descriptive, beside it: both CIs also lie entirely
+above 0, so on this set the in-domain secondary credits more words than
+either primary, by less than the bar.
+
+WHAT THIS VERDICT IS, as registered: offline and off-policy, on step 1's
+stream (the secondaries' verdicts are off-policy, D (b)), and in-sample:
+the selection set chose each model's seed and tau*. It compares models
+under one commit rule; both primaries' closed loops fell below their own
+off-policy CI (the first, 153bbac; the retrained, a6ac6d5), and the
+secondary has no closed loop. The sealed 80 were not read.
+
+Three seeds, as CLAUDE.md §2 asks (each model's median seed is the scored
+one). EXCLUSIONS: the selection set and its scored words are the first
+score's (574 files, 15220 words; the VALIDITY lines); nothing else is
+excluded.
+
+Reviewed before commit (round 68: 1 finding, 1 resolved).
