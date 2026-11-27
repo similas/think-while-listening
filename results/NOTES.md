@@ -12812,3 +12812,50 @@ read, and the count is none of the reading's quantities; it is why AT THE
 BUFFER'S END is kept apart above.
 
 Reviewed before commit (round 73: 2 findings, 2 resolved; the reviewer's structural count disclosed).
+
+## 2026-11-27 — DECISIONS on the segment loop's report (Ali): a ledger row of its own (1 (a)); GO for run (2) as committed (2 (a)), the freeze lifted for it. Before the launch
+
+Ali (2026-11-27), on the report of a3db152 and 0a3d1b0, as he wrote it:
+
+    1 (a). 2 (a) — GO for run (2) as is, ~42 min, freeze lifted for it,
+    recorded first; the reading script reviewed and committed before it
+    runs.
+
+    After run (2) is read: the step-2 branch is closed as registered. I'll
+    send the v2 pre-registration (on-policy training in rounds, tail guard,
+    word-boundary snapping, closed-loop verdicts only) for Ali's approval
+    before any code.
+
+The decisions as the report put them: 1 (a) "A new row, 'step 2, segment
+rule': FALSIFIED, g_cl -0.2229 [-0.2889, -0.1595], with the precision bar
+met in its qualifier. The step 2 row keeps NOT MET ON PRECISION for the
+plain rule." 2 (a) "go as is" (run (2) as committed in 0a3d1b0, with the
+draft reading registered there).
+
+RECORDED:
+- 1 (a): the ledger gets a row of its own for the segment loop, with the
+  tables regenerated (mine: after run (2), so the ledger commit follows the
+  run's); the step 2 row stays as it is.
+- THE FREEZE (since 2026-10-13) is lifted for one run: run (2), its smoke
+  run and its full run, as 0a3d1b0's entry sets it out, and nothing else.
+- THE READING SCRIPT (0a3d1b0's draft reading) is written, reviewed and
+  committed before it is run; no P, stop or cut record of any loop is read
+  before that.
+- AFTER RUN (2) IS READ, the step-2 branch is closed as registered. The
+  v2 pre-registration (on-policy training in rounds, tail guard,
+  word-boundary snapping, closed-loop verdicts only) goes to Ali for his
+  approval before any code (his words: "I'll send the v2
+  pre-registration ... for Ali's approval before any code"); who drafts it
+  is to be confirmed with him in the next report. Nothing of it starts
+  before then.
+
+THE BOARD, as 0a3d1b0's entry sets it: twl-llama stopped before the smoke
+run and started again after the full run (src/scripts/llama_server.sh
+start); swap: 14 MB in use now (read by hand, /proc/swaps), so Ali is told
+"clear swap now" and the launch follows his "swap cleared"; the zram swaps
+off; spotifyd up; the editor session up, one wait on the unit's main pid
+that reads no file, a lesser breach as before; auto-update off; the clocks
+not pinned. The swap rule of c0c9c32 applies. The launch is on the clean
+build current at the launch (this entry's commit or later).
+
+Reviewed before commit (round 74: 2 findings, 2 resolved).
