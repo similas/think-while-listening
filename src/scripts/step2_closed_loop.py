@@ -35,6 +35,20 @@ Writes --out/closed_loop.jsonl: a header, then one record per file (its
 turns, every hypothesis with the fresh indices the model committed, and the
 final's words). step2_closed_loop_score.py scores it.
 
+WITH --reproduce RUN (Ali's 2 (a) of 2026-11-27): a re-run of an earlier
+loop of the plain rule (the retrained model's, a6ac6d5) to record what that
+loop did not: each fresh word's P and where the prefix rule stopped, and
+each word's segment (the segmented decode, whose words are the scored
+decode's, tested). Before the first decode, the earlier run's header must
+match: the same model file (sha256), tau, replay settings, no segment rule,
+not a smoke run, a clean build. After each turn, the turn must reproduce the
+earlier run's word for word, times included: the number of hypotheses and,
+per hypothesis, its frozen flag, issue time and committed end, its words'
+text, start and end, and the fresh indices the model committed
+(twl.step2_segments.replay_difference, committed=True). The first
+difference stops the run (a STOP line, exit 1). The new records are not
+compared, nor wall_ms and the runaway verdict. It adds no verdict.
+
 WITH --segments (the AMENDMENT of 2026-11-26): tiny decodes through
 twl.stt_engine.transcribe_words_segmented, so each word carries its segment;
 the committer cuts its prefix back to the last segment boundary (item 2);
@@ -87,6 +101,7 @@ from twl.commit import Word
 from twl.config import load_config
 from twl.label_replay import replay
 from twl.provenance import nvpmodel_mode
+from twl.step2_segments import replay_difference
 from twl.stt_engine import load_pinned, transcribe_words_scored, transcribe_words_segmented
 from twl.survival_labels import HypWord
 from twl.telemetry import read_swaps, read_tj_c, read_vmstat
@@ -128,6 +143,12 @@ def main() -> None:
     )
     p.add_argument(
         "--segments", action="store_true", help="the segment rule (AMENDMENT 2026-11-26, item 2)"
+    )
+    p.add_argument(
+        "--reproduce",
+        type=Path,
+        default=None,
+        help="an earlier plain-rule loop's closed_loop.jsonl, to reproduce word for word",
     )
     args = p.parse_args()
     # SIGTERM (the launcher's stop, the watchdog's) raises SystemExit, so the
@@ -260,7 +281,7 @@ def main() -> None:
     lang = cfg.stt.language
 
     def decode_hyp(buf, base_s, prompt):  # type: ignore[no-untyped-def]
-        if args.segments:
+        if args.segments or args.reproduce:
             seg, wordless = transcribe_words_segmented(
                 tiny, buf, language=lang, base_s=base_s, initial_prompt=prompt
             )
@@ -273,6 +294,30 @@ def main() -> None:
         )
         return [HypWord(Word(t, s0, s1), pr, alp, nsp) for t, s0, s1, pr, alp, nsp in raw], wordless
 
+    earlier: dict[str, list[dict[str, object]]] | None = None
+    if args.reproduce:
+        if args.segments:
+            stop("--reproduce re-runs a plain-rule loop: not with --segments")
+        old = [json.loads(x) for x in args.reproduce.read_text().splitlines() if x.strip()]
+        oh = old[0]["header"]
+        want = {
+            "model_sha256": sha(model_file),
+            "tau": args.tau,
+            "settings": dataclasses.asdict(settings),
+            "segments": False,
+            "limit": 0,
+        }
+        got = {k: oh.get(k, False if k == "segments" else None) for k in want}
+        if got != want or str(oh["build"]).endswith("-dirty"):
+            stop(f"the earlier run's header {got} (build {oh['build']}) is not this run's {want}")
+        earlier = {str(r["utt"]): r["turns"] for r in old[1:]}
+        if not set(by_uid) <= set(earlier) or (not args.limit and set(by_uid) != set(earlier)):
+            stop("the earlier run's files are not this run's")
+        say(
+            f"VALIDITY reproduce: {args.reproduce} (build {str(oh['build'])[:7]}, clean): the same "
+            f"model file, tau {args.tau}, replay settings, no segment rule; {len(earlier)} files; "
+            "each turn must reproduce it word for word, times and commits included"
+        )
     args.out.mkdir(parents=True, exist_ok=True)
     header = {
         "build": build,
@@ -284,14 +329,16 @@ def main() -> None:
         "files": len(utts),
         "limit": args.limit,
         "segments": args.segments,
+        "reproduce": str(args.reproduce) if args.reproduce else None,
     }
     t_run = time.monotonic()
     try:
         tj_max = run_files(
-            out_file, header, corpus, by_uid, utts, decode_hyp, predict, settings, args
+            out_file, header, corpus, by_uid, utts, decode_hyp, predict, settings, args, earlier
         )
     except BaseException as e:  # the abort record before the abort
-        say(f"ABORTED: {type(e).__name__}: {e}; files written so far are in {out_file}")
+        if not (isinstance(e, SystemExit) and e.code == 1):  # a STOP line is its own record
+            say(f"ABORTED: {type(e).__name__}: {e}; files written so far are in {out_file}")
         raise
     tj1, swap1, si1, so1 = board()
     say(
@@ -304,7 +351,7 @@ def main() -> None:
 
 
 def run_files(  # type: ignore[no-untyped-def]
-    out_file, header, corpus, by_uid, utts, decode_hyp, predict, settings, args
+    out_file, header, corpus, by_uid, utts, decode_hyp, predict, settings, args, earlier=None
 ) -> float:
     """The replay over the files, checkpointing each; progress with the board.
     Returns the maximum tj read."""
@@ -320,7 +367,7 @@ def run_files(  # type: ignore[no-untyped-def]
         for uid, pcm in corpus.stream(set(by_uid)):
             u = by_uid[uid]
             turn_recs = []
-            for t in u["turns"]:
+            for k, t in enumerate(u["turns"]):
                 audio = turn_audio(pcm, float(t["origin_s"]), float(t["endpoint_s"]))
                 final = [
                     Word(str(w["text"]), float(w["start_s"]), float(w["end_s"]))
@@ -341,6 +388,20 @@ def run_files(  # type: ignore[no-untyped-def]
                     open_s=float(t["opens_s"]) - float(t["origin_s"]),
                     model=m,
                 )
+                if earlier is not None:
+                    old_turns = earlier[uid]
+                    diff = (
+                        f"{len(u['turns'])} turns, earlier {len(old_turns)}"
+                        if len(old_turns) != len(u["turns"])
+                        else replay_difference(res.hyps, old_turns[k]["hyps"], committed=True)
+                    )
+                    if diff is not None:
+                        line = f"STOP: {uid} turn {k}: not the earlier run's: {diff}"
+                        print(line, flush=True)
+                        if args.log:
+                            with args.log.open("a") as lf:
+                                lf.write(line + "\n")
+                        raise SystemExit(1)
                 turn_recs.append(
                     {
                         "origin_s": t["origin_s"],

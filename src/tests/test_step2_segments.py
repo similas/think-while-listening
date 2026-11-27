@@ -79,3 +79,12 @@ def test_segment_counts_per_offered_hypothesis_with_a_fresh_word() -> None:
     hyps.append(hyp([("d", 0.6, 0.8)], ce=0.6) | {"runaway": "repeat"})
     hyps[3]["words"][0]["segment"] = 4
     assert segment_counts(hyps) == [(2, 3, 2, False), (1, 1, 1, True)]
+
+
+def test_a_re_run_is_also_checked_on_what_the_model_committed() -> None:
+    mine = [hyp(W) | {"committed_idx": [0], "p": [0.9, 0.2], "stop": 1, "cut": -1}]
+    theirs = [hyp(W) | {"committed_idx": [0]}]
+    assert replay_difference(mine, theirs, committed=True) is None
+    other = [hyp(W) | {"committed_idx": [0, 1]}]
+    assert "committed" in str(replay_difference(mine, other, committed=True))
+    assert replay_difference(mine, other) is None  # step 1's check ignores commits

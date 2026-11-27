@@ -12694,3 +12694,121 @@ THE RUN, under the GO entry (631a509):
   run's own and the run lock (find -newermt; .git unchanged).
 
 Reviewed before commit (round 73: 3 findings, 3 resolved).
+
+## 2026-11-27 — RUN (2): the re-run of the retrained model's plain loop (a6ac6d5's) under the exact-reproduction guard, its driver change, and the draft reading of the loops' P and stop records. Before any of those records is read, and before the launch
+
+Ali's 2 (a) of today (the GO entry, 631a509): "Re-run the plain loop scored
+in a6ac6d5 with each fresh word's P and the prefix-rule stop recorded,
+under the exact-reproduction guard, times included. Before it runs, commit
+the driver change and your draft of how the records are read, and show me
+the diff." Run (2) launches after this entry's diff has been shown to Ali
+and he has replied (my reading, as the GO entry records).
+
+THE DRIVER CHANGE (in this entry's commit): step2_closed_loop.py
+--reproduce RUN, with twl.step2_segments.replay_difference(committed=True);
+tested.
+- BEFORE THE FIRST DECODE, the earlier run's header must match this run's:
+  the same model file (sha256), tau, replay settings (the guard on), no
+  segment rule, not a smoke run, a clean build; and the files must be the
+  earlier run's. Its build differs (b94190d then), so the check below is
+  what establishes that the two runs are the same run.
+- AFTER EACH TURN, the turn must reproduce the earlier run's word for word,
+  times included (Ali's words): the number of hypotheses; per hypothesis
+  its frozen flag, issue time and committed end; its words' text, start_s
+  and end_s; and the fresh indices the model committed, all compared
+  exactly. The first difference stops the run (a STOP line, exit 1), and
+  nothing reads its output. Not compared: the new records, wall_ms and the
+  runaway verdict.
+- RECORDED (Ali's item 8): each offered hypothesis's fresh words' P (None
+  where a word has no row) and where the prefix rule stopped ("stop"; the
+  "cut" is -1 under the plain rule). Mine, added for the reading below: each
+  word's segment, through the segmented decode, whose words, times and
+  decoder outputs are the scored decode's (tested: transcribe_words_scored
+  returns transcribe_words_segmented's first six fields); the committer
+  never reads the segment under the plain rule. The reproduction check
+  catches any difference this might make.
+- It adds no verdict.
+
+THE RUN. step2_closed_loop.py --reproduce (this entry's commit) on the
+clean build current at the launch: the retrained model (L15_R600_text,
+seed 0), tau 0.66, as 20261125_step2_score_retrained/step2_score.log chose
+it, against results/raw/step2/closed_loop_retrained/closed_loop.jsonl; the
+guard on; under the thermal watchdog; the run lock held. Launch snapshots
+results/raw/script_snapshots/closed_loop_rerun_launch_20261127.sh and
+closed_loop_rerun_20261127.sh (gitignored; the retrained loop's with only
+the names and --reproduce changed), as systemd user units in twl.slice
+(--unit=twl-closed-loop-rerun-<smoke|full>-20261127 --collect): a smoke
+run of 3 files, then the full run. Logs results/raw/run_logs/
+20261127_closed_loop_rerun_{smoke,full}/; output results/raw/step2/
+closed_loop_rerun/closed_loop.jsonl. The board as for the segment loop
+(twl-llama stopped and restarted; swap cleared by Ali if in use; zram off;
+the session up, one wait reading no file). The earlier run took 2505 s;
+past about 50 min, I tell Ali and do not stop it.
+
+THE READING OF THE RECORDS (item 9; my draft, for Ali's approval with this
+diff; descriptive, no verdict). Registered before any P, stop or cut record
+of any loop is read. It is computed by a script committed before it is
+run, on run (2)'s output and, beside it, on the segment loop's
+(results/raw/step2/closed_loop_segments/closed_loop.jsonl).
+
+Per offered hypothesis that the runaway guard keeps and that has a scored
+fresh word:
+- ITS STOP: START when the prefix rule stopped at its first scored fresh
+  word (that word's P < tau, so nothing is committed); INSIDE when it
+  stopped at a later scored word; END when no scored word fell below tau.
+- ITS CONTEXT: FROM THE OPEN when the model has committed nothing earlier
+  in the turn (the buffer starts where step 1's turn starts); AFTER A
+  COMMIT otherwise (the buffer starts at the model's committed end). After
+  a commit, by the last word of the turn's latest commit, in the hypothesis
+  that committed it: MID-PHRASE when the next fresh word came from the same
+  decoder segment; AT THE BUFFER'S END when it was that hypothesis's last
+  fresh word (no next word); AT A SEGMENT END when the next fresh word came
+  from another segment. The buffer's end is not a boundary under D1 (i),
+  and the edge diagnostic tied commits there to the excess false rate, so
+  it is kept apart and counted with MID-PHRASE in R2's test. (Under the
+  segment rule every commit ends at a segment end by construction.)
+- ITS FIRST WORD: the first scored fresh word: its P, whether P < tau, and
+  whether its number unit aligns to a final unit (label_num 1, as the edge
+  diagnostic computed survival).
+
+Lines per run, each share with a 95 % percentile bootstrap CI over files
+(2000 resamples, seed 0, one set of draws per run):
+- R1: the share of START stops FROM THE OPEN and AFTER A COMMIT, and their
+  difference (after - open).
+- R2 (run (2) only): among hypotheses AFTER A COMMIT, the counts and the
+  share of START stops in each of the three classes; and the test's
+  difference: MID-PHRASE and AT THE BUFFER'S END together, minus AT A
+  SEGMENT END.
+- R3: in each group of R1 and R2 (and the pooled MID-PHRASE and BUFFER'S
+  END group), its count, the first word's median P (descriptive, no CI),
+  the share with P < tau and the share that survives (each with its CI).
+
+READING OF ALI'S HYPOTHESIS (item 9: "after a model commit that ends
+mid-phrase, the next buffer begins with a cut word of low P, and the prefix
+rule blocks everything behind it"), on run (2):
+- SUPPORTED (descriptively) when R2's difference in START stops (MID-PHRASE
+  and BUFFER'S END together, minus SEGMENT END) has a CI entirely above 0
+  AND the same difference in the first word's share with P < tau has a CI
+  entirely above 0.
+- NOT SUPPORTED when either CI does not lie entirely above 0, and NOT
+  SUPPORTED (not computable) when a group is empty or a CI cannot be
+  computed; a NaN never decides the reading. NOT SUPPORTED says the
+  hypothesis is not shown on this stream, not that it is false.
+- Beside it: R1 on the segment loop, where no commit ends mid-phrase.
+Neither result is a verdict, and neither changes one; the association is
+not the cause, as for the edge diagnostic.
+
+What the reading cannot do: connect a START stop to a specific word lost
+from the credit. The recall deficit (9823 off-policy against 5929
+on-policy) compares two streams; the records show where the prefix stops
+on one of them.
+
+A LOOK BEFORE THIS REGISTRATION, disclosed: to judge the MID-PHRASE
+definition, the reviewer (round 73) counted structure in the a6ac6d5
+loop's closed_loop.jsonl, from committed_idx and the words only: 574 of its
+1232 commit events commit up to their hypothesis's last fresh word (read by
+hand by the reviewer, round 73, not logged). No P, stop or cut record was
+read, and the count is none of the reading's quantities; it is why AT THE
+BUFFER'S END is kept apart above.
+
+Reviewed before commit (round 73: 2 findings, 2 resolved; the reviewer's structural count disclosed).

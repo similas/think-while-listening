@@ -28,12 +28,14 @@ from typing import Any
 
 
 def replay_difference(
-    mine: Sequence[dict[str, Any]], theirs: Sequence[dict[str, Any]]
+    mine: Sequence[dict[str, Any]], theirs: Sequence[dict[str, Any]], committed: bool = False
 ) -> str | None:
-    """Where this replay's hypotheses first differ from step 1's, or None.
+    """Where this replay's hypotheses first differ from the recorded ones, or None.
 
     Compared exactly: the number of hypotheses; per hypothesis its frozen
-    flag, issue time and committed end; and its words' (text, start_s, end_s).
+    flag, issue time and committed end; its words' (text, start_s, end_s);
+    and, with ``committed`` (a model loop re-run against its earlier run,
+    Ali's 2 (a) of 2026-11-27), the fresh indices the model committed.
     """
     if len(mine) != len(theirs):
         return f"{len(mine)} hypotheses, step 1 {len(theirs)}"
@@ -41,6 +43,11 @@ def replay_difference(
         for k in ("frozen", "issued_s", "committed_end_s"):
             if a[k] != b[k]:
                 return f"hypothesis {h}: {k} {a[k]!r}, step 1 {b[k]!r}"
+        if committed and a.get("committed_idx") != b.get("committed_idx"):
+            return (
+                f"hypothesis {h}: committed {a.get('committed_idx')!r}, earlier "
+                f"{b.get('committed_idx')!r}"
+            )
         wa = [(w["text"], w["start_s"], w["end_s"]) for w in a["words"]]
         wb = [(w["text"], w["start_s"], w["end_s"]) for w in b["words"]]
         if wa != wb:
