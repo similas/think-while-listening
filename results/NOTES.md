@@ -12605,3 +12605,92 @@ is untested. Past about 50 min, I tell Ali and do not stop it myself.
 RUN (2) is set out in its own entry, with its code, before it launches.
 
 Reviewed before commit (round 72: 6 findings, 6 resolved).
+
+## 2026-11-27 — STEP 2, THE SEGMENT LOOP SCORED: FALSIFIED (g_cl = -0.2229 [-0.2889, -0.1595]), the precision bar met (false-commit rate 0.0301 [0.0246, 0.0361]); it credits 5575 words on its own stream, against 2629 off-policy; the branch ends here (item 6)
+
+The AMENDMENT of 2026-11-26 (a465664), item 4, under Ali's GO of today
+(631a509), on the clean build 631a509. Run results/raw/step2/
+closed_loop_segments/closed_loop.jsonl (results/raw/run_logs/
+20261127_closed_loop_segments_{smoke,full}/). Scored once by
+step2_closed_loop_score.py --segments (21f34e6), committed before the run,
+with the invocation the GO entry records; log results/raw/run_logs/
+20261127_closed_loop_segments_score/closed_loop_score.log (a user unit,
+13.8 s by systemd's "Service runtime", exit 0).
+
+    VERDICT (AMENDMENT 2026-11-26, the retrained model under the segment rule): g_cl = -0.2229 [-0.2889, -0.1595] (model 5575 on its own stream; LA-2 6718, oracle 11845 on step 1's; of 15220 words) -> FALSIFIED
+    PRECISION BAR: the loop's false-commit rate 0.0301 [0.0246, 0.0361] does not lie entirely above LA-2's 0.0458 (step 1's stream); the bar is met
+
+THE OTHER LINES, verbatim (95 % CIs over files, 2000 resamples, seed 0):
+
+    CLOSED LOOP (guarded, its own stream): committed fraction 0.3777 [0.3562, 0.3988]; correct-committed 0.3663 [0.3450, 0.3864]; false-commit rate 0.0301 [0.0246, 0.0361], precision 0.9699; commits 5749, correct 5576; BLOCKED units 0, commits left not correct 1
+    OFF-POLICY CI at tau* 0.5: correct-committed [0.1552, 0.1900]; precision [0.9544, 0.9731] (scoring log, PARETO guarded)
+    COMPARISON (descriptive: the AMENDMENT of 2026-11-26, item 6, ends the branch with this loop): WITHIN the off-policy CI on both
+    OFF-POLICY g of this model (the scoring log's PRIMARY guarded line, beside): -0.7975 [-0.8923, -0.7081]
+    LAG (the loop's stream vs LA-2 on step 1's, paired by file; no verdict): 4597 words; median -0.008 s [-0.040, +0.000], the value of 0.1% of the words (a CI of zero width means the median sits in that point mass, not precision); p95 +2.512 s [+2.494, +2.571]
+
+THE COMPARISON LINE MISREADS (the scorer's wording, not the numbers): it
+tests only whether the loop falls BELOW the off-policy CI, and prints
+"WITHIN" otherwise. The loop's correct-committed fraction, 0.3663 [0.3450,
+0.3864], lies entirely ABOVE the off-policy CI [0.1552, 0.1900]; its
+precision, 0.9699, lies within [0.9544, 0.9731]. Descriptive (item 6).
+
+READ AS REGISTERED: the precision bar is met (the loop's false-commit rate
+CI lies entirely below LA-2's 0.0458, not above it), so the verdict is the
+g rules' (twl.step2_rules.verdict): g_cl's CI lies entirely below 0.25,
+FALSIFIED. On its own stream the model under the segment rule commits more
+precisely than LA-2 does on step 1's, and credits fewer words: 5575 against
+6718 (descriptive, across streams). Beside it (descriptive; different rules on different streams, no
+paired comparison registered): the plain rule's loop of the same model
+credited 5929 words at a false-commit rate of 0.0572 [0.0500, 0.0651]
+(a6ac6d5). Per item 6, the branch ends with this loop.
+
+SEGMENTS ON ITS OWN STREAM (step2_segment_counts.py, 631a509; log
+results/raw/run_logs/20261127_segment_counts_loop/segment_counts.log;
+descriptive): of 2236 offered hypotheses with a fresh word, 1511 hold one
+segment, 0.6758 [0.6602, 0.6911]; 17141 of 24945 fresh words lie in their
+hypothesis's last segment, 0.6872 [0.6724, 0.7026]. On step 1's stream
+(the replay, 20261127_segment_counts_replay): 0.7655 [0.7474, 0.7848] and
+0.7929 [0.7745, 0.8113]. Whether longer buffers (not measured) on a
+rarely-committing stream are why it credited more than off-policy is
+untested.
+
+A DEPARTURE, mine: item 9's last sentence ("(Mine:) how they are read is
+registered in its own entry before the loop is scored") was not kept: the
+verdict above was scored before any reading of the P and stop records was
+registered. The scorer reads none of those records (only committed_idx),
+and no P, stop or cut record of this loop has been read. Their reading is
+registered before any of them is read, with run (2)'s (the next entry).
+
+THE RUN, under the GO entry (631a509):
+- THE BOARD. twl-llama stopped 10:57:15 and started again 11:42:42 (the
+  user journal; src/scripts/llama_server.sh start). Ali's swapoff -a and
+  swapon -a at 10:58:47 (the system journal: sudo lines, swapfile
+  deactivated, the kernel adding /swapfile), his "swap cleared" after it;
+  swap used 0 MB at 10:58:59 (/proc/swaps, read by hand). The zram swaps
+  off; spotifyd up; the run lock free; the editor session up, one wait on
+  the unit's main pid that read no file (a lesser breach, as before);
+  auto-update off; the clocks not pinned (simulated clock).
+- THE SMOKE RUN (unit twl-closed-loop-segments-smoke-20261127, 10:59:03 to
+  10:59:21; output results/raw/step2/closed_loop_segments_smoke/, which the
+  scorer refuses): every VALIDITY line passed; "DONE: 3 files in 10 s";
+  swap traffic +0, +0; its records carried P, stop, cut and segments
+  (their keys' presence checked on the 3-file smoke; no value read).
+- THE FULL RUN (unit twl-closed-loop-segments-full-20261127). Launched
+  10:59:28, armed 10:59:29. BOARD start: tj 58.6 C; swap used 0 MB;
+  MAXN_SUPER; clocks not pinned. VALIDITY, all passed before the first
+  decode: the label files; the model choice ('L15_R600_text', 0, 0.5), as
+  the segment scoring log scored; step 1's settings with the guard on; the
+  model file (sha256 2df5b873...) reproducing its scored P on 23465 rows;
+  the corpus files. "DONE: 574 files in 2564 s; tj max 65.6 C, now 65.2 C;
+  swap used 0 MB; swap traffic since the start pswpin +0, pswpout +0". The
+  watchdog: peak tj 65.91 C over 1284 samples, not breached; exited 0 at
+  11:42:20. The unit's journal: started 10:59:28, "Consumed 1h 55min
+  33.028s CPU time" at 11:42:20; no failure line. 2564 s is under the 50 min
+  at which Ali would have been told.
+- AFTER-RUN CHECKS: no swap activity; the kernel journal holds no line
+  between 10:59:28 and 11:42:21 (no OOM, no throttle); coverage 574 files,
+  15220 scored final words (the scorer's VALIDITY). THE FENCE: no file
+  under the repository changed between 10:59:28 and 11:42:21 except the
+  run's own and the run lock (find -newermt; .git unchanged).
+
+Reviewed before commit (round 73: 3 findings, 3 resolved).
