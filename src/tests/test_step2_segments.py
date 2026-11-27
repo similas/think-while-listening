@@ -63,3 +63,19 @@ def test_the_cut_keeps_the_prefix_up_to_its_last_boundary() -> None:
     assert segment_cut({0, 1, 3}, 4, seg) == ({0, 1}, 1)
     with pytest.raises(ValueError):
         segment_cut({0}, 1, [-1, 0])
+
+
+def test_segment_counts_per_offered_hypothesis_with_a_fresh_word() -> None:
+    from twl.step2_segments import segment_counts
+
+    hyps = [
+        hyp([("a", 0.0, 0.2), ("b", 0.2, 0.4), ("c", 0.4, 0.6)], ce=0.0) | {"runaway": ""},
+        hyp([], 2.0, 0.9, frozen=True),
+        hyp([("x", 0.0, 0.3)], ce=0.5),  # no fresh word: skipped
+    ]
+    for w, k in zip(hyps[0]["words"], (0, 1, 1), strict=True):
+        w["segment"] = k
+    hyps[2]["words"][0]["segment"] = 0
+    hyps.append(hyp([("d", 0.6, 0.8)], ce=0.6) | {"runaway": "repeat"})
+    hyps[3]["words"][0]["segment"] = 4
+    assert segment_counts(hyps) == [(2, 3, 2, False), (1, 1, 1, True)]

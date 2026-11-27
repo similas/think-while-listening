@@ -12503,3 +12503,105 @@ THE LOOP (item 4) needs Ali's GO, and is put to him with this result
 before it runs: what it would test is the rule this log describes.
 
 Reviewed before commit (round 71: 4 findings, 4 resolved).
+
+## 2026-11-27 — DECISIONS on the segment rule's off-policy result (Ali): GO for the segment loop (1 (a)), then a reproduction-checked re-run of the plain retrained loop with P and the stop recorded (2 (a)); the segment counts logged. Before either launch
+
+Ali (2026-11-27), on the report of 82d9fea, as he wrote it:
+
+    GO on both.
+
+    Decision 1: (a). Run the segment loop as registered at τ* 0.50 under
+    GO, judged by g_cl and the precision bar.
+
+    Decision 2: (a). Re-run the plain loop scored in a6ac6d5 with each
+    fresh word's P and the prefix-rule stop recorded, under the
+    exact-reproduction guard, times included. Before it runs, commit the
+    driver change and your draft of how the records are read, and show me
+    the diff.
+
+    Also: log the per-hypothesis segment count and the last-segment
+    fresh-word fraction in the replay output so they're recorded, not read
+    by hand.
+
+    Order: 1(a) first, then 2(a). zram stays off. Run the reviewer before
+    the next gate report.
+
+The two decisions as the report put them (82d9fea's report): 1 (a) "Run it
+as registered: one loop at tau* 0.50, about 41 min, under your GO, verdict
+by g_cl and the bar"; 2 (a) "Re-run the retrained model's plain loop, the
+one scored in a6ac6d5, recording each fresh word's P and the stop
+position. Same model, rule and settings. The run stops unless it
+reproduces that loop word for word" (it then names the fields compared and
+the header to match), "It is descriptive and adds no verdict". Ali's
+"times included", for run (2)'s entry: issued_s, committed_end_s and the
+word times compared exactly.
+
+THE FREEZE (since 2026-10-13) is lifted for two runs, by Ali's "GO on
+both": (1) the segment loop (its smoke run and full run), and (2) the
+re-run of the plain retrained loop (its smoke run and full run), in that
+order, and for nothing else. Run (2) launches only after its driver change
+and the draft reading of its records are reviewed and committed and their
+diff has been shown to Ali; my reading of his request: run (2) waits for
+his reply to the diff.
+
+THE SEGMENT COUNTS (Ali's "Also"), by src/scripts/step2_segment_counts.py
+(twl.step2_segments.segment_counts; tested), committed with this entry:
+for a run whose words carry their segment, over the offered hypotheses with
+a fresh word, all and those the runaway guard keeps, the number holding 1,
+2, 3 and 4 or more segments, the share with one, and the share of fresh
+words in their hypothesis's last segment, with bootstrap CIs over files. It
+is run, logged, on the segment replay's output before the loop (log
+results/raw/run_logs/20261127_segment_counts_replay/segment_counts.log),
+superseding 82d9fea's count read by hand (which stays as recorded), and on
+the segment loop's output after it. Not a measured run; it reads recorded
+files. Before this entry it was run once on the full replay output with
+its output discarded unread, to check that it runs; the counts it will log
+are the quantities of 82d9fea's hand count.
+
+RUN (1), THE SEGMENT LOOP (the AMENDMENT of 2026-11-26, item 4).
+step2_closed_loop.py --segments (21f34e6) on the clean build current at
+the launch (this entry's commit or later): the retrained model
+(L15_R600_text, seed 0), tau* 0.5, as segment_score.log chose it (the
+driver checks that log's choice and that it is step2_segment_score.py's);
+the guard on; under the thermal watchdog; the run lock held. Launch
+snapshots results/raw/script_snapshots/closed_loop_segments_launch_20261127.sh
+and closed_loop_segments_20261127.sh (gitignored; the retrained loop's
+with only the names, the tau, --segments and the scoring log changed), each
+run as a systemd user unit in twl.slice (--unit=twl-closed-loop-segments-
+<smoke|full>-20261127 --collect): a smoke run of 3 files (output
+results/raw/step2/closed_loop_segments_smoke/, which the scorer refuses),
+then the full run. Logs results/raw/run_logs/
+20261127_closed_loop_segments_{smoke,full}/; output results/raw/step2/
+closed_loop_segments/closed_loop.jsonl. The unit's life is the loops'
+(b94190d). The run names keep the date 20261127.
+
+SCORING, once, after the run: step2_closed_loop_score.py (21f34e6):
+
+    step2_closed_loop_score.py --run results/raw/step2/closed_loop_segments/closed_loop.jsonl
+      --score results/raw/run_logs/20261126_step2_segment_score/segment_score.log
+      --anchors results/raw/run_logs/20261124_step2_anchors/anchors.log --segments
+      --log results/raw/run_logs/20261127_closed_loop_segments_score/closed_loop_score.log
+
+Its VERDICT line (g_cl, with the precision bar, A (b)) is the segment
+rule's verdict; its COMPARISON line is descriptive (item 6). The branch
+ends with this loop, whatever its verdict (item 6).
+
+THE BOARD, as for the replay: twl-llama stopped before the smoke run and
+started again after the full run (src/scripts/llama_server.sh start: it
+is a transient unit), both times recorded; swap: 15 MB in use now (read by
+hand, /proc/swaps), so Ali is told "clear swap now" with twl-llama stopped,
+and the launch follows his "swap cleared"; the zram swaps off (his "zram
+stays off"); spotifyd up; the editor session up, one wait on the unit's
+main pid that reads no file, a lesser breach as before; auto-update off;
+the clocks not pinned (the replay's clock is simulated). The swap rule of
+c0c9c32 applies.
+
+NO TIME CAP. The retrained loop took 2505 s, and the report Ali approved
+said about 41 min. Under the rule the model commits rarely, so its buffers
+likely stay long and each decode takes longer in wall time, though the
+issuer, paced by the modelled cost, issues fewer of them; the run's length
+is untested. Past about 50 min, I tell Ali and do not stop it myself.
+
+RUN (2) is set out in its own entry, with its code, before it launches.
+
+Reviewed before commit (round 72: 6 findings, 6 resolved).

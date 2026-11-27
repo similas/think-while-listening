@@ -3,6 +3,9 @@
 - ``replay_difference``: where a replay's hypotheses first differ from step
   1's recorded ones (Ali's D2 (a): the segment replay "stops unless it
   reproduces step 1's hypotheses word for word").
+- ``segment_counts``: per offered hypothesis, its fresh words' segments
+  and how many lie in its last segment (Ali, 2026-11-27: logged, not read
+  by hand; src/scripts/step2_segment_counts.py).
 - ``boundaries`` and ``segment_cut``: the rule of item 2, the longest
   prefix cut back to its last segment boundary (D1 (i)), shared by the
   committer in the loop (twl.closed_loop) and the off-policy count
@@ -84,3 +87,25 @@ def segment_cut(kept: Iterable[int], stop: int, seg: Sequence[int]) -> tuple[set
     b = boundaries(seg)
     cut = max((i for i in range(min(stop, len(seg))) if b[i]), default=-1)
     return {i for i in kept if i <= cut}, cut
+
+
+def segment_counts(hyps: Sequence[dict[str, Any]]) -> list[tuple[int, int, int, bool]]:
+    """Per offered hypothesis with a fresh word, in order: (segments among
+    its fresh words, its fresh words, those in its last segment, whether the
+    runaway guard discards it). Fresh words as twl.step2_count takes them
+    (start_s >= committed_end_s - 1e-9); the last segment is the segment of
+    its last fresh word. Ali (2026-11-27): "log the per-hypothesis segment
+    count and the last-segment fresh-word fraction"."""
+    out: list[tuple[int, int, int, bool]] = []
+    for h in hyps:
+        if h["frozen"]:
+            continue
+        ce = float(h["committed_end_s"])
+        fresh = [w for w in h["words"] if float(w["start_s"]) >= ce - 1e-9]
+        if not fresh:
+            continue
+        if any("segment" not in w for w in fresh):
+            raise ValueError("a fresh word without its segment")
+        seg = [int(w["segment"]) for w in fresh]
+        out.append((len(set(seg)), len(seg), seg.count(seg[-1]), bool(h.get("runaway"))))
+    return out
